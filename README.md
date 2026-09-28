@@ -1,6 +1,6 @@
 # Command of Duty
 
-2.5D-Echtzeitstrategie im Stil von *Command & Conquer: Red Alert*, gebaut mit Babylon.js, TypeScript und Vite.
+2.5D-Echtzeitstrategie, gebaut mit Babylon.js, TypeScript und Vite.
 Low-Poly-Optik ohne Texturen, feste RTS-Kameraperspektive.
 
 ```bash
