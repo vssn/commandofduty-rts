@@ -1,12 +1,12 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import { HIP_X, HIP_Y, JEEP_DIM, KNEE, SHOULDER_Y, type SoldierTemplates } from "../world/models";
+import { HIP_X, HIP_Y, JEEP_DIM, KNEE, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import type { Unit } from "./unit";
 
 export type { SoldierTemplates };
 
 /** Arms-with-weapon and head, both pivoting at the shoulders of `parent`. */
-export function buildUpper(tpl: SoldierTemplates, parent: TransformNode): { arms: InstancedMesh; head: InstancedMesh } {
+export function buildUpper(tpl: SoldierTemplates, parent: TransformNode): { arms: InstancedMesh; head: InstancedMesh; throwArm: InstancedMesh | null } {
   const arms = tpl.arms.createInstance("arms");
   const head = tpl.head.createInstance("head");
   for (const m of [arms, head]) {
@@ -14,8 +14,43 @@ export function buildUpper(tpl: SoldierTemplates, parent: TransformNode): { arms
     m.position.set(0, SHOULDER_Y, 0);
     m.isPickable = false;
   }
-  return { arms, head };
+  let throwArm: InstancedMesh | null = null;
+  if (tpl.throwArm) {
+    throwArm = tpl.throwArm.createInstance("throwArm");
+    throwArm.parent = parent;
+    throwArm.position.set(THROW_SHOULDER.x, THROW_SHOULDER.y, 0);
+    throwArm.isPickable = false;
+  }
+  return { arms, head, throwArm };
 }
+
+/** Smooth keyframe curve: `keys` are [time, value] pairs, eased between them. */
+function curve(t: number, keys: readonly (readonly [number, number])[]): number {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, v0] = keys[i], [t1, v1] = keys[i + 1];
+    if (t <= t1) {
+      let f = (t - t0) / (t1 - t0);
+      f = f * f * (3 - 2 * f);
+      return v0 + (v1 - v0) * f;
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+
+/**
+ * One-armed grenade throw (seconds since the throw started): the right arm swings back over the
+ * head while the body turns away and leans back and the free arm points at the target, then the
+ * arm whips forward (the grenade leaves the hand at ~0.42 s) and follows through.
+ */
+const THROW = {
+  duration: 0.62,
+  arm: [[0, 0], [0.3, 2.7], [0.36, 2.8], [0.46, -1.25], [0.62, 0]],
+  armRoll: [[0, 0], [0.3, -0.35], [0.46, 0.12], [0.62, 0]],
+  freeArm: [[0, 0], [0.3, -1.25], [0.46, 0.35], [0.62, 0]],
+  lean: [[0, 0], [0.3, -0.28], [0.46, 0.34], [0.62, 0]],
+  twist: [[0, 0], [0.3, -0.5], [0.46, 0.3], [0.62, 0]],
+} as const;
 
 /** Two-part leg (thigh + shin hanging from the knee) under `parent`, hip at (x, HIP_Y). */
 export function buildLeg(tpl: SoldierTemplates, parent: TransformNode, x: number): { thigh: InstancedMesh; shin: InstancedMesh } {
@@ -68,6 +103,8 @@ export class SoldierView implements UnitView {
   private readonly shinR: InstancedMesh;
   private readonly arms: InstancedMesh;
   private readonly head: InstancedMesh;
+  /** Grenadiers only: the right arm with the grenade. */
+  private readonly throwArm: InstancedMesh | null;
   private phase = Math.random() * 10;
   /** 1 while engaging a target (weapon shouldered), 0 otherwise. */
   private aimW = 0;
@@ -87,7 +124,7 @@ export class SoldierView implements UnitView {
     const body = tpl.body.createInstance("body");
     body.isPickable = false;
     body.parent = this.root;
-    ({ arms: this.arms, head: this.head } = buildUpper(tpl, this.root));
+    ({ arms: this.arms, head: this.head, throwArm: this.throwArm } = buildUpper(tpl, this.root));
     ({ thigh: this.legL, shin: this.shinL } = buildLeg(tpl, this.root, -HIP_X));
     ({ thigh: this.legR, shin: this.shinR } = buildLeg(tpl, this.root, HIP_X));
   }
@@ -132,20 +169,18 @@ export class SoldierView implements UnitView {
     const back = u.recoil * 0.12 + p * 1.25;
     const sh = Math.sin(u.heading), ch = Math.cos(u.heading);
     this.root.position.set(u.x - sh * back, u.y + bob - drop + p * 0.28, u.z - ch * back);
+    // grenade throw (see THROW)
+    const throwing = u.throwT < THROW.duration;
+    const tt = u.throwT;
+    const throwLean = throwing ? curve(tt, THROW.lean) : 0;
+    const twist = throwing ? curve(tt, THROW.twist) : 0;
     // lean into the hill when climbing, lean back when going down
     this.root.rotation.set(
       (0.08 + grade * 0.3) * this.stride + 0.12 * k + p * (Math.PI / 2 - 0.08),
-      u.heading,
+      u.heading + twist,
       Math.sin(this.phase) * 0.04 * this.stride + iw * shift * 0.03,
     );
 
-    // grenade throw: swing the arm back over the head, then whip it forward and let go
-    let throwLean = 0, throwArm = 0;
-    if (u.throwT < 0.55) {
-      const t = u.throwT;
-      throwLean = t < 0.3 ? -0.5 * (t / 0.3) : -0.5 + 0.8 * Math.min(1, (t - 0.3) / 0.12) - 0.3 * Math.max(0, (t - 0.42) / 0.13);
-      throwArm = t < 0.3 ? -2.4 * (t / 0.3) : -2.4 + 2.9 * Math.min(1, (t - 0.3) / 0.12) - 0.5 * Math.max(0, (t - 0.42) / 0.13);
-    }
     // weapon: shouldered when engaging, carried across the chest when walking, lowered and angled
     // when standing around. Every ~12 s an idle soldier briefly checks his weapon.
     const cycle = (it + this.seed * 3) % 12;
@@ -154,11 +189,20 @@ export class SoldierView implements UnitView {
     const carry = (1 - this.aimW) * (u.type === "grenadier" ? 0.3 : 1);
     const breath = Math.sin(it * 1.9) * 0.012 * iw;
     this.arms.rotation.set(
-      -p * 1.2 + throwLean + throwArm + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2,
+      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2,
       carry * (-0.28 - iw * 0.12) + check * 0.2,
       carry * 0.1,
     );
     this.arms.position.y = SHOULDER_Y + breath;
+    if (this.throwArm) {
+      // throwing arm: relaxed swing with the body normally, the full wind-up and throw when throwing
+      this.throwArm.rotation.set(
+        -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.arm) : carry * 0.3 + breath * 2) - check * 0.3,
+        0,
+        throwing ? curve(tt, THROW.armRoll) : 0,
+      );
+      this.throwArm.position.y = THROW_SHOULDER.y + breath;
+    }
     // head: looks around while idle (slow sweep with the occasional quick glance), otherwise ahead
     const look = cycle > 4 && cycle < 8.5 ? Math.sin((cycle - 4) / 4.5 * Math.PI * 2) * 0.6 : Math.sin(it * 0.3 + this.seed) * 0.12;
     this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath, look * iw, 0);
@@ -183,6 +227,7 @@ export class SoldierView implements UnitView {
     this.legL.rotation.x = this.legR.rotation.x = 0;
     this.shinL.rotation.x = this.shinR.rotation.x = 0;
     this.arms.rotation.set(0.5, -0.3, 0);
+    this.throwArm?.rotation.set(0.5, 0, 0);
     this.head.rotation.set(0, 0, 0);
     const lie = fall * fall;
     this.shadow.place(u.x - Math.sin(u.heading) * lie * 1.2, u.y, u.z - Math.cos(u.heading) * lie * 1.2, u.heading, 0.95, 0.95 + lie * 0.9);

@@ -1,6 +1,7 @@
-import { PLAYER, UNITS, type UnitType } from "../config";
+import { ARTILLERY, PLAYER, UNITS, type UnitType } from "../config";
 import type { AudioSystem } from "../audio/audio";
 import type { Game, GameEvent } from "../game/game";
+import type { InputController } from "./input";
 
 const MESSAGES: Partial<Record<GameEvent, string>> = {
   unitReady: "Einheit bereit",
@@ -9,6 +10,9 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   baseAttacked: "Unsere Basis wird angegriffen!",
   unitsAttacked: "Wir werden angegriffen!",
   boarded: "MG-Schütze an Bord",
+  artillery: "Artillerie angefordert",
+  enemyArtillery: "Feindlicher Artilleriebeschuss!",
+  noSight: "Ziel nicht im Sichtbereich",
 };
 
 function $(id: string): HTMLElement {
@@ -45,7 +49,7 @@ export class Hud {
     sync();
 
     // build buttons: left click queues (shift: 5x), right click cancels; hotkeys Q / W / E
-    this.buttons = [...document.querySelectorAll<HTMLButtonElement>(".build-btn")].map((btn) => {
+    this.buttons = [...document.querySelectorAll<HTMLButtonElement>(".build-btn[data-unit]")].map((btn) => {
       const type = btn.dataset.unit as UnitType;
       btn.title = `${UNITS[type].name} · Linksklick: bauen (Shift: 5×) · Rechtsklick: abbrechen`;
       btn.addEventListener("click", (e) => this.train(type, e.shiftKey ? 5 : 1));
@@ -90,6 +94,25 @@ export class Hud {
     if (queued) this.audio.buildConfirm();
   }
 
+  private artilleryBtn: HTMLButtonElement | null = null;
+  private artilleryP = -1;
+
+  /** Skirmish: the artillery tile starts target selection; the tile glows while targeting. */
+  bindArtillery(input: InputController) {
+    const btn = $("btn-artillery") as HTMLButtonElement;
+    this.artilleryBtn = btn;
+    btn.title = `Artillerieschlag ($${ARTILLERY.cost}) · Ziel im Sichtbereich wählen (Taste A), Rechtsklick/Esc bricht ab`;
+    btn.addEventListener("click", () => {
+      if (!this.enabled) return;
+      if (this.game.credits[PLAYER] < ARTILLERY.cost) {
+        this.toast("Unzureichende Mittel");
+        return;
+      }
+      input.setTargeting(input.targeting ? null : "artillery");
+    });
+    input.onTargetingChange = () => btn.classList.toggle("armed", !!input.targeting);
+  }
+
   /** Puts the rendered unit portraits into the build buttons. */
   setPortraits(images: Record<UnitType, string>) {
     for (const b of this.buttons) b.btn.querySelector<HTMLImageElement>(".portrait")!.src = images[b.type];
@@ -103,9 +126,10 @@ export class Hud {
 
   private showBanner(result: "win" | "lose") {
     $("banner-title").textContent = result === "win" ? "Sieg" : "Niederlage";
+    const skirmish = this.game.mode === "skirmish";
     $("banner-text").textContent = result === "win"
-      ? "Die feindliche Kaserne wurde zerstört."
-      : "Unsere Kaserne ist gefallen.";
+      ? skirmish ? "Der Feind wurde aufgerieben." : "Die feindliche Kaserne wurde zerstört."
+      : skirmish ? "Unsere Truppen wurden aufgerieben." : "Unsere Kaserne ist gefallen.";
     this.banner.classList.add("show", result);
   }
 
@@ -145,6 +169,21 @@ export class Hud {
       b.btn.classList.toggle("poor", credits < UNITS[b.type].cost);
     }
 
+    if (this.artilleryBtn && g.mode === "skirmish") {
+      // cooldown as clock wipe, remaining seconds in the badge
+      const cd = g.artillery.cooldownOf(PLAYER);
+      const p = Math.round((1 - cd / ARTILLERY.cooldown) * 200) / 200;
+      if (p !== this.artilleryP) {
+        this.artilleryBtn.style.setProperty("--p", String(p));
+        this.artilleryP = p;
+        const badge = this.artilleryBtn.querySelector<HTMLElement>(".badge")!;
+        badge.textContent = cd > 0 ? String(Math.ceil(cd)) : "";
+        badge.classList.toggle("show", cd > 0);
+      }
+      this.artilleryBtn.classList.toggle("cooling", cd > 0);
+      this.artilleryBtn.classList.toggle("poor", credits < ARTILLERY.cost);
+    }
+
     let info = "Keine Auswahl";
     if (g.selection.size) {
       const units = [...g.selection];
@@ -160,13 +199,16 @@ export class Hud {
         info += `<span class="hint">${manned === jeeps.length ? "MG besetzt" : manned === 0 ? "Kein MG-Schütze – Soldat zuweisen (Rechtsklick auf Jeep)" : `MG besetzt: ${manned} von ${jeeps.length}`}</span>`;
       }
       // combat bonuses: for a single soldier its own, for groups how many enjoy each one
-      const counts = { cover: 0, outpost: 0, low: 0, high: 0 };
+      const counts = { cover: 0, outpost: 0, low: 0, high: 0, far: 0 };
+      let farBest = 0;
       let coverName = "";
       for (const u of units) {
         const b = g.bonusesOf(u);
         if (b.cover) { counts.cover++; coverName = b.cover; }
         if (b.outpost) counts.outpost++;
         if (b.elevated) counts.high++;
+        const far = g.sightBonusOf?.(u) ?? 0;
+        if (far >= 2) { counts.far++; farBest = Math.max(farBest, far); }
         if (b.stance !== "stand") counts.low++;
       }
       const n = (c: number) => (units.length > 1 ? ` (${c})` : "");
@@ -174,6 +216,7 @@ export class Hud {
         counts.cover ? `Deckung${units.length === 1 ? ": " + coverName : n(counts.cover)}` : "",
         counts.outpost ? `Stellung${n(counts.outpost)}` : "",
         counts.high ? `Erhöhte Position${n(counts.high)}` : "",
+        counts.far ? `Weitsicht +${Math.round(farBest)}${n(counts.far)}` : "",
         counts.low ? `In Deckung gegangen${n(counts.low)}` : "",
       ].filter(Boolean);
       if (tags.length) info += `<span class="bonus">${tags.map((t) => `<em>${t}</em>`).join("")}</span>`;

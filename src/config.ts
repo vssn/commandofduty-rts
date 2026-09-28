@@ -57,6 +57,31 @@ export const SLOPE = { uphill: 1.6, downhill: 0.6, min: 0.45, max: 1.2, vehicle:
  */
 export const ROAD = { speed: 1.2, cap: 1.35 };
 
+/** Game modes: "base" = build units at barracks/workshop; "skirmish" = fixed forces, credits buy artillery. */
+export type GameMode = "base" | "skirmish";
+
+/** Skirmish: starting forces per side (no reinforcements) and starting credits. */
+export const SKIRMISH = {
+  forces: { rifleman: 10, grenadier: 5, jeep: 2 } as Record<UnitType, number>,
+  credits: 400,
+};
+
+/** Artillery strike ordered with credits (skirmish): a salvo of shells scattered around the target. */
+export const ARTILLERY = {
+  cost: 300,
+  /** Seconds before the same side can order the next strike. */
+  cooldown: 25,
+  /** Seconds from the order until the first shell lands. */
+  delay: 3.2,
+  shells: 7,
+  /** Seconds between impacts. */
+  interval: 0.38,
+  /** Shells land within this radius of the target. */
+  spread: 6,
+  damage: 65,
+  blastRadius: 3.8,
+};
+
 /** How far units and structures of the player can see (fog of war). */
 export const SIGHT = { rifleman: 18, grenadier: 17, jeep: 21, barracks: 20, outpost: 13 };
 

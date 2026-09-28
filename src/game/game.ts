@@ -1,5 +1,5 @@
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, PLAYER, START_CREDITS, UNITS, type Team, type UnitType } from "../config";
+import { ARTILLERY, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameMode, PLAYER, START_CREDITS, UNITS, type Team, type UnitType } from "../config";
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
 import { toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
@@ -7,6 +7,7 @@ import {
 } from "../world/models";
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
+import { Artillery } from "./artillery";
 import { Barracks } from "./barracks";
 import { CoverMap } from "./cover";
 import { Effects } from "./effects";
@@ -24,7 +25,7 @@ export interface OrderLine { unit: Unit; x: number; z: number; target: Target | 
 
 export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
-  | "captured" | "outpostLost" | "selected" | "commanded" | "boarded";
+  | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight";
 export interface GameEventData { outpost: Outpost; bonus: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -45,6 +46,9 @@ export class Game {
   readonly playerBarracks: Barracks;
   readonly enemyBarracks: Barracks;
   readonly effects: Effects;
+  readonly artillery: Artillery;
+  /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
+  mode: GameMode = "base";
 
   private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier", SoldierTemplates>>;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
@@ -63,6 +67,8 @@ export class Game {
   private baseAlertCooldown = 0;
   /** Time since the player's soldiers last took fire; a new engagement is announced after a calm period. */
   private sinceUnitsHit = Infinity;
+  /** Extra sight range a unit currently has from high ground (fog of war), for UI display. */
+  sightBonusOf: ((u: Unit) => number) | null = null;
   /** Player's fog of war: whether a point is in sight (null = no fog). */
   canSee: ((x: number, z: number) => boolean) | null = null;
   /** Cover lookup; assigned after the scenery exists. */
@@ -89,13 +95,14 @@ export class Game {
     const jeep = (team: Team): JeepTemplates => ({ body: createJeepBody(scene, team), wheel, gun, crew: this.soldierTpl[team].rifleman });
     this.jeepTpl = { 0: jeep(PLAYER), 1: jeep(ENEMY) };
     for (const team of [PLAYER, ENEMY]) {
-      for (const t of Object.values(this.soldierTpl[team])) for (const m of [t.body, t.arms, t.head, t.leg, t.shin]) shadows.addShadowCaster(m);
+      for (const t of Object.values(this.soldierTpl[team])) for (const m of [t.body, t.arms, t.head, t.leg, t.shin, t.throwArm]) if (m) shadows.addShadowCaster(m);
       shadows.addShadowCaster(this.jeepTpl[team].body);
     }
     shadows.addShadowCaster(wheel);
     shadows.addShadowCaster(gun);
 
     this.effects = new Effects(scene, shadows, this);
+    this.artillery = new Artillery(scene, this);
     this.blobTpl = createBlobShadow(scene);
     const n = MAP_HALF * 2;
     this.roadGrid = new Uint8Array(n * n);
@@ -192,6 +199,73 @@ export class Game {
     return u;
   }
 
+  // ---------------------------------------------------------------- modes
+
+  /**
+   * Switches to skirmish: the starting squads are replaced by the fixed skirmish forces lined up
+   * in front of each compound, and both sides get the skirmish credits. No production afterwards.
+   */
+  setupSkirmish() {
+    this.mode = "skirmish";
+    for (const u of this.units) {
+      u.view.dispose();
+      u.ring.dispose();
+    }
+    this.units.length = 0;
+    this.clearSelection();
+    for (const b of this.buildings) {
+      this.credits[b.team] = SKIRMISH.credits;
+      // rows in front of the gate: riflemen closest to the base, grenadiers behind them and the
+      // jeeps at the head of the column, facing the enemy (5 infantry per row)
+      const rows: { type: UnitType; count: number; depth: number; spacing: number }[] = [];
+      let depth = 14;
+      for (const type of ["rifleman", "grenadier", "jeep"] as UnitType[]) {
+        const count = SKIRMISH.forces[type];
+        const perRow = type === "jeep" ? count : 5;
+        if (type === "jeep") depth += 2.5; // room for the longer vehicles
+        for (let placed = 0; placed < count; placed += perRow) {
+          rows.push({ type, count: Math.min(perRow, count - placed), depth, spacing: type === "jeep" ? 5 : 2 });
+          depth += type === "jeep" ? 5 : 2.2;
+        }
+      }
+      for (const r of rows) {
+        for (let i = 0; i < r.count; i++) {
+          const p = toWorld(b.x, b.z, b.rot, (i - (r.count - 1) / 2) * r.spacing, r.depth);
+          const free = this.nav.freePoint(p.x, p.z, r.type === "jeep" ? 1 : 0);
+          const u = this.spawnUnit(r.type, b.team, free.x, free.z);
+          u.heading = u.turret = b.rot;
+        }
+      }
+    }
+  }
+
+  /** Skirmish ends when one side has no units left (or loses its barracks, handled in damage()). */
+  private checkSkirmishEnd() {
+    const alive = (team: Team) => this.units.some((u) => u.alive && u.team === team);
+    if (!alive(PLAYER)) {
+      this.result = "lose";
+      this.emit("lose", PLAYER);
+    } else if (!alive(ENEMY)) {
+      this.result = "win";
+      this.emit("win", PLAYER);
+    }
+  }
+
+  /** Orders an artillery strike for `team`; the player may only target what he can see. */
+  orderArtillery(team: Team, x: number, z: number): boolean {
+    if (team === PLAYER && this.canSee && !this.canSee(x, z)) {
+      this.emit("noSight", PLAYER);
+      return false;
+    }
+    if (this.credits[team] < ARTILLERY.cost) {
+      if (team === PLAYER) this.emit("noCredits", PLAYER);
+      return false;
+    }
+    if (!this.artillery.order(team, x, z)) return false;
+    this.emit(team === PLAYER ? "artillery" : "enemyArtillery", PLAYER);
+    return true;
+  }
+
   // ---------------------------------------------------------------- production
 
   /** Workshop owned by `team` (the one closest to its base), if any. */
@@ -210,6 +284,7 @@ export class Game {
   }
 
   queueUnit(type: UnitType, team: Team): boolean {
+    if (this.mode === "skirmish") return false; // no reinforcements in a skirmish
     const p = this.producerFor(type, team);
     if (!p || p.queue.length >= 20) return false;
     if (this.credits[team] < UNITS[type].cost) {
@@ -573,6 +648,8 @@ export class Game {
     for (const b of this.buildings) b.update(dt, this);
     for (const u of this.units) u.update(dt, this);
     this.effects.update(dt);
+    this.artillery.update(dt);
+    if (this.mode === "skirmish" && !this.result) this.checkSkirmishEnd();
 
     // soft separation; heavier and moving units push lighter / idle ones aside
     const active = this.units.filter((u) => u.alive && !u.vehicle);

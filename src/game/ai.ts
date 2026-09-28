@@ -1,4 +1,4 @@
-import { ENEMY, UNITS } from "../config";
+import { ARTILLERY, ENEMY, UNITS } from "../config";
 import type { Game } from "./game";
 import type { Unit } from "./unit";
 
@@ -10,6 +10,7 @@ export class EnemyAI {
   private waveTimer = 150;
   private captureTimer = 5;
   private waveSize = 5;
+  private artilleryTimer = 20;
 
   constructor(private readonly game: Game) {}
 
@@ -57,13 +58,38 @@ export class EnemyAI {
       }
     }
 
+    if (g.mode === "skirmish") this.useArtillery(dt, mine);
+
     this.waveTimer -= dt;
     const idle = available.filter((u) => u.armed && u.path.length === 0);
-    if (this.waveTimer <= 0 && idle.length >= this.waveSize) {
+    const waveReady = g.mode === "skirmish" ? idle.length >= 6 : idle.length >= this.waveSize;
+    if (this.waveTimer <= 0 && waveReady) {
       const t = g.playerBarracks;
       g.commandMove(idle, { x: t.x, z: t.z }, true, false);
       this.waveTimer = 75;
       this.waveSize = Math.min(10, this.waveSize + 1);
     }
+  }
+
+  /**
+   * Skirmish: shells the densest group of player units that its own troops can see (within 20 of
+   * an enemy unit), never when its own soldiers are close to the impact area.
+   */
+  private useArtillery(dt: number, mine: Unit[]) {
+    const g = this.game;
+    this.artilleryTimer -= dt;
+    if (this.artilleryTimer > 0 || !g.artillery.canOrder(ENEMY)) return;
+    this.artilleryTimer = 4;
+    const foes = g.units.filter((u) => u.alive && u.team !== ENEMY && !u.vehicle);
+    let best: Unit | null = null, bestCount = 2;
+    for (const f of foes) {
+      if (!mine.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 20)) continue;
+      const count = foes.filter((o) => Math.hypot(o.x - f.x, o.z - f.z) < ARTILLERY.spread).length;
+      if (count > bestCount) { bestCount = count; best = f; }
+    }
+    if (!best) return;
+    if (mine.some((m) => Math.hypot(m.x - best!.x, m.z - best!.z) < ARTILLERY.spread + ARTILLERY.blastRadius + 2)) return;
+    g.orderArtillery(ENEMY, best.x, best.z);
+    this.artilleryTimer = 8;
   }
 }

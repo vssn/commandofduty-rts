@@ -1,5 +1,5 @@
 import type { Vector3 } from "@babylonjs/core";
-import { PLAYER } from "../config";
+import { ARTILLERY, PLAYER } from "../config";
 import type { Game, GameEvent } from "../game/game";
 import { MusicGenerator } from "./music";
 
@@ -8,6 +8,8 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   unitLost: "Einheit verloren",
   noCredits: "Unzureichende Mittel",
   baseAttacked: "Unsere Basis wird angegriffen",
+  artillery: "Artillerie unterwegs",
+  enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",
   lose: "Mission gescheitert",
@@ -63,6 +65,8 @@ export class AudioSystem {
     game.onShot = (x, z, kind) => this.shot(x, z, kind === "mg");
     game.onThrow = (x, z) => this.whoosh(x, z);
     game.effects.onExplosion = (x, z, size) => this.explosion(x, z, size);
+    // incoming artillery: the whistle starts shortly before the first shell lands
+    game.artillery.onOrder = (_team, x, z) => window.setTimeout(() => this.whistle(x, z), Math.max(0, ARTILLERY.delay - 1.5) * 1000);
     game.on((ev, team, data) => {
       if (ev === "unitLost" && team === PLAYER) this.lossDrum();
       if (ev === "boarded" && team === PLAYER) this.clank();
@@ -171,6 +175,28 @@ export class AudioSystem {
     o.connect(og).connect(s.pan);
     o.start(t);
     o.stop(t + 0.65);
+  }
+
+  /** Descending whistle of incoming shells. */
+  private whistle(x: number, z: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxOn) return;
+    const s = this.spatial(x, z, 0.05, 200);
+    if (!s) return;
+    const t = ctx.currentTime;
+    for (const [delay, f0] of [[0, 1500], [0.35, 1350]]) {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f0, t + delay);
+      o.frequency.exponentialRampToValueAtTime(360, t + delay + 1.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + delay);
+      g.gain.exponentialRampToValueAtTime(s.level, t + delay + 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + delay + 1.5);
+      o.connect(g).connect(s.pan);
+      o.start(t + delay);
+      o.stop(t + delay + 1.55);
+    }
   }
 
   /** Soft whoosh of a thrown grenade. */

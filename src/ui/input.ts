@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core";
-import { PLAYER } from "../config";
+import { ARTILLERY, PLAYER } from "../config";
 import type { Barracks } from "../game/barracks";
 import type { Game } from "../game/game";
 import type { Unit } from "../game/unit";
@@ -16,6 +16,10 @@ const DOUBLE_CLICK_MS = 320;
 export class InputController {
   /** False while the main menu is shown. */
   enabled = false;
+  /** Picking a target for an ordered action (skirmish artillery); left click confirms, right click / Esc cancels. */
+  targeting: "artillery" | null = null;
+  /** Called when targeting starts or ends (HUD highlight). */
+  onTargetingChange: (() => void) | null = null;
   private mouseX = -1;
   private mouseY = -1;
   private inWindow = false;
@@ -59,6 +63,15 @@ export class InputController {
   private onDown(e: PointerEvent) {
     if (this.game.result || !this.enabled) return;
     const p = this.local(e);
+    if (this.targeting) {
+      if (e.button === 0) {
+        const at = this.groundAt(p.x, p.y);
+        if (at && this.game.orderArtillery(PLAYER, at.x, at.z)) this.setTargeting(null);
+      } else if (e.button === 2) {
+        this.setTargeting(null);
+      }
+      return;
+    }
     if (e.button === 0) {
       this.dragStart = p;
       this.dragging = false;
@@ -93,7 +106,11 @@ export class InputController {
     if (!this.enabled) return;
     const g = this.game;
     this.keys.add(e.key);
-    if (e.key === "Escape") g.clearSelection();
+    if (e.key === "Escape" && this.targeting) this.setTargeting(null);
+    else if (e.key === "Escape") g.clearSelection();
+    else if ((e.key === "a" || e.key === "A") && !e.ctrlKey && !e.metaKey && g.mode === "skirmish") {
+      this.setTargeting(this.targeting ? null : "artillery");
+    }
     else if (e.key === "s" || e.key === "S") g.commandStop(g.selection);
     else if (e.key === "h" || e.key === "H") {
       const b = g.playerBarracks;
@@ -202,8 +219,26 @@ export class InputController {
     }
   }
 
+  setTargeting(mode: "artillery" | null) {
+    this.targeting = mode;
+    if (!mode) this.overlay.targetPreview = null;
+    this.onTargetingChange?.();
+  }
+
   private updateCursor(x: number, y: number) {
     const g = this.game;
+    if (this.targeting) {
+      // preview of the impact area: red if the strike can be ordered there, grey if not
+      const at = this.groundAt(x, y);
+      this.overlay.targetPreview = at
+        ? { x: at.x, z: at.z, r: ARTILLERY.spread, ok: (!g.canSee || g.canSee(at.x, at.z)) && g.artillery.canOrder(PLAYER) }
+        : null;
+      if (this.cursorKind !== "artillery") {
+        this.cursorKind = "artillery";
+        this.canvas.style.cursor = CURSORS.artillery;
+      }
+      return;
+    }
     const own = this.unitAt(x, y, "own");
     let kind: CursorKind = "arrow";
     if (this.unitAt(x, y, "enemy") || this.buildingAt(x, y)?.team === 1) kind = "attack";

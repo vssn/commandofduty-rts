@@ -11,11 +11,23 @@ npm run build    # Produktionsbuild nach dist/
 
 ## Hauptmenü
 
-Beim Laden erscheint das Hauptmenü; das Gefecht ist pausiert, die Kamera fliegt langsam über die Karte. „Neues Spiel“
-startet die Mission, „Steuerung“ zeigt die Tastenbelegung, „Ton“ schaltet Musik und Effekte. Nach Sieg oder Niederlage
+Beim Laden erscheint das Hauptmenü; das Spiel ist pausiert, die Kamera fliegt langsam über die Karte. „Neues Spiel“
+öffnet die Modusauswahl mit zwei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau) und **Gefecht** –, deren
+Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`). „Steuerung“ zeigt die Tastenbelegung,
+„Ton“ schaltet Musik und Effekte. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
-## Wirtschaft
+## Spielmodus „Gefecht“
+
+Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren und 2 Geländewagen (unbemannt – Soldaten zuweisen)
+vor ihrer Sandsack-Stellung, die Wagen an der Spitze; Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
+Einkommen (Start: 400 Credits). Die Credits bezahlen **Artillerieschläge** (Taste **A** oder Aktions-Kachel, 300
+Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen Sichtbereich liegen –, nach gut 3 Sekunden
+schlagen 7 Granaten gestreut im Radius 6 ein (Flächenschaden, auch für eigene Einheiten). Rechtsklick/Esc bricht ab.
+Verloren hat, wer alle Einheiten oder seine Kaserne verliert. Die KI setzt ebenfalls Artillerie ein, aber nur auf
+Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. Werte: `SKIRMISH` und `ARTILLERY` in `src/config.ts`.
+
+## Wirtschaft (Eroberung)
 
 Credits gibt es nur über **Stellungen** auf der Karte: Vorratsstationen, Unterstände, Schützengräben und Wachtürme.
 Eine Stellung wird eingenommen, indem mindestens ein eigener Soldat 20 Sekunden in ihrem Kreis steht, ohne dass ein
@@ -41,7 +53,10 @@ wird, springt er ab und ist wieder ein normaler Soldat.
 
 Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; gegnerische Einheiten sind nur im aktuellen
 Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 Einheiten weit, der Geländewagen 21.
-Bäume und Gebäude blockieren die Sicht, über Hecken, Felder und Sandsäcke kann man hinwegsehen. Die Kaserne (20) und
+Die Sicht ist höhenabhängig: Jeder Sichtstrahl merkt sich den steilsten „Horizont“ (Hügelkamm, Baumkrone, Dachfirst)
+und nur was darüber hinausragt ist sichtbar. Wer oben steht, blickt über Wälder und Dörfer ins Tal, ein Hügelkamm
+verdeckt dagegen, was dahinter liegt; Einheiten auf Anhöhen sehen außerdem weiter (bis +12, „Weitsicht“ in der
+Auswahl-Anzeige). Über Hecken, Felder und Sandsäcke kann man hinwegsehen. Die Kaserne (20) und
 eingenommene Stellungen (13) haben ungehinderte Rundumsicht. Eigene Einheiten greifen nur Gegner an, die sie sehen.
 Die Darstellung ist ein Post-Processing-Effekt, der die Weltposition jedes Pixels aus dem Tiefenpuffer rekonstruiert.
 
@@ -120,6 +135,7 @@ src/
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
+    artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Flächenschaden inkl. Friendly Fire), Rauch, Brandflecken
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)

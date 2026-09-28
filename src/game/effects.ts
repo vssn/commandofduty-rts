@@ -5,7 +5,7 @@ import type { Game } from "./game";
 import type { Unit } from "./unit";
 
 /** Delay between the start of the throw animation and the grenade leaving the hand. */
-const RELEASE = 0.32;
+const RELEASE = 0.42;
 
 interface Grenade {
   thrower: Unit;

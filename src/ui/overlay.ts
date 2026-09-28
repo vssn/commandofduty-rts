@@ -1,5 +1,5 @@
 import { Engine, Matrix, Vector3, Viewport, type Camera } from "@babylonjs/core";
-import { PLAYER } from "../config";
+import { ARTILLERY, PLAYER } from "../config";
 import { ORDER_LINE_LIFE, type Game } from "../game/game";
 import type { Unit } from "../game/unit";
 
@@ -20,6 +20,8 @@ export class Overlay {
   private readonly tmp = new Vector3();
   private readonly out = new Vector3();
   dragRect: ScreenRect | null = null;
+  /** Impact area preview while choosing an artillery target. */
+  targetPreview: { x: number; z: number; r: number; ok: boolean } | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -196,6 +198,24 @@ export class Overlay {
       }
     }
 
+    // artillery: impact area preview while targeting, countdown over ordered strikes
+    const tp = this.targetPreview;
+    if (tp) this.groundCircle(game, tp.x, tp.z, tp.r, tp.ok ? "255, 80, 60" : "170, 170, 160", true);
+    for (const st of game.artillery.active) {
+      if (sees && st.team !== PLAYER && !sees(st.x, st.z)) continue;
+      const left = ARTILLERY.delay - st.t;
+      const p = this.project(st.x, game.terrain.heightAt(st.x, st.z) + 2.5, st.z);
+      if (!p) continue;
+      ctx.font = `bold ${13 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3 * s;
+      ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
+      ctx.fillStyle = st.team === PLAYER ? "#ffd27a" : "#ff6a50";
+      const label = left > 0 ? `Einschlag in ${left.toFixed(1)} s` : "Einschlag!";
+      ctx.strokeText(label, p.x * s, p.y * s);
+      ctx.fillText(label, p.x * s, p.y * s);
+    }
+
     // drag rectangle
     const r = this.dragRect;
     if (r) {
@@ -207,6 +227,32 @@ export class Overlay {
       ctx.lineWidth = 1 * s;
       ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     }
+  }
+
+  /** Circle on the terrain (follows the hills), optionally filled. */
+  private groundCircle(game: Game, cx: number, cz: number, r: number, rgb: string, fill: boolean) {
+    const ctx = this.ctx, s = this.scale;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      const p = this.project(x, game.terrain.heightAt(x, z) + 0.2, z);
+      if (!p) continue;
+      if (started) ctx.lineTo(p.x * s, p.y * s);
+      else { ctx.moveTo(p.x * s, p.y * s); started = true; }
+    }
+    if (!started) return;
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = `rgba(${rgb}, 0.13)`;
+      ctx.fill();
+    }
+    ctx.setLineDash([8 * s, 5 * s]);
+    ctx.strokeStyle = `rgba(${rgb}, 0.95)`;
+    ctx.lineWidth = 2 * s;
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   private bar(cx: number, cy: number, w: number, h: number, k: number, segments: number, selected: boolean, own: boolean) {

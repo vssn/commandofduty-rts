@@ -60,7 +60,15 @@ const board = cursor(
   20, 20, "copy",
 );
 
-export const CURSORS = { arrow, attack, move, select, board } as const;
+/** Artillery targeting: large dashed impact circle with a red cross. */
+const artillery = cursor(
+  outlined(`<circle cx="20" cy="20" r="16" fill="none" stroke-dasharray="5 3.5" {S}/>`, RED, 2) +
+    outlined(`<path d="M20 9 L20 31 M9 20 L31 20" {S} stroke-linecap="round"/>`, RED, 2.2) +
+    `<circle cx="20" cy="20" r="3" fill="#ffd27a" stroke="#10110b" stroke-width="1.2"/>`,
+  20, 20, "crosshair",
+);
+
+export const CURSORS = { arrow, attack, move, select, board, artillery } as const;
 export type CursorKind = keyof typeof CURSORS;
 
 /** Makes the arrow the default everywhere (sidebar, buttons, minimap). */

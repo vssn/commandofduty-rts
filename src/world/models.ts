@@ -91,7 +91,14 @@ export const SHOULDER_Y = SHOULDER * SOLDIER_SCALE;
  * shoulders, so the weapon can be carried, lowered or aimed and the head can look around; together
  * look up while lying prone) and one `leg` whose origin is the hip joint so it can swing.
  */
-export interface SoldierTemplates { body: Mesh; arms: Mesh; head: Mesh; leg: Mesh; shin: Mesh }
+export interface SoldierTemplates {
+  body: Mesh; arms: Mesh; head: Mesh; leg: Mesh; shin: Mesh;
+  /** Grenadier only: the right (throwing) arm with the grenade, origin at the right shoulder. */
+  throwArm?: Mesh;
+}
+
+/** Right shoulder joint (scaled) where the grenadier's throwing arm pivots. */
+export const THROW_SHOULDER = { x: 0.26 * SOLDIER_SCALE, y: 1.4 * SOLDIER_SCALE };
 
 /** Knee joint relative to the hip joint (scaled), where the shin hangs from the thigh. */
 export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
@@ -169,10 +176,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, grenadier = fal
 
   // ---- upper body: arms, hands, weapon, neck, head, helmet (pivots at the shoulders)
   if (grenadier) {
-    // no rifle: grenade held loosely at the hip in the right hand (the throw swings it overhead)
+    // no rifle: the left arm hangs loosely here; the right arm with the grenade is a separate part
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.14]);
-    arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
-    ball(0.08, 0.25, 0.94, 0.28, [0.3, 0.36, 0.2], 1.25); // grenade
   } else {
     // rifle held at the ready: wooden stock, receiver, magazine, handguard, barrel
     box(0.07, 0.12, 0.38, 0.1, 1.2, 0.14, wood);
@@ -192,6 +197,17 @@ export function createSoldierTemplates(scene: Scene, team: Team, grenadier = fal
     return m;
   };
   const arms = shoulderPart(`soldierArms${team}${grenadier ? "g" : ""}`);
+  let throwArm: Mesh | undefined;
+  if (grenadier) {
+    // throwing arm: grenade held loosely at the hip, pivots at the right shoulder so it can wind up
+    arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
+    ball(0.08, 0.25, 0.94, 0.28, [0.3, 0.36, 0.2], 1.25); // grenade
+    throwArm = merge(`soldierThrowArm${team}`, parts.splice(0));
+    throwArm.position.set(-0.26, -SHOULDER, 0);
+    throwArm.bakeCurrentTransformIntoVertices();
+    throwArm.scaling.setAll(SOLDIER_SCALE);
+    throwArm.bakeCurrentTransformIntoVertices();
+  }
 
   tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin); // neck
   ball(0.135, 0, 1.69, 0.01, skin, 1.15); // head
@@ -229,11 +245,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, grenadier = fal
   shin.scaling.setAll(SOLDIER_SCALE);
   shin.bakeCurrentTransformIntoVertices();
 
-  for (const m of [body, arms, head, leg, shin]) {
+  for (const m of [body, arms, head, leg, shin, throwArm]) {
+    if (!m) continue;
     m.isPickable = false;
     m.isVisible = false;
   }
-  return { body, arms, head, leg, shin };
+  return { body, arms, head, leg, shin, throwArm };
 }
 
 /** Soft round shadow under a unit: dark disc whose vertex alpha fades to the rim. */

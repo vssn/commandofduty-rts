@@ -1,6 +1,6 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
-import { MAP_HALF } from "./config";
+import { MAP_HALF, type GameMode } from "./config";
 import { AudioSystem } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { FogOfWar } from "./game/fog";
@@ -9,6 +9,7 @@ import { Game } from "./game/game";
 import { NavGrid } from "./game/nav";
 import { installDefaultCursor } from "./ui/cursors";
 import { Hud } from "./ui/hud";
+import { renderModeArt } from "./ui/modeArt";
 import { renderPortraits } from "./ui/portraits";
 import { InputController } from "./ui/input";
 import { Minimap } from "./ui/minimap";
@@ -54,16 +55,18 @@ game.cover = new CoverMap(
 // ------------------------------------------------------------------ fog of war
 // trees and buildings block the view; hedges, fields and sandbags can be looked over
 const fog = new FogOfWar(game);
-for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF) fog.blockCircle(t.x, t.z, 1.3);
+// (with their heights: from high ground one can look over them)
+for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF) fog.blockCircle(t.x, t.z, 1.3, t.conifer ? 7 : 6);
 for (const h of layout.houses) {
-  fog.blockRect(h.x, h.z, h.w / 2, h.d / 2, h.rot);
+  fog.blockRect(h.x, h.z, h.w / 2, h.d / 2, h.rot, h.h + h.roofH);
   if (h.church) {
     const tp = toWorld(h.x, h.z, h.rot, 0, h.d / 2 + 1.6);
-    fog.blockRect(tp.x, tp.z, 1.7, 1.7, h.rot);
+    fog.blockRect(tp.x, tp.z, 1.7, 1.7, h.rot, 18);
   }
 }
-for (const b of game.buildings) fog.blockRect(b.x, b.z, 6, 4, b.rot);
-for (const o of layout.outposts) if (o.kind === "workshop") fog.blockRect(o.x, o.z, 3.5, 3, o.rot);
+for (const b of game.buildings) fog.blockRect(b.x, b.z, 6, 4, b.rot, 7);
+for (const o of layout.outposts) if (o.kind === "workshop") fog.blockRect(o.x, o.z, 3.5, 3, o.rot, 5.3);
+game.sightBonusOf = (u) => fog.sightBonus(u);
 game.canSee = (x, z) => fog.isVisible(x, z);
 
 const cam = new RtsCamera(scene, terrain);
@@ -98,7 +101,14 @@ document.getElementById("menu-controls")!.addEventListener("click", () => {
   const help = document.getElementById("menu-help")!;
   help.hidden = !help.hidden;
 });
-document.getElementById("menu-start")!.addEventListener("click", () => {
+hud.bindArtillery(input);
+
+/** Leaves the menu and starts a battle in the chosen mode. */
+function startGame(mode: GameMode) {
+  if (mode === "skirmish") {
+    game.setupSkirmish();
+    document.body.classList.add("mode-skirmish");
+  }
   inMenu = false;
   document.body.classList.remove("in-menu");
   // the sidebar is back, so the 3D view got narrower
@@ -107,9 +117,30 @@ document.getElementById("menu-start")!.addEventListener("click", () => {
   cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
   input.enabled = hud.enabled = true;
   fogRender.strength = 1;
-  hud.toast("Mission beginnt");
-  audio.announce("Mission beginnt", true);
-});
+  hud.toast(mode === "skirmish" ? "Gefecht beginnt – kein Nachschub" : "Mission beginnt");
+  audio.announce(mode === "skirmish" ? "Gefecht beginnt" : "Mission beginnt", true);
+}
+// "Neues Spiel" opens the mode selection: two large cards, "Eroberung" (base building) and "Gefecht"
+const menuMain = document.getElementById("menu-main")!, menuModes = document.getElementById("menu-modes")!;
+const showModes = (on: boolean) => {
+  menuMain.hidden = on;
+  menuModes.hidden = !on;
+  document.body.classList.toggle("menu-choose", on);
+  if (on) document.getElementById("menu-help")!.hidden = true;
+};
+document.getElementById("menu-new")!.addEventListener("click", () => showModes(true));
+document.getElementById("menu-back")!.addEventListener("click", () => showModes(false));
+document.getElementById("mode-conquest")!.addEventListener("click", () => startGame("base"));
+document.getElementById("mode-skirmish")!.addEventListener("click", () => startGame("skirmish"));
+// while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
+let renderingArt = true;
+renderModeArt(engine, scene, game, env.followFocus).finally(() => (renderingArt = false)).then(
+  (art) => {
+    (document.getElementById("mode-img-conquest") as HTMLImageElement).src = art.conquest;
+    (document.getElementById("mode-img-skirmish") as HTMLImageElement).src = art.skirmish;
+  },
+  (e) => console.warn("mode art failed", e),
+);
 
 let dt = 0;
 scene.onBeforeRenderObservable.add(() => {
@@ -119,7 +150,7 @@ scene.onBeforeRenderObservable.add(() => {
     menuT += dt;
     cam.jumpTo(Math.sin(menuT * 0.035) * 60 - 10, Math.cos(menuT * 0.024) * 55 - 5);
     cam.update(dt);
-    env.followFocus(cam.focus);
+    if (!renderingArt) env.followFocus(cam.focus);
     return;
   }
   input.update(dt);
@@ -146,4 +177,4 @@ window.addEventListener("resize", () => {
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
-Object.assign(window, { game, scene, cam, audio, ai });
+Object.assign(window, { game, scene, cam, audio, ai, fog });
