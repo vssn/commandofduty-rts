@@ -1,5 +1,5 @@
 import { Engine, Matrix, Vector3, Viewport, type Camera } from "@babylonjs/core";
-import { ARTILLERY, PLAYER } from "../config";
+import { ARTILLERY, COMMANDOS, PLAYER } from "../config";
 import { ORDER_LINE_LIFE, type Game } from "../game/game";
 import type { Unit } from "../game/unit";
 
@@ -84,10 +84,10 @@ export class Overlay {
       const b = this.projectDev(t.bx, t.by, t.bz);
       if (!b) continue;
       const alpha = 1 - t.t / 0.09;
-      const mg = t.kind === "mg";
+      const mg = t.kind === "mg" || t.kind === "sniper";
       // heavy MG: thicker orange tracer and a bigger star-shaped muzzle flash
       ctx.strokeStyle = mg ? `rgba(255, 170, 70, ${alpha})` : `rgba(255, 228, 140, ${alpha})`;
-      ctx.lineWidth = (mg ? 2.4 : 1.6) * s;
+      ctx.lineWidth = (t.kind === "sniper" ? 3.2 : mg ? 2.4 : 1.6) * s;
       ctx.beginPath();
       ctx.moveTo(ax, ay);
       ctx.lineTo(b.x, b.y);
@@ -214,6 +214,49 @@ export class Overlay {
       const label = left > 0 ? `Einschlag in ${left.toFixed(1)} s` : "Einschlag!";
       ctx.strokeText(label, p.x * s, p.y * s);
       ctx.fillText(label, p.x * s, p.y * s);
+    }
+
+    // commandos: fuse countdowns, planting progress, cloak
+    const cm = game.commandos;
+    if (cm) {
+      const label = (text: string, x: number, y: number, color: string) => {
+        ctx.font = `bold ${12 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3 * s;
+        ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
+        ctx.fillStyle = color;
+        ctx.strokeText(text, x, y);
+        ctx.fillText(text, x, y);
+      };
+      for (const c of cm.planted) {
+        const p = this.project(c.x, game.terrain.heightAt(c.x, c.z) + 2.2, c.z);
+        if (!p) continue;
+        const blink = Math.floor(c.fuse * (c.fuse < 2 ? 6 : 2)) % 2 === 0;
+        ctx.fillStyle = blink ? "#ff3a2a" : "#5a1410";
+        ctx.beginPath();
+        ctx.arc(p.x * s, (p.y + 8) * s, 3.5 * s, 0, Math.PI * 2);
+        ctx.fill();
+        label(`Sprengung in ${Math.max(0, c.fuse).toFixed(1)} s`, p.x * s, p.y * s, "#ff8a5a");
+      }
+      const a = cm.agent;
+      // reach of the scoped rifle around the selected agent (gold when loaded, grey while reloading)
+      if (a.alive && a.selected) this.groundCircle(game, a.x, a.z, COMMANDOS.sniper.range, cm.sniperCooldown > 0 ? "150, 150, 140" : "233, 181, 60", false);
+      if (a.alive && cm.pending && cm.pending.progress > 0) {
+        const p = this.project(a.x, a.y + 3.6, a.z);
+        if (p) {
+          const w = 60 * s, x = p.x * s - w / 2, y = p.y * s;
+          ctx.fillStyle = "rgba(10, 12, 10, 0.8)";
+          ctx.fillRect(x - s, y - s, w + 2 * s, 5 * s + 2 * s);
+          ctx.fillStyle = "#e9b53c";
+          ctx.fillRect(x, y, w * Math.min(1, cm.pending.progress), 5 * s);
+          label("Ladung wird angebracht", p.x * s, y - 4 * s, "#e9d9a0");
+        }
+      }
+      if (a.alive && a.cloaked) {
+        this.groundCircle(game, a.x, a.z, 1.4, "140, 220, 255", false);
+        const p = this.project(a.x, a.y + 3.4, a.z);
+        if (p) label(`Getarnt ${a.cloakT.toFixed(1)} s`, p.x * s, p.y * s, "#9fe3ff");
+      }
     }
 
     // drag rectangle

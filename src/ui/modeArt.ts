@@ -16,7 +16,7 @@ export async function renderModeArt(
   scene: Scene,
   game: Game,
   followSun: (focus: Vector3) => void,
-): Promise<{ conquest: string; skirmish: string }> {
+): Promise<{ conquest: string; skirmish: string; commandos: string }> {
   const cam = new FreeCamera("modeArtCam", Vector3.Zero(), scene);
   cam.minZ = 0.5;
   cam.maxZ = 600;
@@ -70,6 +70,42 @@ export async function renderModeArt(
     0.72,
   );
 
+  // --- Commandos: the agent kneels behind cover with his scoped rifle, a guarded watchtower beyond
+  for (const u of temp) {
+    u.view.dispose();
+    u.ring.dispose();
+    const i = game.units.indexOf(u);
+    if (i >= 0) game.units.splice(i, 1);
+  }
+  temp.length = 0;
+  game.effects.update(60);
+  const tower = game.outposts.find((o) => o.kind === "tower") ?? game.outposts[0];
+  const spot = (lx: number, lz: number) => ({ x: tower.x + lx, z: tower.z + lz });
+  const put = (type: UnitType, team: 0 | 1, p: { x: number; z: number }, heading: number, stance: Unit["stance"] = "stand") => {
+    const f = game.nav.freePoint(p.x, p.z, type === "jeep" ? 1 : 0);
+    const u = game.spawnUnit(type, team, f.x, f.z);
+    u.heading = u.turret = heading;
+    u.stance = stance;
+    temp.push(u);
+    return u;
+  };
+  const guard = put("rifleman", ENEMY, spot(1.5, -2), 2.6);
+  put("rifleman", ENEMY, spot(-2.5, 1), 0.6);
+  put("jeep", ENEMY, spot(6, 3), 1.9);
+  const agent = put("agent", PLAYER, spot(0, -15), 0, "kneel");
+  agent.heading = Math.atan2(guard.x - agent.x, guard.z - agent.z);
+  agent.target = guard;
+  for (let i = 0; i < 12; i++) for (const u of temp) if (!u.vehicle) u.postMove(0.1, game);
+  // over-the-shoulder view: behind and right of the kneeling agent, looking past him at the tower
+  const fx = Math.sin(agent.heading), fz = Math.cos(agent.heading);
+  const eye = { x: agent.x - fx * 3.6 + fz * 1.6, z: agent.z - fz * 3.6 - fx * 1.6 };
+  const look = { x: agent.x + fx * 6, z: agent.z + fz * 6 };
+  const commandos = await shoot(
+    new Vector3(eye.x, agent.y + 2.6, eye.z),
+    new Vector3(look.x, agent.y + 1.1, look.z),
+    0.78,
+  );
+
   // clean up: temporary units, the explosion and the camera
   for (const u of temp) {
     u.view.dispose();
@@ -79,5 +115,5 @@ export async function renderModeArt(
   }
   game.effects.update(60);
   cam.dispose();
-  return { conquest, skirmish };
+  return { conquest, skirmish, commandos };
 }

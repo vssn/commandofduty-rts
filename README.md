@@ -12,7 +12,8 @@ npm run build    # Produktionsbuild nach dist/
 ## Hauptmenü
 
 Beim Laden erscheint das Hauptmenü; das Spiel ist pausiert, die Kamera fliegt langsam über die Karte. „Neues Spiel“
-öffnet die Modusauswahl mit zwei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau) und **Gefecht** –, deren
+öffnet die Modusauswahl mit drei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau), **Gefecht** und
+**Commandos** –, deren
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`). „Steuerung“ zeigt die Tastenbelegung,
 „Ton“ schaltet Musik und Effekte. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
@@ -26,6 +27,22 @@ Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen S
 schlagen 7 Granaten gestreut im Radius 6 ein (Flächenschaden, auch für eigene Einheiten). Rechtsklick/Esc bricht ab.
 Verloren hat, wer alle Einheiten oder seine Kaserne verliert. Die KI setzt ebenfalls Artillerie ein, aber nur auf
 Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. Werte: `SKIRMISH` und `ARTILLERY` in `src/config.ts`.
+
+## Spielmodus „Commandos“
+
+Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an einer anderen, zufälligen Stelle abseits von
+Stellungen und Patrouillen startet (Mantel, Schirmmütze, Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
+nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
+zwischen den Stellungen und bemannte Geländewagen. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
+rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **3 feindliche Stellungen sprengen**; fällt der Agent, ist die Mission gescheitert.
+
+| Fähigkeit | Taste | Wirkung |
+| --- | --- | --- |
+| Scharfschuss | Rechtsklick auf Gegner | Standardangriff: der Agent geht bei Bedarf näher heran und schießt, sobald das Ziel in Reichweite (42) und Sicht ist – Soldat sofort ausgeschaltet, Fahrzeug nur leicht beschädigt; 6 s Nachladen. Kameraden in der Nähe des Opfers suchen die Stelle ab. |
+| Tarnen | X | 7 s unsichtbar – der Feind sieht und beschießt ihn nicht (Schießen beendet die Tarnung); 22 s Abklingzeit |
+| Sprengladung | C | 4 Stück: auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
+
+Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
 
 ## Wirtschaft (Eroberung)
 
@@ -135,6 +152,7 @@ src/
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
+    commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Patrouillen, Alarm
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Flächenschaden inkl. Friendly Fire), Rauch, Brandflecken
     production.ts     Bauschleife für Kaserne und Werkstatt

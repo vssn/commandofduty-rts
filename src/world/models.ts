@@ -103,12 +103,20 @@ export const THROW_SHOULDER = { x: 0.26 * SOLDIER_SCALE, y: 1.4 * SOLDIER_SCALE 
 /** Knee joint relative to the hip joint (scaled), where the shin hangs from the thigh. */
 export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 
-export function createSoldierTemplates(scene: Scene, team: Team, grenadier = false): SoldierTemplates {
+export type SoldierVariant = "rifleman" | "grenadier" | "agent";
+
+export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
+  const kind: SoldierVariant = variant === true ? "grenadier" : variant === false ? "rifleman" : variant;
+  const grenadier = kind === "grenadier";
+  const agent = kind === "agent";
   const player = team === PLAYER;
-  const uni: RGB = player ? [0.24, 0.38, 0.74] : [0.72, 0.2, 0.15];
-  const uniDark: RGB = player ? [0.19, 0.3, 0.6] : [0.58, 0.16, 0.12];
+  // the agent wears a long charcoal coat and a peaked cap instead of the team uniform
+  const coat: RGB = [0.24, 0.24, 0.21];
+  const uni: RGB = agent ? coat : player ? [0.24, 0.38, 0.74] : [0.72, 0.2, 0.15];
+  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : player ? [0.19, 0.3, 0.6] : [0.58, 0.16, 0.12];
   const helmet: RGB = player ? [0.17, 0.27, 0.55] : [0.48, 0.13, 0.1];
-  const pants: RGB = player ? [0.17, 0.21, 0.32] : [0.32, 0.15, 0.12];
+  const pants: RGB = agent ? [0.14, 0.14, 0.13] : player ? [0.17, 0.21, 0.32] : [0.32, 0.15, 0.12];
+  const teamC: RGB = player ? [0.25, 0.45, 0.95] : [0.9, 0.18, 0.12];
   const skin: RGB = [0.86, 0.68, 0.54];
   const leather: RGB = [0.27, 0.2, 0.13];
   const webbing: RGB = [0.5, 0.44, 0.3];
@@ -149,6 +157,80 @@ export function createSoldierTemplates(scene: Scene, team: Team, grenadier = fal
     ball(0.058, h[0], h[1], h[2], skin);
   };
 
+
+  /** Merges the collected parts into a template whose origin is the shoulder joint. */
+  const shoulderPart = (name: string) => {
+    const m = merge(name, parts.splice(0));
+    m.position.y = -SHOULDER;
+    m.bakeCurrentTransformIntoVertices();
+    m.scaling.setAll(SOLDIER_SCALE);
+    m.bakeCurrentTransformIntoVertices();
+    return m;
+  };
+
+  /** Agent: scoped rifle, coat sleeves with team armband, peaked cap, dark trousers and tall boots. */
+  function agentRest(body: Mesh): SoldierTemplates {
+    const metal2: RGB = [0.1, 0.1, 0.11];
+    box(0.07, 0.12, 0.4, 0.1, 1.2, 0.12, wood); // stock
+    box(0.06, 0.08, 0.3, 0.08, 1.24, 0.46, metal2);
+    box(0.07, 0.05, 0.36, 0.08, 1.2, 0.66, wood);
+    box(0.03, 0.03, 0.62, 0.08, 1.26, 1.08, metal2); // long barrel
+    tube(0.08, 1.33, 0.3, 0.08, 1.33, 0.66, 0.035, 0.03, metal2); // scope
+    ball(0.042, 0.08, 1.33, 0.67, [0.35, 0.45, 0.55]); // lens
+    box(0.02, 0.05, 0.02, 0.08, 1.29, 0.38, metal2);
+    box(0.02, 0.05, 0.02, 0.08, 1.29, 0.58, metal2);
+    arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
+    arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
+    tube(-0.265, 1.31, 0.01, -0.255, 1.22, 0.02, 0.08, 0.075, teamC); // armband
+    const arms = shoulderPart(`agentArms${team}`);
+
+    tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin);
+    ball(0.135, 0, 1.69, 0.01, skin, 1.15);
+    box(0.05, 0.07, 0.04, 0, 1.66, 0.14, [0.8, 0.62, 0.5]);
+    const capC: RGB = [0.15, 0.15, 0.14];
+    tube(0, 1.75, -0.01, 0, 1.86, -0.02, 0.15, 0.17, capC, 0.95); // cap crown, slightly wider on top
+    tube(0, 1.74, -0.01, 0, 1.77, -0.01, 0.152, 0.152, [0.08, 0.08, 0.07]); // cap band
+    box(0.24, 0.02, 0.12, 0, 1.745, 0.16, [0.08, 0.08, 0.07]).rotation.x = 0.18; // visor
+    box(0.05, 0.035, 0.01, 0, 1.8, 0.155, [0.75, 0.68, 0.45]); // badge
+    const head = shoulderPart(`agentHead${team}`);
+
+    tube(0, 0, 0, 0, -0.4, 0.02, 0.09, 0.072, pants);
+    ball(0.07, 0, -0.4, 0.02, pants);
+    const leg = merge(`agentThigh${team}`, parts.splice(0));
+    leg.scaling.setAll(SOLDIER_SCALE);
+    leg.bakeCurrentTransformIntoVertices();
+    tube(0, 0, 0, 0, -0.12, -0.01, 0.07, 0.066, pants);
+    tube(0, -0.08, -0.01, 0, -0.3, -0.02, 0.075, 0.072, [0.13, 0.1, 0.08]); // tall boot shaft
+    box(0.13, 0.12, 0.27, 0, -0.33, 0.03, [0.13, 0.1, 0.08]);
+    box(0.14, 0.035, 0.29, 0, -0.385, 0.03, [0.06, 0.05, 0.05]);
+    const shin = merge(`agentShin${team}`, parts.splice(0));
+    shin.scaling.setAll(SOLDIER_SCALE);
+    shin.bakeCurrentTransformIntoVertices();
+    for (const m of [body, arms, head, leg, shin]) {
+      m.isPickable = false;
+      m.isVisible = false;
+    }
+    return { body, arms, head, leg, shin };
+  }
+
+  if (agent) {
+    // ---- agent: long coat flaring over the thighs, belt, lapels, turned-up collar, map case
+    tube(0, 0.86, 0, 0, 1.44, 0, 0.19, 0.24, coat, 0.64);
+    tube(0, 0.36, 0, 0, 0.9, 0, 0.27, 0.2, coat, 0.72); // coat skirt
+    ball(0.085, -0.24, 1.4, 0, coat);
+    ball(0.085, 0.24, 1.4, 0, coat);
+    tube(0, 0.84, 0, 0, 0.92, 0, 0.205, 0.205, uniDark, 0.66); // coat belt
+    box(0.07, 0.06, 0.02, 0, 0.88, 0.14, [0.55, 0.5, 0.4]);
+    for (const x of [-0.08, 0.08]) box(0.07, 0.38, 0.02, x, 1.25, 0.15, uniDark).rotation.z = x > 0 ? -0.25 : 0.25; // lapels
+    for (const y of [1.05, 0.72, 0.56]) box(0.035, 0.035, 0.02, 0.07, y, y > 0.9 ? 0.155 : 0.19, [0.1, 0.1, 0.09]); // buttons
+    tube(0, 1.42, 0, 0, 1.6, 0, 0.12, 0.09, uniDark); // turned-up collar
+    box(0.16, 0.2, 0.06, -0.22, 0.84, 0.08, [0.3, 0.22, 0.14]); // map case
+    const body = merge(`agent${team}`, parts.splice(0));
+    body.scaling.setAll(SOLDIER_SCALE);
+    body.bakeCurrentTransformIntoVertices();
+    return agentRest(body);
+  }
+
   // ---- torso: tapered chest (broad shoulders, narrow waist), pelvis, belt, webbing, kit, pack
   tube(0, 0.86, 0, 0, 1.44, 0, 0.19, 0.25, uni, 0.62);
   ball(0.09, -0.25, 1.4, 0, uni);
@@ -188,14 +270,6 @@ export function createSoldierTemplates(scene: Scene, team: Team, grenadier = fal
     arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
     arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
   }
-  const shoulderPart = (name: string) => {
-    const m = merge(name, parts.splice(0));
-    m.position.y = -SHOULDER;
-    m.bakeCurrentTransformIntoVertices();
-    m.scaling.setAll(SOLDIER_SCALE);
-    m.bakeCurrentTransformIntoVertices();
-    return m;
-  };
   const arms = shoulderPart(`soldierArms${team}${grenadier ? "g" : ""}`);
   let throwArm: Mesh | undefined;
   if (grenadier) {

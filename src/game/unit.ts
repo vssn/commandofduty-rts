@@ -39,6 +39,11 @@ export class Unit implements Target {
   y = 0;
   heading = 0;
   selected = false;
+  /** Seconds of cloak left (commandos agent); cloaked units cannot be seen or targeted by the enemy. */
+  cloakT = 0;
+  get cloaked(): boolean {
+    return this.cloakT > 0;
+  }
   /** Enemy unit currently hidden by the player's fog of war. */
   fogHidden = false;
   /** Set once the death animation has finished and the meshes are gone. */
@@ -155,6 +160,7 @@ export class Unit implements Target {
 
   /** Called when this unit takes fire; idle units shoot back (never at friends). */
   onAttacked(by: Target) {
+    if (this.type === "agent") return; // the agent never gives himself away on his own
     if (by.team === this.team || !this.armed) return;
     if (!this.target && this.path.length === 0 && by.alive) this.target = by;
   }
@@ -207,6 +213,9 @@ export class Unit implements Target {
     }
 
     if (this.target && !this.target.alive) this.loseTarget(g);
+    // a target that just cloaked is lost from sight
+    if (this.target instanceof Unit && this.target.cloaked) this.loseTarget(g);
+    this.cloakT = Math.max(0, this.cloakT - dt);
     if (!this.armed) this.target = null;
 
     if (this.armed && !this.target && (this.path.length === 0 || this.attackMove || this.isVehicle)) {
@@ -367,6 +376,7 @@ export class Unit implements Target {
   }
 
   private fireRifle(t: Target, g: Game) {
+    this.cloakT = 0; // firing gives the position away
     this.cooldown = this.stats.cooldown * (0.85 + Math.random() * 0.3);
     this.recoil = 1;
     const hit = Math.random() < g.hitChance(this, t);

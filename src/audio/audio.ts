@@ -9,6 +9,11 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   noCredits: "Unzureichende Mittel",
   baseAttacked: "Unsere Basis wird angegriffen",
   artillery: "Artillerie unterwegs",
+  spotted: "Wir wurden entdeckt",
+  outpostDestroyed: "Stellung gesprengt",
+  targetEliminated: "Ziel ausgeschaltet",
+  cloaked: "Tarnung aktiv",
+  chargePlanted: "Ladung platziert",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",
@@ -62,7 +67,7 @@ export class AudioSystem {
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
 
-    game.onShot = (x, z, kind) => this.shot(x, z, kind === "mg");
+    game.onShot = (x, z, kind) => (kind === "sniper" ? this.sniperShot(x, z) : this.shot(x, z, kind === "mg"));
     game.onThrow = (x, z) => this.whoosh(x, z);
     game.effects.onExplosion = (x, z, size) => this.explosion(x, z, size);
     // incoming artillery: the whistle starts shortly before the first shell lands
@@ -175,6 +180,28 @@ export class AudioSystem {
     o.connect(og).connect(s.pan);
     o.start(t);
     o.stop(t + 0.65);
+  }
+
+  /** Sharp, louder crack with a short echo for the agent's scoped rifle. */
+  private sniperShot(x: number, z: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxOn) return;
+    for (const [delay, level] of [[0, 0.16], [0.18, 0.04], [0.36, 0.015]]) {
+      const s = this.spatial(x, z, level, 160);
+      if (!s) continue;
+      const t = ctx.currentTime + delay;
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 900;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(s.level, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      src.connect(hp).connect(g).connect(s.pan);
+      src.start(t, Math.random() * 0.5);
+      src.stop(t + 0.25);
+    }
   }
 
   /** Descending whistle of incoming shells. */

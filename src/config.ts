@@ -9,7 +9,7 @@ export type Team = 0 | 1;
 export const PLAYER: Team = 0;
 export const ENEMY: Team = 1;
 
-export type UnitType = "rifleman" | "grenadier" | "jeep";
+export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent";
 
 export interface UnitStats {
   name: string;
@@ -43,6 +43,11 @@ export const UNITS: Record<UnitType, UnitStats> = {
     name: "Geländewagen", plural: "Geländewagen", cost: 400, buildTime: 8, hp: 360, speed: 9, turn: 2.6,
     range: 15, acquire: 17, damage: 13, cooldown: 0.12, radius: 1.8, vehicle: true, mass: 8,
   },
+  /** Commandos only: special agent in coat and cap. Fragile but fast; only fires when ordered. */
+  agent: {
+    name: "Agent", plural: "Agenten", cost: 0, buildTime: 0, hp: 60, speed: 6.6, turn: 12,
+    range: 9, acquire: 0, damage: 14, cooldown: 0.9, radius: 0.5, vehicle: false, mass: 1,
+  },
 };
 
 /**
@@ -58,7 +63,25 @@ export const SLOPE = { uphill: 1.6, downhill: 0.6, min: 0.45, max: 1.2, vehicle:
 export const ROAD = { speed: 1.2, cap: 1.35 };
 
 /** Game modes: "base" = build units at barracks/workshop; "skirmish" = fixed forces, credits buy artillery. */
-export type GameMode = "base" | "skirmish";
+export type GameMode = "base" | "skirmish" | "commandos";
+
+/** Commandos: one agent against an enemy that holds the whole map. */
+export const COMMANDOS = {
+  /** Enemy outposts to blow up for victory. */
+  targets: 3,
+  /** Scharfschuss: kills any soldier outright, only scratches a vehicle. */
+  sniper: { cooldown: 6, range: 42, vehicleDamage: 90 },
+  /** Tarnen: invisible to the enemy for a few seconds (firing breaks it). */
+  cloak: { duration: 7, cooldown: 22 },
+  /** Demolition charges: planted by hand on a vehicle or inside an outpost, then a short fuse. */
+  charges: { count: 4, plantTime: 1.5, fuse: 5, damage: 900, radius: 5.5, reach: 2.6 },
+  /** Enemy forces: guards per outpost, foot patrols (3 men each) and patrolling jeeps. */
+  garrison: 2,
+  patrols: 5,
+  jeepPatrols: 2,
+  /** Enemies within this distance of a spotting unit join the hunt. */
+  alertRadius: 38,
+};
 
 /** Skirmish: starting forces per side (no reinforcements) and starting credits. */
 export const SKIRMISH = {
@@ -83,7 +106,7 @@ export const ARTILLERY = {
 };
 
 /** How far units and structures of the player can see (fog of war). */
-export const SIGHT = { rifleman: 18, grenadier: 17, jeep: 21, barracks: 20, outpost: 13 };
+export const SIGHT = { rifleman: 18, grenadier: 17, jeep: 21, agent: 26, barracks: 20, outpost: 13 };
 
 /** Grenades: area damage that also hurts friendly units (and the thrower) inside the blast. */
 export const GRENADE = {

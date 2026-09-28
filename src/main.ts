@@ -1,8 +1,9 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
-import { MAP_HALF, type GameMode } from "./config";
+import { COMMANDOS, MAP_HALF, type GameMode } from "./config";
 import { AudioSystem } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
+import { CommandosMission } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
 import { CoverMap } from "./game/cover";
 import { Game } from "./game/game";
@@ -102,23 +103,41 @@ document.getElementById("menu-controls")!.addEventListener("click", () => {
   help.hidden = !help.hidden;
 });
 hud.bindArtillery(input);
+hud.bindCommandos(input);
 
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
   if (mode === "skirmish") {
     game.setupSkirmish();
     document.body.classList.add("mode-skirmish");
+  } else if (mode === "commandos") {
+    const mission = new CommandosMission(game);
+    mission.setup();
+    game.commandos = mission;
+    const b = game.playerBarracks; // removed in this mode: nothing blocks the view there any more
+    fog.clearRect(b.x, b.z, 7, 5, b.rot);
+    document.body.classList.add("mode-commandos");
   }
   inMenu = false;
-  document.body.classList.remove("in-menu");
+  document.body.classList.remove("in-menu", "menu-choose");
   // the sidebar is back, so the 3D view got narrower
   engine.resize();
   overlay.resize();
-  cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
+  if (game.commandos) {
+    const a = game.commandos.agent;
+    cam.jumpTo(a.x, a.z + 6);
+  } else {
+    cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
+  }
   input.enabled = hud.enabled = true;
   fogRender.strength = 1;
-  hud.toast(mode === "skirmish" ? "Gefecht beginnt – kein Nachschub" : "Mission beginnt");
-  audio.announce(mode === "skirmish" ? "Gefecht beginnt" : "Mission beginnt", true);
+  const intro = {
+    base: ["Mission beginnt", "Mission beginnt"],
+    skirmish: ["Gefecht beginnt – kein Nachschub", "Gefecht beginnt"],
+    commandos: [`Sprenge ${COMMANDOS.targets} feindliche Stellungen – bleib unentdeckt`, "Agent im Einsatz"],
+  }[mode];
+  hud.toast(intro[0]);
+  audio.announce(intro[1], true);
 }
 // "Neues Spiel" opens the mode selection: two large cards, "Eroberung" (base building) and "Gefecht"
 const menuMain = document.getElementById("menu-main")!, menuModes = document.getElementById("menu-modes")!;
@@ -132,12 +151,14 @@ document.getElementById("menu-new")!.addEventListener("click", () => showModes(t
 document.getElementById("menu-back")!.addEventListener("click", () => showModes(false));
 document.getElementById("mode-conquest")!.addEventListener("click", () => startGame("base"));
 document.getElementById("mode-skirmish")!.addEventListener("click", () => startGame("skirmish"));
+document.getElementById("mode-commandos")!.addEventListener("click", () => startGame("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
 renderModeArt(engine, scene, game, env.followFocus).finally(() => (renderingArt = false)).then(
   (art) => {
     (document.getElementById("mode-img-conquest") as HTMLImageElement).src = art.conquest;
     (document.getElementById("mode-img-skirmish") as HTMLImageElement).src = art.skirmish;
+    (document.getElementById("mode-img-commandos") as HTMLImageElement).src = art.commandos;
   },
   (e) => console.warn("mode art failed", e),
 );
@@ -157,7 +178,8 @@ scene.onBeforeRenderObservable.add(() => {
   cam.update(dt);
   env.followFocus(cam.focus);
   game.update(dt);
-  ai.update(dt);
+  if (game.commandos) game.commandos.update(dt);
+  else ai.update(dt);
   fog.update(dt);
   fogRender.update();
 });

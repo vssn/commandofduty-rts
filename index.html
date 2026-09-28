@@ -57,6 +57,14 @@
                     <span class="mode-tags"><em>Feste Truppen</em><em>Artillerie</em><em>Aufreiben</em></span>
                   </span>
                 </button>
+                <button class="mode-card" id="mode-commandos">
+                  <span class="mode-img"><img id="mode-img-commandos" alt="" draggable="false" /></span>
+                  <span class="mode-body">
+                    <span class="mode-title">Commandos</span>
+                    <span class="mode-text">Ein Spezialagent hinter feindlichen Linien: der Feind hält die ganze Karte und patrouilliert. Sprenge drei Stellungen.</span>
+                    <span class="mode-tags"><em>Agent</em><em>Scharfschuss</em><em>Tarnen</em><em>Sprengladung</em></span>
+                  </span>
+                </button>
               </div>
               <button id="menu-back" class="menu-btn menu-back">‹ Zurück</button>
             </div>
@@ -68,6 +76,7 @@
               <dt>Strg + 1–9</dt><dd>Gruppe speichern, 1–9 abrufen</dd>
               <dt>S · H · M · Esc</dt><dd>Stopp · Basis · Musik · Abwählen</dd>
               <dt>A (Gefecht)</dt><dd>Artillerieschlag: Ziel mit Linksklick wählen</dd>
+              <dt>X · C (Commandos)</dt><dd>Tarnen · Sprengladung; Rechtsklick auf Gegner = Scharfschuss</dd>
             </dl>
             <footer class="menu-foot">v0.1 · Babylon.js</footer>
           </div>
@@ -86,6 +95,47 @@
           <span class="label">Credits</span>
           <span class="credits-value"><span id="income" class="income"></span><span id="credits" class="credits">0</span></span>
         </div>
+
+        <section class="panel mode-commandos-only">
+          <h2>Auftrag</h2>
+          <div id="mission-info" class="mission-info"></div>
+        </section>
+
+        <section class="panel mode-commandos-only">
+          <h2>Agent</h2>
+          <div class="build-grid">
+            <button class="build-btn action-btn" id="btn-cloak">
+              <svg class="portrait" viewBox="0 0 100 100" aria-hidden="true">
+                <defs><linearGradient id="agBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2230" /><stop offset="1" stop-color="#14160f" /></linearGradient></defs>
+                <rect width="100" height="100" fill="url(#agBg)" />
+                <g fill="#9fe3ff" opacity="0.28"><ellipse cx="50" cy="30" rx="11" ry="9" /><path d="M36 42 Q50 36 64 42 L70 86 H30 Z" /></g>
+                <g fill="none" stroke="#9fe3ff" stroke-width="2.2" stroke-dasharray="5 4"><ellipse cx="50" cy="30" rx="11" ry="9" /><path d="M36 42 Q50 36 64 42 L70 86 H30 Z" /></g>
+                <path d="M36 24 H64 L60 20 H40 Z" fill="#9fe3ff" opacity="0.5" />
+              </svg>
+              <span class="wipe"></span>
+              <kbd>X</kbd>
+              <span class="build-cost"></span>
+              <span class="build-name">Tarnen</span>
+              <span class="badge"></span>
+            </button>
+            <button class="build-btn action-btn" id="btn-charge">
+              <svg class="portrait" viewBox="0 0 100 100" aria-hidden="true">
+                <defs><linearGradient id="agBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2230" /><stop offset="1" stop-color="#14160f" /></linearGradient></defs>
+                <rect width="100" height="100" fill="url(#agBg)" />
+                <g stroke="#10110b" stroke-width="2"><rect x="24" y="48" width="52" height="16" rx="3" fill="#8a4a2a" /><rect x="24" y="64" width="52" height="16" rx="3" fill="#7a3e22" /></g>
+                <rect x="44" y="52" width="14" height="24" fill="#2a2d22" stroke="#10110b" stroke-width="1.5" />
+                <circle cx="51" cy="58" r="2.5" fill="#ff3a2a" />
+                <path d="M58 52 Q64 34 78 26" fill="none" stroke="#e3d49a" stroke-width="2.5" />
+                <circle cx="79" cy="25" r="5" fill="#ffcf4a" /><circle cx="79" cy="25" r="9" fill="#ff8a2a" opacity="0.3" />
+              </svg>
+              <span class="wipe"></span>
+              <kbd>C</kbd>
+              <span class="build-cost"></span>
+              <span class="build-name">Sprengladung</span>
+              <span class="badge"></span>
+            </button>
+          </div>
+        </section>
 
         <section class="panel mode-skirmish-only">
           <h2>Aktionen</h2>

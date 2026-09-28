@@ -1,4 +1,4 @@
-import { ARTILLERY, PLAYER, UNITS, type UnitType } from "../config";
+import { ARTILLERY, COMMANDOS, PLAYER, UNITS, type UnitType } from "../config";
 import type { AudioSystem } from "../audio/audio";
 import type { Game, GameEvent } from "../game/game";
 import type { InputController } from "./input";
@@ -12,7 +12,13 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   boarded: "MG-Schütze an Bord",
   artillery: "Artillerie angefordert",
   enemyArtillery: "Feindlicher Artilleriebeschuss!",
-  noSight: "Ziel nicht im Sichtbereich",
+  noSight: "Ziel nicht im Sichtbereich oder zu weit",
+  spotted: "Entdeckt! Feind rückt an",
+  outpostDestroyed: "Stellung gesprengt",
+  targetEliminated: "Ziel ausgeschaltet",
+  cloaked: "Tarnung aktiv",
+  chargePlanted: "Ladung platziert – in Deckung!",
+  notReady: "Noch nicht bereit",
 };
 
 function $(id: string): HTMLElement {
@@ -113,6 +119,50 @@ export class Hud {
     input.onTargetingChange = () => btn.classList.toggle("armed", !!input.targeting);
   }
 
+  private agentTiles: { cloak: HTMLElement; charge: HTMLElement } | null = null;
+  private lastMission = "";
+
+  /** Commandos: the agent's special abilities (cloak, demolition charge); the sniper shot is his standard attack. */
+  bindCommandos(input: InputController) {
+    const tiles = { cloak: $("btn-cloak"), charge: $("btn-charge") };
+    this.agentTiles = tiles;
+    tiles.cloak.title = `Tarnen (X): ${COMMANDOS.cloak.duration} s unsichtbar für den Feind · Schießen beendet die Tarnung`;
+    tiles.charge.title = "Sprengladung (C): auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen";
+    tiles.cloak.addEventListener("click", () => this.enabled && this.game.commandos?.cloak());
+    tiles.charge.addEventListener("click", () => this.enabled && input.setTargeting(input.targeting === "charge" ? null : "charge"));
+    const prev = input.onTargetingChange;
+    input.onTargetingChange = () => {
+      prev?.();
+      tiles.charge.classList.toggle("armed", input.targeting === "charge");
+    };
+  }
+
+  private updateCommandos() {
+    const m = this.game.commandos, t = this.agentTiles;
+    if (!m || !t) return;
+    const wipe = (el: HTMLElement, left: number, total: number, badge: string) => {
+      el.style.setProperty("--p", String(total > 0 ? 1 - Math.max(0, left) / total : 1));
+      el.classList.toggle("cooling", left > 0);
+      const b = el.querySelector<HTMLElement>(".badge")!;
+      if (b.textContent !== badge) b.textContent = badge;
+      b.classList.toggle("show", badge !== "");
+    };
+    const cloakLeft = m.agent.cloaked ? 0 : m.cloakCooldown;
+    wipe(t.cloak, cloakLeft, COMMANDOS.cloak.cooldown, m.agent.cloaked ? `${Math.ceil(m.agent.cloakT)}` : cloakLeft > 0 ? String(Math.ceil(cloakLeft)) : "");
+    t.cloak.classList.toggle("armed", m.agent.cloaked);
+    wipe(t.charge, m.charges > 0 ? 0 : 1, 1, String(m.charges));
+    t.charge.classList.toggle("poor", m.charges <= 0);
+
+    const pips = Array.from({ length: COMMANDOS.targets }, (_, i) => `<span class="pip${i < m.destroyedOutposts ? " done" : ""}"></span>`).join("");
+    const html = `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>` +
+      `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
+      `<span>Scharfschuss (Rechtsklick auf Gegner): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
+    if (html !== this.lastMission) {
+      $("mission-info").innerHTML = html;
+      this.lastMission = html;
+    }
+  }
+
   /** Puts the rendered unit portraits into the build buttons. */
   setPortraits(images: Record<UnitType, string>) {
     for (const b of this.buttons) b.btn.querySelector<HTMLImageElement>(".portrait")!.src = images[b.type];
@@ -126,10 +176,13 @@ export class Hud {
 
   private showBanner(result: "win" | "lose") {
     $("banner-title").textContent = result === "win" ? "Sieg" : "Niederlage";
-    const skirmish = this.game.mode === "skirmish";
-    $("banner-text").textContent = result === "win"
-      ? skirmish ? "Der Feind wurde aufgerieben." : "Die feindliche Kaserne wurde zerstört."
-      : skirmish ? "Unsere Truppen wurden aufgerieben." : "Unsere Kaserne ist gefallen.";
+    const mode = this.game.mode;
+    const texts = {
+      base: ["Die feindliche Kaserne wurde zerstört.", "Unsere Kaserne ist gefallen."],
+      skirmish: ["Der Feind wurde aufgerieben.", "Unsere Truppen wurden aufgerieben."],
+      commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern.", "Der Agent ist gefallen. Auftrag gescheitert."],
+    };
+    $("banner-text").textContent = texts[mode][result === "win" ? 0 : 1];
     this.banner.classList.add("show", result);
   }
 
@@ -184,11 +237,13 @@ export class Hud {
       this.artilleryBtn.classList.toggle("poor", credits < ARTILLERY.cost);
     }
 
+    this.updateCommandos();
+
     let info = "Keine Auswahl";
     if (g.selection.size) {
       const units = [...g.selection];
       const hp = (units.reduce((s, u) => s + u.hp / u.maxHp, 0) / units.length) * 100;
-      const byType = (["rifleman", "grenadier", "jeep"] as UnitType[])
+      const byType = (["agent", "rifleman", "grenadier", "jeep"] as UnitType[])
         .map((t) => [t, units.filter((u) => u.type === t)] as const)
         .filter(([, list]) => list.length);
       const title = byType.map(([t, list]) => `${list.length} ${list.length === 1 ? UNITS[t].name : UNITS[t].plural}`).join(", ");

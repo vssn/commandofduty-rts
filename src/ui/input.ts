@@ -1,11 +1,13 @@
 import type { Scene } from "@babylonjs/core";
-import { ARTILLERY, PLAYER } from "../config";
+import { ARTILLERY, COMMANDOS, PLAYER } from "../config";
 import type { Barracks } from "../game/barracks";
 import type { Game } from "../game/game";
 import type { Unit } from "../game/unit";
 import type { Overlay } from "./overlay";
 import { CURSORS, type CursorKind } from "./cursors";
 import type { RtsCamera } from "./rtsCamera";
+
+export type Targeting = "artillery" | "sniper" | "charge";
 
 const EDGE = 14;
 const DRAG_THRESHOLD = 6;
@@ -17,7 +19,7 @@ export class InputController {
   /** False while the main menu is shown. */
   enabled = false;
   /** Picking a target for an ordered action (skirmish artillery); left click confirms, right click / Esc cancels. */
-  targeting: "artillery" | null = null;
+  targeting: Targeting | null = null;
   /** Called when targeting starts or ends (HUD highlight). */
   onTargetingChange: (() => void) | null = null;
   private mouseX = -1;
@@ -65,8 +67,7 @@ export class InputController {
     const p = this.local(e);
     if (this.targeting) {
       if (e.button === 0) {
-        const at = this.groundAt(p.x, p.y);
-        if (at && this.game.orderArtillery(PLAYER, at.x, at.z)) this.setTargeting(null);
+        if (this.confirmTarget(p.x, p.y)) this.setTargeting(null);
       } else if (e.button === 2) {
         this.setTargeting(null);
       }
@@ -110,6 +111,10 @@ export class InputController {
     else if (e.key === "Escape") g.clearSelection();
     else if ((e.key === "a" || e.key === "A") && !e.ctrlKey && !e.metaKey && g.mode === "skirmish") {
       this.setTargeting(this.targeting ? null : "artillery");
+    } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === "x") g.commandos?.cloak();
+      else if (k === "c") this.setTargeting(this.targeting === "charge" ? null : "charge");
     }
     else if (e.key === "s" || e.key === "S") g.commandStop(g.selection);
     else if (e.key === "h" || e.key === "H") {
@@ -219,7 +224,27 @@ export class InputController {
     }
   }
 
-  setTargeting(mode: "artillery" | null) {
+  /** Carries out the pending targeted action at the cursor; true if it was issued. */
+  private confirmTarget(x: number, y: number): boolean {
+    const g = this.game, m = g.commandos;
+    if (this.targeting === "artillery") {
+      const at = this.groundAt(x, y);
+      return !!at && g.orderArtillery(PLAYER, at.x, at.z);
+    }
+    if (!m) return false;
+    if (this.targeting === "sniper") {
+      const enemy = this.unitAt(x, y, "enemy");
+      return !!enemy && m.snipe(enemy);
+    }
+    // charge: an enemy jeep under the cursor, otherwise an enemy outpost at the clicked spot
+    const enemy = this.unitAt(x, y, "enemy");
+    if (enemy?.isVehicle) return m.orderCharge(enemy);
+    const at = this.groundAt(x, y);
+    const post = at && m.outpostAt(at.x, at.z);
+    return !!post && m.orderCharge(post);
+  }
+
+  setTargeting(mode: Targeting | null) {
     this.targeting = mode;
     if (!mode) this.overlay.targetPreview = null;
     this.onTargetingChange?.();
@@ -228,14 +253,25 @@ export class InputController {
   private updateCursor(x: number, y: number) {
     const g = this.game;
     if (this.targeting) {
-      // preview of the impact area: red if the strike can be ordered there, grey if not
-      const at = this.groundAt(x, y);
-      this.overlay.targetPreview = at
-        ? { x: at.x, z: at.z, r: ARTILLERY.spread, ok: (!g.canSee || g.canSee(at.x, at.z)) && g.artillery.canOrder(PLAYER) }
-        : null;
-      if (this.cursorKind !== "artillery") {
-        this.cursorKind = "artillery";
-        this.canvas.style.cursor = CURSORS.artillery;
+      let kind: CursorKind = "artillery";
+      if (this.targeting === "artillery") {
+        // preview of the impact area: red if the strike can be ordered there, grey if not
+        const at = this.groundAt(x, y);
+        this.overlay.targetPreview = at
+          ? { x: at.x, z: at.z, r: ARTILLERY.spread, ok: (!g.canSee || g.canSee(at.x, at.z)) && g.artillery.canOrder(PLAYER) }
+          : null;
+      } else if (this.targeting === "sniper" && g.commandos) {
+        // the rifle's reach around the agent
+        const a = g.commandos.agent;
+        this.overlay.targetPreview = { x: a.x, z: a.z, r: COMMANDOS.sniper.range, ok: g.commandos.sniperCooldown <= 0 };
+        kind = this.unitAt(x, y, "enemy") ? "attack" : "arrow";
+      } else {
+        this.overlay.targetPreview = null;
+        kind = "charge";
+      }
+      if (this.cursorKind !== kind) {
+        this.cursorKind = kind;
+        this.canvas.style.cursor = CURSORS[kind];
       }
       return;
     }

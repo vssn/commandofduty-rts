@@ -144,7 +144,7 @@ export class Minimap {
     }
     for (const o of this.game.outposts) {
       const [x, y] = this.map(o.x, o.z);
-      ctx.fillStyle = o.owner === null ? "#e8e4d4" : o.owner === PLAYER ? "#4d8dff" : "#ff4436";
+      ctx.fillStyle = o.destroyed ? "#3a3a36" : o.owner === null ? "#e8e4d4" : o.owner === PLAYER ? "#4d8dff" : "#ff4436";
       ctx.strokeStyle = "#000";
       ctx.lineWidth = 2;
       ctx.beginPath();

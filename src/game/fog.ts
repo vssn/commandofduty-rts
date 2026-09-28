@@ -10,7 +10,7 @@ const LEVEL = { hidden: 0, explored: 0.45, visible: 1 };
 /** Units always see their immediate surroundings, even from inside a wood. */
 const NEAR = 2.5;
 /** Eye height above the ground (the jeep's gunner stands high on the bed). */
-const EYE: Record<UnitType, number> = { rifleman: 2.3, grenadier: 2.3, jeep: 3.2 };
+const EYE: Record<UnitType, number> = { rifleman: 2.3, grenadier: 2.3, jeep: 3.2, agent: 2.6 };
 /** A cell counts as seen if a point this high above its ground is in view (a soldier's chest). */
 const TARGET = 1.4;
 /** Small bumps of the terrain don't hide anything. */
@@ -65,6 +65,18 @@ export class FogOfWar {
       const l = toLocal(x, z, rot, cx, cz);
       return Math.abs(l.x) <= hw && Math.abs(l.z) <= hd;
     });
+  }
+
+  /** Removes sight blockers in a rotated rectangle. */
+  clearRect(x: number, z: number, hw: number, hd: number, rot: number) {
+    const i0 = Math.max(0, Math.floor(x - Math.hypot(hw, hd) + MAP_HALF)), i1 = Math.min(this.bn - 1, Math.floor(x + Math.hypot(hw, hd) + MAP_HALF));
+    const j0 = Math.max(0, Math.floor(z - Math.hypot(hw, hd) + MAP_HALF)), j1 = Math.min(this.bn - 1, Math.floor(z + Math.hypot(hw, hd) + MAP_HALF));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const l = toLocal(x, z, rot, i + 0.5 - MAP_HALF, j + 0.5 - MAP_HALF);
+        if (Math.abs(l.x) <= hw && Math.abs(l.z) <= hd) this.blockers[i + j * this.bn] = 0;
+      }
+    }
   }
 
   private eachBlockerCell(x: number, z: number, ext: number, height: number, inside: (cx: number, cz: number) => boolean) {

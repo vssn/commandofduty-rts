@@ -68,7 +68,16 @@ const artillery = cursor(
   20, 20, "crosshair",
 );
 
-export const CURSORS = { arrow, attack, move, select, board, artillery } as const;
+/** Demolition charge: a small bundle with a lit fuse. */
+const charge = cursor(
+  `<rect x="11" y="18" width="18" height="12" rx="2" fill="#8a4a2a" stroke="#10110b" stroke-width="2"/>` +
+    `<path d="M11 22 H29 M11 26 H29" stroke="#5a2e18" stroke-width="1.5"/>` +
+    outlined(`<path d="M24 18 Q26 11 32 8" fill="none" {S} stroke-linecap="round"/>`, KHAKI, 1.8) +
+    `<circle cx="32.5" cy="7.5" r="3" fill="#ffcf4a" stroke="#ff5a2a" stroke-width="1.5"/>`,
+  20, 24, "crosshair",
+);
+
+export const CURSORS = { arrow, attack, move, select, board, artillery, charge } as const;
 export type CursorKind = keyof typeof CURSORS;
 
 /** Makes the arrow the default everywhere (sidebar, buttons, minimap). */

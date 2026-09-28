@@ -418,7 +418,7 @@ svg.portrait { visibility: visible; }
 /* ---------------------------------------------------------------- mode selection */
 
 #menu-main[hidden], #menu-modes[hidden] { display: none; }
-body.menu-choose .menu-panel { max-width: 860px; }
+body.menu-choose .menu-panel { max-width: 1080px; }
 body.menu-choose .menu-brief { display: none; }
 .menu-sub {
   margin: 22px 0 14px;
@@ -428,7 +428,7 @@ body.menu-choose .menu-brief { display: none; }
   text-transform: uppercase;
   color: var(--accent);
 }
-.mode-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.mode-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .mode-card {
   display: flex;
   flex-direction: column;
@@ -444,6 +444,7 @@ body.menu-choose .menu-brief { display: none; }
   animation: menu-in 0.6s ease both;
 }
 .mode-card:nth-child(2) { animation-delay: 0.08s; }
+.mode-card:nth-child(3) { animation-delay: 0.16s; }
 .mode-card:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--accent); }
 .mode-img { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: linear-gradient(180deg, #2b3a52, #121510); }
 .mode-img::after {
@@ -479,4 +480,18 @@ body.menu-choose .menu-brief { display: none; }
   background: rgba(233, 181, 60, 0.08);
 }
 .menu-back { margin-top: 18px; min-width: 0; }
-@media (max-width: 760px) { .mode-cards { grid-template-columns: 1fr; } }
+@media (max-width: 980px) { .mode-cards { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .mode-cards { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- commandos */
+
+body:not(.mode-commandos) .mode-commandos-only { display: none; }
+body.mode-commandos .mode-base-only, body.mode-commandos .credits-row { display: none; }
+.ability-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ability-grid .build-name { font-size: 10px; letter-spacing: 0.02em; padding: 2px 2px 3px; }
+.ability-grid kbd { font-size: 9px; }
+.mission-info { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.mission-info strong { color: var(--text); font-size: 15px; }
+.mission-info .pips { display: flex; gap: 5px; }
+.mission-info .pip { width: 16px; height: 16px; border: 1px solid #6b3a2a; background: #2a1510; transform: rotate(45deg); }
+.mission-info .pip.done { background: #ff6a3a; border-color: #ffb08a; }

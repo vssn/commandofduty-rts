@@ -36,6 +36,9 @@ export class Outpost {
   readonly rot: number;
   private readonly ring: Mesh;
   private readonly flag: Mesh;
+  private readonly model: Mesh;
+  /** Blown up (commandos): no owner, no income, cannot be taken any more. */
+  destroyed = false;
   private flagT = Math.random() * 10;
 
   constructor(spec: OutpostSpec, scene: Scene, terrain: Terrain, shadows: ShadowGenerator) {
@@ -53,6 +56,7 @@ export class Outpost {
     this.rally = toWorld(spec.x, spec.z, spec.rot, 0, 13);
 
     const mesh = createOutpostMesh(scene, spec.kind);
+    this.model = mesh;
     mesh.position.set(spec.x, this.y, spec.z);
     mesh.rotation.y = spec.rot;
     mesh.freezeWorldMatrix();
@@ -77,6 +81,15 @@ export class Outpost {
     this.applyOwnerColors();
   }
 
+  /** Hands the outpost to `team` without a capture (and without the capture bonus). */
+  seize(team: Team) {
+    this.owner = team;
+    this.bonusPaid = true;
+    this.capturer = null;
+    this.progress = 0;
+    this.applyOwnerColors();
+  }
+
   private applyOwnerColors() {
     const c = this.owner === null ? NEUTRAL : TEAM_COLOR[this.owner];
     this.flag.material = mat(this.flag.getScene(), c);
@@ -84,13 +97,30 @@ export class Outpost {
     (this.ring.material as { zOffset: number }).zOffset = -8;
   }
 
+  /** Blows the outpost up: the structure collapses into a low heap, the flag and area ring go. */
+  destroy() {
+    this.destroyed = true;
+    this.owner = null;
+    this.capturer = null;
+    this.progress = 0;
+    this.production?.clear();
+    this.model.unfreezeWorldMatrix();
+    this.model.scaling.set(1.1, 0.22, 1.1);
+    this.model.rotation.z = 0.08;
+    this.model.position.y -= 0.15;
+    this.flag.setEnabled(false);
+    this.ring.setEnabled(false);
+  }
+
   update(dt: number, g: Game) {
+    if (this.destroyed) return;
     this.flagT += dt;
     if (this.production && this.owner !== null) this.production.update(dt, g, this.owner, this.spawn, this.rally);
     this.flag.rotation.y = Math.sin(this.flagT * 2.1) * 0.25;
 
     const inside: [number, number] = [0, 0];
-    const occupants = g.units.filter((u) => u.alive && !u.vehicle && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
+    // the commandos agent is a saboteur: he neither takes outposts nor stops the enemy from holding them
+    const occupants = g.units.filter((u) => u.alive && !u.vehicle && u.type !== "agent" && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
     for (const u of occupants) inside[u.team]++;
     this.contested = inside[0] > 0 && inside[1] > 0;
     if (this.contested) return; // enemy soldier present: progress is frozen, nobody heals

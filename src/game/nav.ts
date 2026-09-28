@@ -47,6 +47,16 @@ export class NavGrid {
     }
   }
 
+  /** Frees a rotated rectangle again on both layers (e.g. a building removed for a game mode). */
+  clearRect(cx: number, cz: number, hw: number, hd: number, rot: number) {
+    for (const layer of [0, 1] as NavLayer[]) {
+      this.eachCell(cx, cz, Math.hypot(hw, hd), (x, z, k) => {
+        const l = toLocal(cx, cz, rot, x, z);
+        if (Math.abs(l.x) < hw && Math.abs(l.z) < hd) this.blocked[layer][k] = 0;
+      });
+    }
+  }
+
   /** Blocks a round obstacle such as a tree trunk, on both layers. */
   blockCircle(cx: number, cz: number, r: number) {
     for (const layer of [0, 1] as NavLayer[]) {

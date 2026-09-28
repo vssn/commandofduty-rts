@@ -8,6 +8,7 @@ import {
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
 import { Artillery } from "./artillery";
+import type { CommandosMission } from "./commandos";
 import { Barracks } from "./barracks";
 import { CoverMap } from "./cover";
 import { Effects } from "./effects";
@@ -17,7 +18,7 @@ import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
 import { JeepView, SoldierView, type JeepTemplates, type SoldierTemplates, type UnitView } from "./views";
 
-export type WeaponKind = "rifle" | "mg";
+export type WeaponKind = "rifle" | "mg" | "sniper";
 export interface Tracer { ax: number; ay: number; az: number; bx: number; by: number; bz: number; t: number; hit: boolean; kind: WeaponKind }
 interface Marker { outer: InstancedMesh; inner: InstancedMesh; t: number }
 /** Short-lived line from a unit to the point (or target) it was just ordered to. */
@@ -25,7 +26,8 @@ export interface OrderLine { unit: Unit; x: number; z: number; target: Target | 
 
 export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
-  | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight";
+  | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
+  | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady";
 export interface GameEventData { outpost: Outpost; bonus: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -47,10 +49,12 @@ export class Game {
   readonly enemyBarracks: Barracks;
   readonly effects: Effects;
   readonly artillery: Artillery;
+  /** Commandos mission state (agent, charges, patrols) when that mode is played. */
+  commandos: CommandosMission | null = null;
   /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
   mode: GameMode = "base";
 
-  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier", SoldierTemplates>>;
+  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent", SoldierTemplates>>;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
   private readonly ringTpl: Mesh;
   private readonly blobTpl: Mesh;
@@ -88,6 +92,7 @@ export class Game {
     const soldiers = (team: Team) => ({
       rifleman: createSoldierTemplates(scene, team),
       grenadier: createSoldierTemplates(scene, team, true),
+      agent: createSoldierTemplates(scene, team, "agent"),
     });
     this.soldierTpl = { 0: soldiers(PLAYER), 1: soldiers(ENEMY) };
     const wheel = createJeepWheel(scene);
@@ -388,6 +393,11 @@ export class Game {
   commandAttack(units: Iterable<Unit>, t: Target) {
     for (const u of units) {
       if (!u.alive || !u.armed) continue;
+      if (u.type === "agent" && this.commandos && t instanceof Unit) {
+        this.commandos.attack(t); // the agent's standard attack is the sniper shot
+        this.addOrderLine(u, t.x, t.z, t);
+        continue;
+      }
       u.orderAttack(t);
       this.addOrderLine(u, t.x, t.z, t);
     }
@@ -474,7 +484,7 @@ export class Game {
     // the player's units only engage what they can actually see
     const sees = u.team === PLAYER ? this.canSee : null;
     for (const o of this.units) {
-      if (!o.alive || o.vehicle || o.team === u.team) continue;
+      if (!o.alive || o.vehicle || o.team === u.team || o.cloaked) continue;
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
       if (d < bd) { bd = d; best = o; }
