@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Command of Duty</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" rel="stylesheet" />
+  </head>
+  <body class="in-menu">
+    <div id="app">
+      <main id="viewport">
+        <canvas id="game"></canvas>
+        <canvas id="overlay"></canvas>
+        <div id="toast"></div>
+        <div id="banner">
+          <div class="banner-box">
+            <h1 id="banner-title"></h1>
+            <p id="banner-text"></p>
+            <button id="restart">Zum Hauptmenü</button>
+          </div>
+        </div>
+        <div id="loading">Lade Einsatzgebiet …</div>
+
+        <div id="menu">
+          <div class="menu-panel">
+            <div class="menu-kicker">Herbstoffensive · Einsatzgebiet Hügelland</div>
+            <h1 class="menu-title">Command<span>of Duty</span></h1>
+            <p class="menu-brief">
+              Der Feind hat sich im Norden festgesetzt. Nimm Stellungen und Werkstätten ein, stelle
+              Soldaten, Grenadiere und Geländewagen auf und zerstöre die feindliche Kaserne.
+            </p>
+            <nav class="menu-nav">
+              <button id="menu-start" class="menu-btn primary">Neues Spiel</button>
+              <button id="menu-controls" class="menu-btn">Steuerung</button>
+              <button id="menu-sound" class="menu-btn">Ton: an</button>
+            </nav>
+            <dl id="menu-help" class="menu-help" hidden>
+              <dt>Linksklick / Ziehen</dt><dd>Einheiten auswählen</dd>
+              <dt>Rechtsklick</dt><dd>Bewegen, angreifen, Jeep besetzen</dd>
+              <dt>Q · W · E</dt><dd>Soldat · Grenadier · Geländewagen bauen</dd>
+              <dt>Bildschirmrand, Pfeile</dt><dd>Karte scrollen, Mausrad zoomt</dd>
+              <dt>Strg + 1–9</dt><dd>Gruppe speichern, 1–9 abrufen</dd>
+              <dt>S · H · M · Esc</dt><dd>Stopp · Basis · Musik · Abwählen</dd>
+            </dl>
+            <footer class="menu-foot">v0.1 · Babylon.js</footer>
+          </div>
+        </div>
+      </main>
+
+      <aside id="sidebar">
+        <header class="brand">
+          <span class="brand-title">Command</span>
+          <span class="brand-sub">of Duty</span>
+        </header>
+
+        <div class="radar"><canvas id="minimap" width="440" height="440"></canvas></div>
+
+        <div class="credits-row">
+          <span class="label">Credits</span>
+          <span class="credits-value"><span id="income" class="income"></span><span id="credits" class="credits">0</span></span>
+        </div>
+
+        <section class="panel">
+          <h2>Kaserne</h2>
+          <div class="build-grid">
+          <button class="build-btn" data-unit="rifleman">
+            <img class="portrait" alt="" draggable="false" />
+            <span class="wipe"></span>
+            <kbd>Q</kbd>
+            <span class="build-cost">$100</span>
+            <span class="build-name">Soldat</span>
+            <span class="badge"></span>
+          </button>
+          <button class="build-btn" data-unit="grenadier">
+            <img class="portrait" alt="" draggable="false" />
+            <span class="wipe"></span>
+            <kbd>W</kbd>
+            <span class="build-cost">$150</span>
+            <span class="build-name">Grenadier</span>
+            <span class="badge"></span>
+          </button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Werkstatt</h2>
+          <div class="build-grid">
+          <button class="build-btn" data-unit="jeep">
+            <img class="portrait" alt="" draggable="false" />
+            <span class="wipe"></span>
+            <kbd>E</kbd>
+            <span class="build-cost">$400</span>
+            <span class="build-name">Geländewagen</span>
+            <span class="build-note">Werkstatt einnehmen</span>
+            <span class="badge"></span>
+          </button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Auswahl</h2>
+          <div id="selection-info">Keine Auswahl</div>
+        </section>
+
+        <section class="panel">
+          <h2>Audio</h2>
+          <div class="toggles">
+            <button id="btn-music" class="toggle" title="Taste M">Musik</button>
+            <button id="btn-sfx" class="toggle">Effekte &amp; Funk</button>
+          </div>
+        </section>
+
+        <section class="panel help">
+          <h2>Steuerung</h2>
+          <dl>
+            <dt>Linksklick</dt><dd>Auswählen / abwählen</dd>
+            <dt>Links ziehen</dt><dd>Gruppe auswählen</dd>
+            <dt>Rechtsklick</dt><dd>Bewegen / Angreifen</dd>
+            <dt>Doppelklick</dt><dd>Alle sichtbaren Soldaten</dd>
+            <dt>Bildschirmrand</dt><dd>Karte scrollen</dd>
+            <dt>Mausrad</dt><dd>Zoom</dd>
+            <dt>Strg + 1–9</dt><dd>Gruppe speichern</dd>
+            <dt>Soldat → Jeep</dt><dd>Rechtsklick auf eigenen Jeep: wird MG-Schütze</dd>
+            <dt>Stellungen</dt><dd>20 s halten, heilt eigene Soldaten</dd>
+            <dt>M</dt><dd>Musik an / aus</dd>
+            <dt>S · H · Esc</dt><dd>Stopp · Basis · Abwählen</dd>
+          </dl>
+        </section>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
