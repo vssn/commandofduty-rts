@@ -20,7 +20,7 @@ führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
 ## Spielmodus „Gefecht“
 
-Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren und 2 Geländewagen (unbemannt – Soldaten zuweisen)
+Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren, 2 Sanitätern und 3 Geländewagen (bereits mit MG-Schütze besetzt)
 vor ihrer Sandsack-Stellung, die Wagen an der Spitze; Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
 Einkommen (Start: 400 Credits). Die Credits bezahlen **Artillerieschläge** (Taste **A** oder Aktions-Kachel, 300
 Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen Sichtbereich liegen –, nach gut 3 Sekunden
@@ -34,13 +34,13 @@ Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an ein
 Stellungen und Patrouillen startet (Mantel, Schirmmütze, Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
 nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
 zwischen den Stellungen und bemannte Geländewagen. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
-rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **3 feindliche Stellungen sprengen**; fällt der Agent, ist die Mission gescheitert.
+rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen**; fällt der Agent, ist die Mission gescheitert.
 
 | Fähigkeit | Taste | Wirkung |
 | --- | --- | --- |
 | Scharfschuss | Rechtsklick auf Gegner | Standardangriff: der Agent geht bei Bedarf näher heran und schießt, sobald das Ziel in Reichweite (42) und Sicht ist – Soldat sofort ausgeschaltet, Fahrzeug nur leicht beschädigt; 6 s Nachladen. Kameraden in der Nähe des Opfers suchen die Stelle ab. |
 | Tarnen | X | 7 s unsichtbar – der Feind sieht und beschießt ihn nicht (Schießen beendet die Tarnung); 22 s Abklingzeit |
-| Sprengladung | C | 4 Stück: auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
+| Sprengladung | C | 8 Stück: auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
 
 **Suche und Fährten:** Stirbt ein Gegner, durchsuchen Kameraden in Hörweite (20) sofort die Umgebung; wer später an der
 Leiche vorbeikommt (9), löst die Suche ebenfalls aus. Suchende kämmen das Gebiet in wachsenden Kreisen ab (bis 24),
@@ -53,11 +53,11 @@ Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
 
 ## Wirtschaft (Eroberung)
 
-Credits gibt es nur über **Stellungen** auf der Karte: Vorratsstationen, Unterstände, Schützengräben und Wachtürme.
+Credits gibt es nur über **Stellungen** auf der Karte: Feldlazarette, Unterstände, Schützengräben, Wachtürme und Werkstätten.
 Eine Stellung wird eingenommen, indem mindestens ein eigener Soldat 20 Sekunden in ihrem Kreis steht, ohne dass ein
 feindlicher Soldat im Bereich ist (sonst pausiert der Fortschritt). Die erste Einnahme einer Stellung bringt einmalig
 +200 Credits, danach liefert sie laufendes Einkommen (1,5–3 Credits/s). Eigene Soldaten in einer eigenen,
-nicht umkämpften Stellung heilen langsam (1 HP/s). Werte stehen in `src/config.ts`.
+nicht umkämpften Stellung heilen langsam (1 HP/s, im Feldlazarett 3 HP/s). Werte stehen in `src/config.ts`.
 
 ## Einheiten
 
@@ -66,6 +66,15 @@ nicht umkämpften Stellung heilen langsam (1 HP/s). Werte stehen in `src/config.
 | Soldat | 100 | Kaserne (Q) | Gewehr, kniet/liegt im Gefecht |
 | Grenadier | 150 | Kaserne (W) | wirft Granaten mit Streuung; Explosion (Radius 3,2) trifft **alle** Einheiten, auch eigene |
 | Geländewagen | 400 | Werkstatt (E) | schnell, gepanzert (Gewehre machen halben Schaden); Fahrer ist immer an Bord |
+| Sanitäter | 150 | Feldlazarett (R) | unbewaffnet, etwas langsamer als ein Soldat; behandelt einen Verwundeten nach dem anderen |
+
+Das **Feldlazarett** ist die linke Stellung nahe der eigenen Basis (Zelt mit rotem Kreuz, Tragen, Sanitätskisten); wer
+es hält, kann dort Sanitäter ausbilden. Ein Sanitäter kniet sich neben einen verwundeten Soldaten und heilt ihn über
+mehrere Sekunden (9 HP/s) – aber nur, solange der Patient nicht kämpft (3 s ohne Schuss oder Treffer) und nicht läuft.
+Untätige Sanitäter kümmern sich von selbst um Verwundete in der Nähe (Radius 16), zuerst um die schwer Verletzten;
+per Rechtsklick auf einen verwundeten eigenen Soldaten (Kreuz-Cursor) schickt man sie gezielt hin. Fahrzeuge
+werden nicht behandelt, Sanitäter steigen nicht als Schütze auf. Wer gerade behandelt wird, zeigt ein pulsierendes
+rotes Kreuz neben der Lebensleiste.
 
 Neben jeder Basis steht eine **Werkstatt**, die wie jede andere Stellung eingenommen wird. Nur wer sie hält, kann
 Geländewagen bauen. Ein Jeep schießt erst, wenn ihm ein Soldat zugewiesen wird (Soldaten auswählen, Rechtsklick auf den
@@ -123,7 +132,7 @@ Der Ton startet mit dem ersten Klick (Autoplay-Richtlinie der Browser). Taste **
 
 Auf Touch-Geräten (automatisch erkannt) gibt es keinen Rechtsklick: **Tippen** auf eine eigene Einheit wählt aus
 (zweimal tippen: alle sichtbaren gleichen Typs), **mit Auswahl tippen** ist der Befehl (Bewegen, Angreifen/Scharfschuss,
-Sammelpunkt; eigener unbemannter Jeep = Schütze zuweisen), **ziehen** zieht einen Auswahlrahmen. Eine Touch-Leiste
+Sammelpunkt; eigener unbemannter Jeep = Schütze zuweisen; mit Sanitätern auf Verwundeten = behandeln), **ziehen** zieht einen Auswahlrahmen. Eine Touch-Leiste
 bietet Pfeiltasten zum Scrollen (halten), Zoom +/−, Stopp, Abwählen und Abbrechen (Zielauswahl); die Minimap verschiebt
 wie gewohnt den Ausschnitt. Auf kleinen Bildschirmen wird die Seitenleiste auf Minimap, Credits und Kacheln reduziert,
 das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
@@ -135,7 +144,7 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 | Linksklick | Einheit / Kaserne auswählen, ins Leere klicken wählt ab (Shift: hinzufügen/entfernen) |
 | Links ziehen | Gruppe per Rahmen auswählen |
 | Doppelklick auf Soldat | alle sichtbaren eigenen Soldaten auswählen |
-| Rechtsklick | Bewegen, auf Gegner: Angreifen, mit ausgewählter Kaserne: Sammelpunkt setzen |
+| Rechtsklick | Bewegen, auf Gegner: Angreifen, mit Sanitätern auf verwundeten Soldaten: behandeln, mit ausgewählter Kaserne: Sammelpunkt setzen |
 | Bildschirmrand / Pfeiltasten | Karte scrollen |
 | Mausrad | Zoom |
 | Minimap | Links: Kamera springen, Rechts: Einheiten dorthin schicken |
@@ -160,7 +169,7 @@ src/
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
-    models.ts         Soldat (detailliert), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
+    models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
   game/
     game.ts           Spielzustand, Auswahl, Befehle, Kampf, Separation
@@ -171,7 +180,7 @@ src/
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
     commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Patrouillen, Alarm
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
-    effects.ts        Granaten, Explosionen (Flächenschaden inkl. Friendly Fire), Rauch, Brandflecken
+    effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)
@@ -186,5 +195,5 @@ src/
     overlay.ts        2D-Overlay: Lebensbalken, Mündungsfeuer, Auswahlrahmen, Sammelpunkt
     minimap.ts        Radar
     hud.ts            Seitenleiste, Meldungen, Sieg/Niederlage
-    portraits.ts      rendert die Einheiten-Porträts der Bau-Kacheln aus den 3D-Modellen
+    portraits.ts      rendert die Einheiten-Porträts der Bau-Kacheln und die Commandos-Fähigkeitskacheln (getarnter Agent, Sprengladung auf Jeep) aus den 3D-Modellen
 ```

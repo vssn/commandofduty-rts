@@ -9,7 +9,7 @@ export type Team = 0 | 1;
 export const PLAYER: Team = 0;
 export const ENEMY: Team = 1;
 
-export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent";
+export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic";
 
 export interface UnitStats {
   name: string;
@@ -43,11 +43,31 @@ export const UNITS: Record<UnitType, UnitStats> = {
     name: "Geländewagen", plural: "Geländewagen", cost: 400, buildTime: 8, hp: 360, speed: 9, turn: 2.6,
     range: 15, acquire: 17, damage: 13, cooldown: 0.12, radius: 1.8, vehicle: true, mass: 8,
   },
+  /** Unarmed; heals one wounded soldier at a time (see MEDIC). Built at a field hospital. */
+  medic: {
+    name: "Sanitäter", plural: "Sanitäter", cost: 150, buildTime: 5, hp: 80, speed: 3.8, turn: 11,
+    range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 0.55, vehicle: false, mass: 1,
+  },
   /** Commandos only: special agent in coat and cap. Fragile but fast; only fires when ordered. */
   agent: {
     name: "Agent", plural: "Agenten", cost: 0, buildTime: 0, hp: 60, speed: 6.6, turn: 12,
     range: 9, acquire: 0, damage: 14, cooldown: 0.9, radius: 0.5, vehicle: false, mass: 1,
   },
+};
+
+/**
+ * Medic: treats one wounded soldier at a time, kneeling next to him. Only soldiers that are out of
+ * combat (no shots fired or taken for `calm` seconds) can be treated; vehicles cannot.
+ */
+export const MEDIC = {
+  /** HP restored per second while treating. */
+  rate: 9,
+  /** Distance at which treatment is possible. */
+  reach: 1.6,
+  /** Idle medics look for wounded comrades within this radius on their own. */
+  search: 16,
+  /** Seconds without firing or taking fire before a soldier counts as out of combat. */
+  calm: 3,
 };
 
 /**
@@ -68,13 +88,13 @@ export type GameMode = "base" | "skirmish" | "commandos";
 /** Commandos: one agent against an enemy that holds the whole map. */
 export const COMMANDOS = {
   /** Enemy outposts to blow up for victory. */
-  targets: 3,
+  targets: 6,
   /** Scharfschuss: kills any soldier outright, only scratches a vehicle. */
   sniper: { cooldown: 6, range: 42, vehicleDamage: 90 },
   /** Tarnen: invisible to the enemy for a few seconds (firing breaks it). */
   cloak: { duration: 7, cooldown: 22 },
   /** Demolition charges: planted by hand on a vehicle or inside an outpost, then a short fuse. */
-  charges: { count: 4, plantTime: 1.5, fuse: 5, damage: 900, radius: 5.5, reach: 2.6 },
+  charges: { count: 8, plantTime: 1.5, fuse: 5, damage: 900, radius: 5.5, reach: 2.6 },
   /** Enemy forces: guards per outpost, foot patrols (3 men each) and patrolling jeeps. */
   garrison: 2,
   patrols: 5,
@@ -83,9 +103,10 @@ export const COMMANDOS = {
   alertRadius: 38,
 };
 
-/** Skirmish: starting forces per side (no reinforcements) and starting credits. */
+/** Skirmish: starting forces per side (no reinforcements) and starting credits. Every jeep starts
+ *  with its own MG gunner aboard (extra riflemen on top of the listed infantry). */
 export const SKIRMISH = {
-  forces: { rifleman: 10, grenadier: 5, jeep: 2 } as Record<UnitType, number>,
+  forces: { rifleman: 10, grenadier: 5, medic: 2, jeep: 3 } as Record<Exclude<UnitType, "agent">, number>,
   credits: 400,
 };
 
@@ -106,7 +127,7 @@ export const ARTILLERY = {
 };
 
 /** How far units and structures of the player can see (fog of war). */
-export const SIGHT = { rifleman: 18, grenadier: 17, jeep: 21, agent: 26, barracks: 20, outpost: 13 };
+export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, barracks: 20, outpost: 13 };
 
 /** Grenades: area damage that also hurts friendly units (and the thrower) inside the blast. */
 export const GRENADE = {
@@ -155,11 +176,12 @@ export const COMBAT = {
 export const BARRACKS_HP = 1500;
 export const START_CREDITS = 1000;
 
-export type OutpostKind = "depot" | "bunker" | "trench" | "tower" | "workshop";
+export type OutpostKind = "hospital" | "bunker" | "trench" | "tower" | "workshop";
 
 /** Capturable map objects. Income is credits per second while owned. */
 export const OUTPOSTS: Record<OutpostKind, { name: string; income: number; radius: number }> = {
-  depot: { name: "Vorratsstation", income: 3, radius: 7.5 },
+  /** Field hospital: the owner can train medics here, and soldiers inside recover faster. */
+  hospital: { name: "Feldlazarett", income: 3, radius: 7.5 },
   bunker: { name: "Unterstand", income: 2, radius: 6.5 },
   trench: { name: "Schützengraben", income: 1.5, radius: 8 },
   tower: { name: "Wachturm", income: 2, radius: 6.5 },
@@ -175,3 +197,5 @@ export const CAPTURE_BONUS = 200;
 export const CAPTURE_TIME = 20;
 /** HP per second regained by soldiers standing in an outpost their team owns (not while contested). */
 export const OUTPOST_HEAL = 1;
+/** Healing rate inside a field hospital instead of OUTPOST_HEAL. */
+export const HOSPITAL_HEAL = 3;

@@ -1,5 +1,5 @@
 import type { InstancedMesh } from "@babylonjs/core";
-import { COMBAT, GRENADE, JEEP_MG, ROAD, SLOPE, UNITS, type Team, type UnitStats, type UnitType } from "../config";
+import { COMBAT, GRENADE, JEEP_MG, MEDIC, ROAD, SLOPE, UNITS, type Team, type UnitStats, type UnitType } from "../config";
 import type { V2 } from "../world/layout";
 import type { Game } from "./game";
 import type { NavLayer } from "./nav";
@@ -84,6 +84,14 @@ export class Unit implements Target {
   vehicle: Unit | null = null;
   /** Jeep this soldier is walking to in order to climb aboard. */
   boarding: Unit | null = null;
+  /** Seconds since this unit last fired or took fire; see `inCombat`. */
+  combatT = 99;
+
+  // --- medic
+  /** Wounded soldier this medic is walking to or treating. */
+  patient: Unit | null = null;
+  /** True while the medic is treating his patient this frame (kneels, hands forward). */
+  healing = false;
 
   private cooldown = Math.random() * 0.5;
   private scanT = 0;
@@ -117,13 +125,28 @@ export class Unit implements Target {
     return this.stats.vehicle ? 1 : 0;
   }
 
-  /** Can currently shoot (a jeep needs a gunner). */
+  /** Can currently shoot (a jeep needs a gunner, the medic never can). */
   get armed(): boolean {
+    if (this.type === "medic") return false;
     return this.type !== "jeep" || !!this.gunner;
+  }
+
+  /** Fired or took fire in the last few seconds: a medic cannot treat him now. */
+  get inCombat(): boolean {
+    return this.combatT < MEDIC.calm;
+  }
+
+  /** Medic: walk to `patient` and treat him until he is healed. */
+  orderHeal(patient: Unit, g: Game) {
+    this.stop();
+    this.patient = patient;
+    this.path = g.nav.findPath(this.x, this.z, patient.x, patient.z, this.navLayer);
+    this.repathT = 0.8;
   }
 
   orderMove(p: V2, attackMove: boolean, g: Game) {
     this.target = null;
+    this.patient = null;
     this.explicitTarget = false;
     this.boarding = null;
     this.attackMove = attackMove;
@@ -153,6 +176,7 @@ export class Unit implements Target {
 
   stop() {
     this.target = null;
+    this.patient = null;
     this.explicitTarget = false;
     this.attackMove = false;
     this.boarding = null;
@@ -205,12 +229,17 @@ export class Unit implements Target {
     this.px = this.x;
     this.pz = this.z;
     this.cooldown -= dt;
+    this.combatT += dt;
     this.throwT += dt;
     this.recoil = Math.max(0, this.recoil - dt * 6);
     this.firing = false;
 
     if (this.boarding) {
       this.updateBoarding(dt, g);
+      return;
+    }
+    if (this.type === "medic") {
+      this.updateMedic(dt, g);
       return;
     }
 
@@ -262,6 +291,7 @@ export class Unit implements Target {
         moving = this.path.length > 0;
       }
     }
+    if (fighting) this.combatT = 0;
     if (this.isVehicle && !fighting) this.aimTurret(this.x + Math.sin(this.heading), this.z + Math.cos(this.heading), dt);
 
     if (moving && this.path.length) this.followPath(dt, g);
@@ -307,6 +337,53 @@ export class Unit implements Target {
       this.x += (dx / dist) * step;
       this.z += (dz / dist) * step;
       this.faceTowards(wp.x, wp.z, dt);
+    }
+  }
+
+  /**
+   * Medic: walks to his patient and treats him while kneeling beside him, but only while the patient
+   * is out of combat. Idle medics look after wounded comrades nearby on their own.
+   */
+  private updateMedic(dt: number, g: Game) {
+    this.healing = false;
+    let p = this.patient;
+    if (p && (!p.alive || p.vehicle || p.hp >= p.maxHp)) p = this.patient = null;
+    if (!p && this.path.length === 0) {
+      this.scanT -= dt;
+      if (this.scanT <= 0) {
+        this.scanT = 0.5 + Math.random() * 0.3;
+        p = this.patient = g.findPatient(this, MEDIC.search);
+      }
+    }
+    let moving = this.path.length > 0;
+    if (p) {
+      const d = Math.hypot(p.x - this.x, p.z - this.z);
+      if (d > MEDIC.reach + p.radius) {
+        this.repathT -= dt;
+        if (this.repathT <= 0 || this.path.length === 0) {
+          this.repathT = 0.8;
+          this.path = g.nav.findPath(this.x, this.z, p.x, p.z, this.navLayer);
+        }
+        moving = true;
+      } else {
+        this.path = [];
+        moving = false;
+        this.faceTowards(p.x, p.z, dt);
+        if (!p.inCombat && !p.moving) {
+          p.hp = Math.min(p.maxHp, p.hp + MEDIC.rate * dt);
+          this.healing = true;
+        }
+      }
+    }
+    if (moving && this.path.length) this.followPath(dt, g);
+    this.moving = moving && this.path.length > 0;
+    if (!this.moving) this.grade = 0;
+    if (this.healing) {
+      // kneels beside the patient while treating him
+      this.stance = "kneel";
+      this.calmT = 0;
+    } else {
+      this.updateStance(dt, false, this.moving);
     }
   }
 
@@ -425,5 +502,6 @@ export class Unit implements Target {
     this.path = [];
     this.target = null;
     this.boarding = null;
+    this.patient = null;
   }
 }

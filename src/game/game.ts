@@ -3,7 +3,7 @@ import { ARTILLERY, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameM
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
 import { toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
-  createAuraTemplate, createBarracksMesh, createBlobShadow, createJeepBody, createJeepGun, createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM,
+  createAuraTemplate, createBarracksMesh, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun, createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM,
 } from "../world/models";
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
@@ -57,7 +57,7 @@ export class Game {
   /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
   mode: GameMode = "base";
 
-  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent", SoldierTemplates>>;
+  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent" | "medic", SoldierTemplates>>;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
   private readonly ringTpl: Mesh;
   private readonly blobTpl: Mesh;
@@ -96,6 +96,7 @@ export class Game {
       rifleman: createSoldierTemplates(scene, team),
       grenadier: createSoldierTemplates(scene, team, true),
       agent: createSoldierTemplates(scene, team, "agent"),
+      medic: createSoldierTemplates(scene, team, "medic"),
     });
     this.soldierTpl = { 0: soldiers(PLAYER), 1: soldiers(ENEMY) };
     const wheel = createJeepWheel(scene);
@@ -121,7 +122,11 @@ export class Game {
     for (const o of layout.outposts) {
       if (o.kind === "tower" || o.kind === "bunker") nav.blockRect(o.x, o.z, 2, 2, o.rot, 0.5);
       if (o.kind === "workshop") nav.blockRect(o.x, o.z, 3.5, 3, o.rot, 0.6);
-      if (o.kind === "depot") nav.blockRect(o.x, o.z, 3, 2.3, o.rot, 0.2);
+      if (o.kind === "hospital") {
+        // the ward tent is solid; cots and crates around it are not
+        const c = toWorld(o.x, o.z, o.rot, HOSPITAL_TENT.x, HOSPITAL_TENT.z);
+        nav.blockRect(c.x, c.z, HOSPITAL_TENT.hw, HOSPITAL_TENT.hd, o.rot, 0.2);
+      }
     }
     this.auraTpl = [0.45, 0.65, 0.9].map((a, i) => createAuraTemplate(scene, `aura${i + 1}`, a));
     this.ringTpl = createRing(scene, "selRing", 1.9, 0.12, [0.4, 1, 0.45]);
@@ -223,11 +228,11 @@ export class Game {
     this.clearSelection();
     for (const b of this.buildings) {
       this.credits[b.team] = SKIRMISH.credits;
-      // rows in front of the gate: riflemen closest to the base, grenadiers behind them and the
+      // rows in front of the gate: medics closest to the base, then riflemen, grenadiers and the
       // jeeps at the head of the column, facing the enemy (5 infantry per row)
       const rows: { type: UnitType; count: number; depth: number; spacing: number }[] = [];
       let depth = 14;
-      for (const type of ["rifleman", "grenadier", "jeep"] as UnitType[]) {
+      for (const type of ["medic", "rifleman", "grenadier", "jeep"] as const) {
         const count = SKIRMISH.forces[type];
         const perRow = type === "jeep" ? count : 5;
         if (type === "jeep") depth += 2.5; // room for the longer vehicles
@@ -242,14 +247,24 @@ export class Game {
           const free = this.nav.freePoint(p.x, p.z, r.type === "jeep" ? 1 : 0);
           const u = this.spawnUnit(r.type, b.team, free.x, free.z);
           u.heading = u.turret = b.rot;
+          if (r.type === "jeep") {
+            // jeeps roll out manned: a rifleman already sits behind the MG
+            const g = this.spawnUnit("rifleman", b.team, free.x, free.z);
+            g.heading = b.rot;
+            g.vehicle = u;
+            g.ring.isVisible = false;
+            g.view.setEnabled(false);
+            u.gunner = g;
+          }
         }
       }
     }
   }
 
-  /** Skirmish ends when one side has no units left (or loses its barracks, handled in damage()). */
+  /** Skirmish ends when one side has no fighting units left (or loses its barracks, handled in damage()). */
   private checkSkirmishEnd() {
-    const alive = (team: Team) => this.units.some((u) => u.alive && u.team === team);
+    // unarmed medics alone cannot hold the field
+    const alive = (team: Team) => this.units.some((u) => u.alive && u.team === team && u.type !== "medic");
     if (!alive(PLAYER)) {
       this.result = "lose";
       this.emit("lose", PLAYER);
@@ -276,17 +291,28 @@ export class Game {
 
   // ---------------------------------------------------------------- production
 
-  /** Workshop owned by `team` (the one closest to its base), if any. */
-  workshopOf(team: Team): Outpost | null {
+  /** Outpost of `kind` owned by `team` (the one closest to its base), if any. */
+  private facilityOf(kind: "workshop" | "hospital", team: Team): Outpost | null {
     const base = team === PLAYER ? this.playerBarracks : this.enemyBarracks;
     return this.outposts
-      .filter((o) => o.kind === "workshop" && o.owner === team)
+      .filter((o) => o.kind === kind && o.owner === team)
       .sort((a, b) => Math.hypot(a.x - base.x, a.z - base.z) - Math.hypot(b.x - base.x, b.z - base.z))[0] ?? null;
+  }
+
+  /** Workshop owned by `team` (builds jeeps), if any. */
+  workshopOf(team: Team): Outpost | null {
+    return this.facilityOf("workshop", team);
+  }
+
+  /** Field hospital owned by `team` (trains medics), if any. */
+  hospitalOf(team: Team): Outpost | null {
+    return this.facilityOf("hospital", team);
   }
 
   /** Production facility for a unit type, or null if the team has none. */
   producerFor(type: UnitType, team: Team): Production | null {
     if (type === "jeep") return this.workshopOf(team)?.production ?? null;
+    if (type === "medic") return this.hospitalOf(team)?.production ?? null;
     const b = team === PLAYER ? this.playerBarracks : this.enemyBarracks;
     return b.alive ? b.production : null;
   }
@@ -417,7 +443,7 @@ export class Game {
     if (this.units.some((u) => u.boarding === jeep && u.alive)) return false;
     let best: Unit | null = null, bd = Infinity;
     for (const u of units) {
-      if (!u.alive || u.isVehicle || u.vehicle || u.team !== jeep.team) continue;
+      if (!u.alive || u.isVehicle || u.vehicle || !u.armed || u.team !== jeep.team) continue;
       const d = Math.hypot(u.x - jeep.x, u.z - jeep.z);
       if (d < bd) { bd = d; best = u; }
     }
@@ -456,6 +482,37 @@ export class Game {
     s.heading = jeep.heading;
     s.view.setEnabled(true);
     s.postMove(0, this);
+  }
+
+  /** Sends the medics among `units` to treat `patient`; false if there is nothing to do. */
+  commandHeal(units: Iterable<Unit>, patient: Unit): boolean {
+    if (!patient.alive || patient.isVehicle || patient.vehicle || patient.hp >= patient.maxHp) return false;
+    const medics = [...units].filter((u) => u.alive && u.type === "medic" && u !== patient && u.team === patient.team);
+    if (!medics.length) return false;
+    for (const m of medics) {
+      m.orderHeal(patient, this);
+      this.addOrderLine(m, patient.x, patient.z, patient);
+    }
+    this.addMarker(patient.x, patient.z, false);
+    this.emit("commanded", PLAYER);
+    return true;
+  }
+
+  /**
+   * Wounded comrade within `range` of the medic who is out of combat, preferring the badly hurt
+   * and those nobody else is treating yet.
+   */
+  findPatient(medic: Unit, range: number): Unit | null {
+    let best: Unit | null = null, bestScore = Infinity;
+    for (const u of this.units) {
+      if (u === medic || !u.alive || u.team !== medic.team || u.isVehicle || u.vehicle || u.hp >= u.maxHp || u.inCombat) continue;
+      const d = Math.hypot(u.x - medic.x, u.z - medic.z);
+      if (d > range) continue;
+      const taken = this.units.some((o) => o !== medic && o.alive && o.patient === u);
+      const score = d + (u.hp / u.maxHp) * 10 + (taken ? 30 : 0);
+      if (score < bestScore) { bestScore = score; best = u; }
+    }
+    return best;
   }
 
   commandStop(units: Iterable<Unit>) {
@@ -616,6 +673,7 @@ export class Game {
     if (!t.alive) return;
     t.hp -= amount;
     if (t instanceof Unit) {
+      t.combatT = 0;
       if (t.team === PLAYER) {
         if (this.sinceUnitsHit > 30) this.emit("unitsAttacked", PLAYER);
         this.sinceUnitsHit = 0;

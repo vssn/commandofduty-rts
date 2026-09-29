@@ -2,6 +2,7 @@ import { ARTILLERY, COMMANDOS, PLAYER, UNITS, type UnitType } from "../config";
 import type { AudioSystem } from "../audio/audio";
 import type { Game, GameEvent } from "../game/game";
 import type { InputController } from "./input";
+import type { PortraitImages } from "./portraits";
 
 const MESSAGES: Partial<Record<GameEvent, string>> = {
   unitReady: "Einheit bereit",
@@ -67,7 +68,7 @@ export class Hud {
       });
       return { type, btn, badge: btn.querySelector<HTMLElement>(".badge")!, count: -1, p: -1 };
     });
-    const hotkeys: Record<string, UnitType> = { q: "rifleman", w: "grenadier", e: "jeep" };
+    const hotkeys: Record<string, UnitType> = { q: "rifleman", w: "grenadier", e: "jeep", r: "medic" };
     window.addEventListener("keydown", (e) => {
       const type = hotkeys[e.key.toLowerCase()];
       if (type && this.enabled && !game.result && !e.ctrlKey && !e.metaKey) this.train(type, e.shiftKey ? 5 : 1);
@@ -92,6 +93,7 @@ export class Hud {
   private train(type: UnitType, count: number) {
     if (!this.game.producerFor(type, PLAYER)) {
       if (type === "jeep") this.toast("Zuerst eine Werkstatt einnehmen");
+      if (type === "medic") this.toast("Zuerst das Feldlazarett einnehmen");
       return;
     }
     let queued = 0;
@@ -166,8 +168,19 @@ export class Hud {
   }
 
   /** Puts the rendered unit portraits into the build buttons. */
-  setPortraits(images: Record<UnitType, string>) {
+  setPortraits(images: PortraitImages) {
     for (const b of this.buttons) b.btn.querySelector<HTMLImageElement>(".portrait")!.src = images[b.type];
+    // commandos abilities: rendered art replaces the drawn fallback icons
+    for (const id of ["cloak", "charge"] as const) {
+      const btn = $(`btn-${id}`);
+      const old = btn.querySelector(".portrait")!;
+      const img = document.createElement("img");
+      img.className = "portrait";
+      img.alt = "";
+      img.draggable = false;
+      img.src = images[id];
+      old.replaceWith(img);
+    }
   }
 
   toast(msg: string) {
@@ -245,7 +258,7 @@ export class Hud {
     if (g.selection.size) {
       const units = [...g.selection];
       const hp = (units.reduce((s, u) => s + u.hp / u.maxHp, 0) / units.length) * 100;
-      const byType = (["agent", "rifleman", "grenadier", "jeep"] as UnitType[])
+      const byType = (["agent", "rifleman", "grenadier", "medic", "jeep"] as UnitType[])
         .map((t) => [t, units.filter((u) => u.type === t)] as const)
         .filter(([, list]) => list.length);
       const title = byType.map(([t, list]) => `${list.length} ${list.length === 1 ? UNITS[t].name : UNITS[t].plural}`).join(", ");
@@ -254,6 +267,11 @@ export class Hud {
       if (jeeps.length) {
         const manned = jeeps.filter((j) => j.gunner).length;
         info += `<span class="hint">${manned === jeeps.length ? "MG besetzt" : manned === 0 ? "Kein MG-Schütze – Soldat zuweisen (Rechtsklick auf Jeep)" : `MG besetzt: ${manned} von ${jeeps.length}`}</span>`;
+      }
+      const medics = units.filter((u) => u.type === "medic");
+      if (medics.length) {
+        const busy = medics.filter((m) => m.healing).length;
+        info += `<span class="hint">${busy ? `Behandelt gerade: ${busy}` : "Rechtsklick auf verwundeten Soldaten: behandeln"}</span>`;
       }
       // combat bonuses: for a single soldier its own, for groups how many enjoy each one
       const counts = { cover: 0, outpost: 0, low: 0, high: 0, far: 0 };

@@ -180,6 +180,9 @@ export class Overlay {
       const p = this.projectDev(b.x, b.y + 10, b.z);
       if (p) this.bar(p.x, p.y, 90 * s, 6 * s, b.hp / b.maxHp, 10, b.selected, b.team === PLAYER);
     }
+    // soldiers under treatment get a pulsing red cross next to their bar
+    const treated = new Set(game.units.filter((m) => m.alive && m.healing && m.patient).map((m) => m.patient!));
+    const pulse = 0.75 + Math.sin(performance.now() * 0.006) * 0.25;
     for (const u of game.units) {
       if (!u.alive || u.vehicle || u.fogHidden) continue;
       const jeep = u.isVehicle;
@@ -195,6 +198,16 @@ export class Overlay {
         ctx.lineWidth = s;
         ctx.fillRect(x, y, 5 * s, 5 * s);
         ctx.strokeRect(x, y, 5 * s, 5 * s);
+      }
+      if (treated.has(u)) {
+        const c = 8 * s * pulse, x = p.x - w / 2 - 9 * s, y = p.y;
+        ctx.fillStyle = "rgba(10, 12, 10, 0.75)";
+        ctx.fillRect(x - c / 2 - s, y - c / 2 - s, c + 2 * s, c + 2 * s);
+        ctx.fillStyle = "#f4f1e6";
+        ctx.fillRect(x - c / 2, y - c / 2, c, c);
+        ctx.fillStyle = "#d0201a";
+        ctx.fillRect(x - c * 0.35, y - c * 0.11, c * 0.7, c * 0.22);
+        ctx.fillRect(x - c * 0.11, y - c * 0.35, c * 0.22, c * 0.7);
       }
     }
 

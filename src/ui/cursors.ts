@@ -77,7 +77,15 @@ const charge = cursor(
   20, 24, "crosshair",
 );
 
-export const CURSORS = { arrow, attack, move, select, board, artillery, charge } as const;
+/** Heal: brackets around a white field with a red cross (send the selected medics to treat him). */
+const heal = cursor(
+  brackets +
+    `<rect x="11" y="11" width="18" height="18" rx="3" fill="#f4f1e6" stroke="#10110b" stroke-width="2"/>` +
+    `<path d="M20 14 L20 26 M14 20 L26 20" stroke="#d0201a" stroke-width="4.2" stroke-linecap="square"/>`,
+  20, 20, "copy",
+);
+
+export const CURSORS = { arrow, attack, move, select, board, heal, artillery, charge } as const;
 export type CursorKind = keyof typeof CURSORS;
 
 /** Makes the arrow the default everywhere (sidebar, buttons, minimap). */

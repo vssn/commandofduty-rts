@@ -1,5 +1,5 @@
 import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { CAPTURE_BONUS, CAPTURE_TIME, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
+import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
 import { createOutpostMesh, createRing, mat, TEAM_COLOR } from "../world/models";
 import type { Terrain } from "../world/terrain";
@@ -29,7 +29,7 @@ export class Outpost {
   /** True while soldiers of both teams are inside. */
   contested = false;
   private bonusPaid = false;
-  /** Workshops build jeeps for their owner. */
+  /** Workshops build jeeps, field hospitals medics for their owner. */
   readonly production: Production | null;
   readonly spawn: { x: number; z: number };
   rally: { x: number; z: number };
@@ -51,7 +51,7 @@ export class Outpost {
     this.z = spec.z;
     this.y = terrain.heightAt(spec.x, spec.z);
     this.rot = spec.rot;
-    this.production = spec.kind === "workshop" ? new Production(["jeep"]) : null;
+    this.production = spec.kind === "workshop" ? new Production(["jeep"]) : spec.kind === "hospital" ? new Production(["medic"]) : null;
     this.spawn = toWorld(spec.x, spec.z, spec.rot, 0, 6.5);
     this.rally = toWorld(spec.x, spec.z, spec.rot, 0, 13);
 
@@ -125,8 +125,9 @@ export class Outpost {
     this.contested = inside[0] > 0 && inside[1] > 0;
     if (this.contested) return; // enemy soldier present: progress is frozen, nobody heals
 
-    // own soldiers slowly recover inside the outpost
-    for (const u of occupants) if (u.team === this.owner) u.hp = Math.min(u.maxHp, u.hp + OUTPOST_HEAL * dt);
+    // own soldiers slowly recover inside the outpost, faster in a field hospital
+    const heal = this.kind === "hospital" ? HOSPITAL_HEAL : OUTPOST_HEAL;
+    for (const u of occupants) if (u.team === this.owner) u.hp = Math.min(u.maxHp, u.hp + heal * dt);
 
     const present: Team | null = inside[0] > 0 ? 0 : inside[1] > 0 ? 1 : null;
     if (present === null || present === this.owner) {

@@ -1,8 +1,8 @@
-import { MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh, type Mesh } from "@babylonjs/core";
+import { MultiMaterial, StandardMaterial, type InstancedMesh, type Mesh } from "@babylonjs/core";
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
 import { toWorld, type V2 } from "../world/layout";
-import { mat } from "../world/models";
+import { createChargeMesh } from "../world/models";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
 import { Unit } from "./unit";
@@ -106,7 +106,7 @@ export class CommandosMission {
       for (let i = 0; i < COMMANDOS.garrison; i++) {
         const a = (i / COMMANDOS.garrison) * Math.PI * 2 + Math.random();
         const p = g.nav.freePoint(o.x + Math.cos(a) * o.radius * 0.45, o.z + Math.sin(a) * o.radius * 0.45);
-        const u = g.spawnUnit(i === 0 && o.kind === "depot" ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
+        const u = g.spawnUnit(i === 0 && o.kind === "hospital" ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
         u.heading = a;
         this.homes.set(u, { x: p.x, z: p.z });
       }
@@ -141,8 +141,7 @@ export class CommandosMission {
     this.agent.heading = Math.atan2(near.x - start.x, near.z - start.z);
     this.makeAgentMaterialsOwn();
 
-    const tpl = MeshBuilder.CreateBox("charge", { width: 0.45, height: 0.3, depth: 0.3 }, g.scene);
-    tpl.material = mat(g.scene, [0.45, 0.2, 0.12]);
+    const tpl = createChargeMesh(g.scene);
     tpl.isVisible = false;
     tpl.isPickable = false;
     this.chargeTpl = tpl;
@@ -493,7 +492,7 @@ export class CommandosMission {
         c.z = c.target.z;
       }
       const onJeep = c.target instanceof Unit;
-      c.mesh.position.set(c.x, g.terrain.heightAt(c.x, c.z) + (onJeep ? 1.3 : 0.2), c.z);
+      c.mesh.position.set(c.x, g.terrain.heightAt(c.x, c.z) + (onJeep ? 1.05 : 0.02), c.z);
       c.fuse -= dt;
       if (c.fuse > 0) continue;
       c.mesh.dispose();

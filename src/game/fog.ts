@@ -10,7 +10,7 @@ const LEVEL = { hidden: 0, explored: 0.45, visible: 1 };
 /** Units always see their immediate surroundings, even from inside a wood. */
 const NEAR = 2.5;
 /** Eye height above the ground (the jeep's gunner stands high on the bed). */
-const EYE: Record<UnitType, number> = { rifleman: 2.3, grenadier: 2.3, jeep: 3.2, agent: 2.6 };
+const EYE: Record<UnitType, number> = { rifleman: 2.3, grenadier: 2.3, medic: 2.3, jeep: 3.2, agent: 2.6 };
 /** A cell counts as seen if a point this high above its ground is in view (a soldier's chest). */
 const TARGET = 1.4;
 /** Small bumps of the terrain don't hide anything. */

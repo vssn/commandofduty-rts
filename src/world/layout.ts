@@ -98,10 +98,11 @@ export class MapLayout {
     { x: 106, z: -52, r: 9, conifer: 0.2 },
   ];
 
-  /** Capturable supply depots, dugouts, trenches and watchtowers spread over the map. */
+  /** Capturable field hospitals, dugouts, trenches, watchtowers and workshops spread over the map. */
   readonly outposts: OutpostSpec[] = [
-    { kind: "depot", x: -70, z: -55, rot: 0.3 },
-    { kind: "depot", x: 70, z: 55, rot: 0.3 + Math.PI },
+    // field hospitals: the outpost on the left near each base
+    { kind: "hospital", x: -70, z: -55, rot: 0.3 },
+    { kind: "hospital", x: 70, z: 55, rot: 0.3 + Math.PI },
     { kind: "bunker", x: 18, z: -42, rot: -0.2 },
     { kind: "bunker", x: -18, z: 40, rot: Math.PI - 0.2 },
     { kind: "trench", x: -94, z: 4, rot: 1.4 },

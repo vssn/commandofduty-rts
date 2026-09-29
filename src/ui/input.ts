@@ -213,6 +213,8 @@ export class InputController {
     if (own) {
       if (own.type === "jeep" && !own.gunner && !g.selection.has(own) && [...g.selection].some((u) => !u.isVehicle)) {
         g.commandBoard(g.selection, own);
+      } else if (!g.selection.has(own) && this.canHeal(own)) {
+        g.commandHeal(g.selection, own);
       } else if (this.lastClick.unit === own && now - this.lastClick.t < DOUBLE_CLICK_MS * 1.3) {
         g.select(g.units.filter((o) => o.alive && o.team === PLAYER && o.type === own.type && this.onScreen(o)));
       } else {
@@ -251,6 +253,11 @@ export class InputController {
     if (inside.length || !shift) this.game.select(inside, shift);
   }
 
+  /** Selected medics could treat this own unit (a wounded soldier on foot). */
+  private canHeal(own: Unit): boolean {
+    return !own.isVehicle && own.hp < own.maxHp && [...this.game.selection].some((u) => u.type === "medic" && u !== own);
+  }
+
   private command(x: number, y: number) {
     const g = this.game;
     if (g.selection.size) {
@@ -258,6 +265,12 @@ export class InputController {
       const own = this.unitAt(x, y, "own");
       if (own && own.type === "jeep" && !own.gunner && !g.selection.has(own)) {
         if (g.commandBoard(g.selection, own)) return;
+      }
+      // medics onto a wounded comrade; the rest of the selection moves along to him
+      if (own && this.canHeal(own) && g.commandHeal(g.selection, own)) {
+        const others = [...g.selection].filter((u) => u.type !== "medic");
+        if (others.length) g.commandMove(others, { x: own.x, z: own.z }, false, false);
+        return;
       }
       const enemy = this.unitAt(x, y, "enemy");
       if (enemy) return g.commandAttack(g.selection, enemy);
@@ -326,6 +339,7 @@ export class InputController {
     let kind: CursorKind = "arrow";
     if (this.unitAt(x, y, "enemy") || this.buildingAt(x, y)?.team === 1) kind = "attack";
     else if (g.selection.size && own?.type === "jeep" && !own.gunner && [...g.selection].some((u) => !u.isVehicle)) kind = "board";
+    else if (own && this.canHeal(own)) kind = "heal";
     else if (own) kind = "select";
     else if (g.selection.size) kind = "move";
     if (kind !== this.cursorKind) {

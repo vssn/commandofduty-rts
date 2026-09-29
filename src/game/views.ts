@@ -116,6 +116,9 @@ export class SoldierView implements UnitView {
   private stride = 0;
   private kneelW = 0;
   private proneW = 0;
+  /** Medic: 1 while treating a patient (hands reach forward). */
+  private healW = 0;
+  private treatT = 0;
   private readonly shadow: BlobShadow;
 
   constructor(scene: Scene, tpl: SoldierTemplates, name: string, blob: Mesh) {
@@ -152,7 +155,9 @@ export class SoldierView implements UnitView {
     // right knee on the ground with the shin lying backwards
     // idle: weight rests on one leg, the other knee relaxes; swaps every few seconds
     const aiming = !!u.target && u.target.alive;
-    const idle = !u.moving && !aiming && u.stance === "stand" && u.throwT > 1;
+    const idle = !u.moving && !aiming && !u.healing && u.stance === "stand" && u.throwT > 1;
+    this.healW += ((u.healing ? 1 : 0) - this.healW) * Math.min(1, dt * 4);
+    if (u.healing) this.treatT += dt;
     this.aimW += ((aiming ? 1 : 0) - this.aimW) * Math.min(1, dt * 6);
     this.idleW += ((idle ? 1 : 0) - this.idleW) * Math.min(1, dt * 2.5);
     if (idle) this.idleT += dt;
@@ -185,11 +190,13 @@ export class SoldierView implements UnitView {
     // when standing around. Every ~12 s an idle soldier briefly checks his weapon.
     const cycle = (it + this.seed * 3) % 12;
     const check = iw * Math.max(0, Math.sin(Math.min(1, cycle / 1.6) * Math.PI));
-    // grenadiers carry no rifle: only a slight relaxed swing instead of the diagonal rifle carry
-    const carry = (1 - this.aimW) * (u.type === "grenadier" ? 0.3 : 1);
+    // grenadiers and medics carry no rifle: only a slight relaxed swing instead of the diagonal rifle carry
+    const carry = (1 - this.aimW) * (u.type === "grenadier" || u.type === "medic" ? 0.3 : 1) * (1 - this.healW);
     const breath = Math.sin(it * 1.9) * 0.012 * iw;
+    // treating: both hands reach down and forward to the patient, working in a slow rhythm
+    const treat = this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12);
     this.arms.rotation.set(
-      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2,
+      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat,
       carry * (-0.28 - iw * 0.12) + check * 0.2,
       carry * 0.1,
     );

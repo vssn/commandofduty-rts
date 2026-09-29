@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Vector3, VertexData } from "@babylonjs/core";
+import { Color3, DynamicTexture, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Texture, Vector3, VertexData } from "@babylonjs/core";
 import { PLAYER, type OutpostKind, type Team } from "../config";
 import type { RGB } from "./layout";
 import { brickBox } from "./masonry";
@@ -21,6 +21,56 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
     if (opts.twoSided) m.backFaceCulling = false;
     matCache.set(key, m);
   }
+  return m;
+}
+
+const camoTex = new Map<string, DynamicTexture>();
+
+/**
+ * Woodland camouflage cloth: an olive base with overlapping blotches of dark green, brown and
+ * pale green. The pattern tiles seamlessly and is shared per scene; `tint` darkens or shifts it.
+ */
+export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1]): StandardMaterial {
+  const key = scene.uid + ":camo:" + tint.map((v) => v.toFixed(3)).join(",");
+  let m = matCache.get(key);
+  if (m) return m;
+  let tex = camoTex.get(scene.uid);
+  if (!tex) {
+    const size = 128;
+    tex = new DynamicTexture("camo", { width: size, height: size }, scene, true, Texture.BILINEAR_SAMPLINGMODE);
+    tex.wrapU = tex.wrapV = Texture.WRAP_ADDRESSMODE;
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    ctx.fillStyle = "#5c6b3a";
+    ctx.fillRect(0, 0, size, size);
+    const blot = (color: string, count: number, r0: number, r1: number) => {
+      ctx.fillStyle = color;
+      for (let i = 0; i < count; i++) {
+        // a blotch is a small cluster of overlapping circles, drawn wrapped so the tile is seamless
+        const cx = rnd() * size, cy = rnd() * size, n = 3 + Math.floor(rnd() * 3);
+        for (let k = 0; k < n; k++) {
+          const x = cx + (rnd() - 0.5) * r1 * 2.2, y = cy + (rnd() - 0.5) * r1 * 1.4, r = r0 + rnd() * (r1 - r0);
+          for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+            ctx.beginPath();
+            ctx.ellipse(x + ox, y + oy, r * 1.3, r * 0.8, rnd() * Math.PI, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    };
+    blot("#7f8a52", 7, 4, 9); // pale green
+    blot("#5e4a2e", 8, 4, 9); // brown
+    blot("#2f3d22", 9, 4, 10); // dark green
+    blot("#1f261a", 6, 2, 4); // black specks
+    tex.update(false);
+    camoTex.set(scene.uid, tex);
+  }
+  m = new StandardMaterial("camo" + key, scene);
+  m.diffuseTexture = tex;
+  m.diffuseColor = new Color3(tint[0], tint[1], tint[2]);
+  m.specularColor = Color3.Black();
+  matCache.set(key, m);
   return m;
 }
 
@@ -103,19 +153,25 @@ export const THROW_SHOULDER = { x: 0.26 * SOLDIER_SCALE, y: 1.4 * SOLDIER_SCALE 
 /** Knee joint relative to the hip joint (scaled), where the shin hangs from the thigh. */
 export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 
-export type SoldierVariant = "rifleman" | "grenadier" | "agent";
+export type SoldierVariant = "rifleman" | "grenadier" | "agent" | "medic";
 
 export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
   const kind: SoldierVariant = variant === true ? "grenadier" : variant === false ? "rifleman" : variant;
   const grenadier = kind === "grenadier";
   const agent = kind === "agent";
+  const medic = kind === "medic";
   const player = team === PLAYER;
+  const white: RGB = [0.94, 0.93, 0.88];
+  const red: RGB = [0.8, 0.1, 0.08];
   // the agent wears a long charcoal coat and a peaked cap instead of the team uniform
   const coat: RGB = [0.24, 0.24, 0.21];
-  const uni: RGB = agent ? coat : player ? [0.24, 0.38, 0.74] : [0.72, 0.2, 0.15];
-  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : player ? [0.19, 0.3, 0.6] : [0.58, 0.16, 0.12];
-  const helmet: RGB = player ? [0.17, 0.27, 0.55] : [0.48, 0.13, 0.1];
-  const pants: RGB = agent ? [0.14, 0.14, 0.13] : player ? [0.17, 0.21, 0.32] : [0.32, 0.15, 0.12];
+  // both sides wear the same woodland camouflage; helmet, armbands and pack flap carry the team colour
+  const CAMO: RGB = [1, 1, 1];
+  const CAMO_PANTS: RGB = [0.8, 0.8, 0.78];
+  const uni: RGB = agent ? coat : CAMO;
+  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : [0.25, 0.3, 0.18];
+  const helmet: RGB = player ? [0.2, 0.36, 0.8] : [0.74, 0.17, 0.12];
+  const pants: RGB = agent ? [0.14, 0.14, 0.13] : CAMO_PANTS;
   const teamC: RGB = player ? [0.25, 0.45, 0.95] : [0.9, 0.18, 0.12];
   const skin: RGB = [0.86, 0.68, 0.54];
   const leather: RGB = [0.27, 0.2, 0.13];
@@ -124,7 +180,29 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const wood: RGB = [0.45, 0.3, 0.17];
   const metal: RGB = [0.12, 0.12, 0.13];
   const parts: Mesh[] = [];
-  const box = partBuilder(scene, parts);
+  /** Camouflage parts get the camo material, with UVs scaled to world size so the blotches stay even. */
+  const paint = (m: Mesh, c: RGB, uSize = 1, vSize = 1) => {
+    if (c !== CAMO && c !== CAMO_PANTS) {
+      m.material = mat(scene, c);
+      return;
+    }
+    m.material = camoMaterial(scene, c);
+    const uv = m.getVerticesData("uv");
+    if (uv) {
+      const ref = 0.9; // cloth size covered by one tile of the pattern
+      for (let i = 0; i < uv.length; i += 2) {
+        uv[i] *= uSize / ref;
+        uv[i + 1] *= vSize / ref;
+      }
+      m.setVerticesData("uv", uv);
+    }
+  };
+  const rawBox = partBuilder(scene, parts);
+  const box: PartFn = (w, h, d, x, y, z, c, rx, ry) => {
+    const m = rawBox(w, h, d, x, y, z, c, rx, ry);
+    paint(m, c, Math.max(w, d), h);
+    return m;
+  };
   const up = new Vector3(0, 1, 0);
 
   /** Tapered, slightly flattened round segment from a (radius ra) to b (radius rb). */
@@ -137,7 +215,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     m.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
     m.rotationQuaternion = Quaternion.Identity();
     Quaternion.FromUnitVectorsToRef(up, d.normalize(), m.rotationQuaternion);
-    m.material = mat(scene, c);
+    paint(m, c, Math.PI * (ra + rb), len);
     parts.push(m);
     return m;
   };
@@ -145,13 +223,24 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const m = MeshBuilder.CreateSphere("ball", { diameter: r * 2, segments: 6 }, scene);
     m.scaling.y = sy;
     m.position.set(x, y, z);
-    m.material = mat(scene, c);
+    paint(m, c, Math.PI * r * 2, Math.PI * r * sy);
     parts.push(m);
     return m;
   };
   /** Upper arm + forearm + hand through shoulder, elbow and hand positions. */
   const arm = (s: number[], e: number[], h: number[]) => {
     tube(s[0], s[1], s[2], e[0], e[1], e[2], 0.075, 0.062, uni);
+    if (!agent) {
+      // team armband just below the shoulder; the medic wears the red cross on his left arm
+      const k0 = 0.22, k1 = 0.42, at = (k: number, i: number) => s[i] + (e[i] - s[i]) * k;
+      const redCross = medic && s[0] < 0;
+      tube(at(k0, 0), at(k0, 1), at(k0, 2), at(k1, 0), at(k1, 1), at(k1, 2), 0.082, 0.078, redCross ? white : teamC);
+      if (redCross) {
+        const y = at(0.32, 1), z = at(0.32, 2), x = at(0.32, 0) - 0.08;
+        box(0.02, 0.1, 0.03, x, y, z, red);
+        box(0.02, 0.03, 0.1, x, y, z, red);
+      }
+    }
     ball(0.062, e[0], e[1], e[2], uni);
     tube(e[0], e[1], e[2], h[0], h[1], h[2], 0.062, 0.05, uni);
     ball(0.058, h[0], h[1], h[2], skin);
@@ -242,17 +331,24 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     box(0.05, 0.56, 0.02, x, 1.15, 0.145, webbing).rotation.x = 0.1;
     box(0.05, 0.56, 0.02, x, 1.15, -0.145, webbing).rotation.x = -0.1;
   }
-  if (!grenadier) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
+  if (!grenadier && !medic) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
   box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.38, 0.31, 0.2]);
-  box(0.26, 0.1, 0.03, 0, 1.3, -0.3, [0.32, 0.26, 0.17]); // pack flap
+  box(0.28, 0.12, 0.03, 0, 1.3, -0.3, helmet); // pack flap in team colour
   tube(-0.2, 1.46, -0.2, 0.2, 1.46, -0.2, 0.075, 0.075, kit); // bedroll
   tube(0, 1.44, 0, 0, 1.56, 0, 0.1, 0.06, uniDark); // collar
   if (grenadier) {
     box(0.08, 0.72, 0.04, 0, 1.16, 0.15, [0.55, 0.47, 0.3]).rotation.z = 0.6; // bandolier
     for (const x of [-0.12, 0, 0.12]) box(0.1, 0.12, 0.08, x, 0.97, 0.16, kit);
   }
-  const body = merge(`soldier${team}`, parts.splice(0));
+  if (medic) {
+    // medical satchel on the right hip on a strap across the chest, marked with a red cross
+    box(0.06, 0.8, 0.03, 0, 1.12, 0.155, webbing).rotation.z = -0.62;
+    box(0.14, 0.24, 0.3, 0.27, 0.86, 0.05, white);
+    box(0.02, 0.15, 0.05, 0.345, 0.87, 0.05, red);
+    box(0.02, 0.05, 0.15, 0.345, 0.87, 0.05, red);
+  }
+  const body = merge(`soldier${team}${medic ? "m" : ""}`, parts.splice(0));
   body.scaling.setAll(SOLDIER_SCALE);
   body.bakeCurrentTransformIntoVertices();
 
@@ -260,6 +356,10 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   if (grenadier) {
     // no rifle: the left arm hangs loosely here; the right arm with the grenade is a separate part
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.14]);
+  } else if (medic) {
+    // unarmed: both arms hang loosely (the view swings them forward to treat a patient)
+    arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.12]);
+    arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
   } else {
     // rifle held at the ready: wooden stock, receiver, magazine, handguard, barrel
     box(0.07, 0.12, 0.38, 0.1, 1.2, 0.14, wood);
@@ -270,7 +370,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
     arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
   }
-  const arms = shoulderPart(`soldierArms${team}${grenadier ? "g" : ""}`);
+  const suffix = grenadier ? "g" : medic ? "m" : "";
+  const arms = shoulderPart(`soldierArms${team}${suffix}`);
   let throwArm: Mesh | undefined;
   if (grenadier) {
     // throwing arm: grenade held loosely at the hip, pivots at the right shoulder so it can wind up
@@ -300,8 +401,20 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     band.material = mat(scene, [0.9, 0.86, 0.7]);
     parts.push(band);
   }
+  if (medic) {
+    // white patch with a red cross on the front, back and crown of the helmet
+    for (const side of [1, -1]) {
+      const z = 0.175 * side, y = 1.8, tilt = -0.45 * side;
+      box(0.13, 0.13, 0.02, 0, y, z, white).rotation.x = tilt;
+      box(0.1, 0.03, 0.03, 0, y, z + 0.004 * side, red).rotation.x = tilt;
+      box(0.03, 0.1, 0.03, 0, y, z + 0.004 * side, red).rotation.x = tilt;
+    }
+    box(0.14, 0.02, 0.14, 0, 1.912, 0, white);
+    box(0.11, 0.03, 0.035, 0, 1.915, 0, red);
+    box(0.035, 0.03, 0.11, 0, 1.915, 0, red);
+  }
 
-  const head = shoulderPart(`soldierHead${team}${grenadier ? "g" : ""}`);
+  const head = shoulderPart(`soldierHead${team}${suffix}`);
 
   // ---- thigh (origin = hip joint) with the knee cap
   tube(0, 0, 0, 0, -0.4, 0.02, 0.095, 0.075, pants);
@@ -439,6 +552,9 @@ export function createRing(scene: Scene, name: string, diameter: number, thickne
 }
 
 /** Neutral model of a capturable outpost (no team colours; the flag is separate). */
+/** Ward tent of the field hospital (local offset and half size); it blocks movement. */
+export const HOSPITAL_TENT = { x: -0.8, z: -0.8, hw: 2.3, hd: 2.1 };
+
 export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
@@ -456,22 +572,61 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     parts.push(m);
   };
 
-  if (kind === "depot") {
-    box(7, 0.4, 5.5, 0, 0.1, 0, [0.58, 0.56, 0.5]);
-    // supply tent
-    const tent = createGable("tent", scene);
-    tent.scaling.set(3.6, 2.2, 3.2);
-    tent.position.set(-1.4, 0.3, -0.8);
-    tent.material = mat(scene, olive, { twoSided: true });
+  if (kind === "hospital") {
+    // field hospital: ward tent with red crosses, stretchers, medical crates and water drums
+    const canvas: RGB = [0.84, 0.82, 0.72];
+    const white: RGB = [0.94, 0.93, 0.88];
+    const red: RGB = [0.78, 0.1, 0.08];
+    const T = HOSPITAL_TENT;
+    box(7.5, 0.4, 6, 0, 0.1, 0, [0.58, 0.56, 0.5]);
+    const tent = createGable("wardTent", scene);
+    tent.scaling.set(T.hw * 2, 2.8, T.hd * 2);
+    tent.position.set(T.x, 0.3, T.z);
+    tent.material = mat(scene, canvas, { twoSided: true });
     parts.push(tent);
-    // crates
-    box(1.1, 1.1, 1.1, 1.4, 0.85, -1.3, crate);
-    box(1.1, 1.1, 1.1, 2.6, 0.85, -1.3, crate, 0, 0.2);
-    box(1.1, 1.1, 1.1, 2.0, 1.95, -1.3, crate, 0, -0.3);
-    box(1.6, 0.8, 1.0, 2.1, 0.7, 0.3, [0.36, 0.42, 0.24]);
-    // fuel drums
-    for (const [x, z] of [[-2.6, 1.6], [-1.8, 1.8], [-2.2, 2.5], [-1.4, 2.6]]) cyl(1.0, 0.6, x, 0.8, z, [0.28, 0.36, 0.22]);
-    box(0.9, 0.9, 0.9, 1.0, 0.75, 1.9, crate, 0, 0.5);
+    /** Red cross on a white field; `rz` tilts it onto a roof slope, `ry` turns it to face along x. */
+    const redCross = (x: number, y: number, z: number, size: number, rz: number, ry = 0) => {
+      const panel = box(size, 0.03, size, x, y, z, white, 0, ry);
+      const a = box(size * 0.7, 0.05, size * 0.22, x, y, z, red, 0, ry);
+      const b = box(size * 0.22, 0.05, size * 0.7, x, y, z, red, 0, ry);
+      for (const m of [panel, a, b]) m.rotation.z = rz;
+    };
+    // on both roof slopes (outward normal = the box's local y after tilting)
+    const slope = Math.atan2(2.8, T.hw);
+    const nx = Math.sin(slope), ny = Math.cos(slope);
+    redCross(T.x - T.hw / 2 - nx * 0.03, 0.3 + 1.4 + ny * 0.03, T.z, 1.5, slope);
+    redCross(T.x + T.hw / 2 + nx * 0.03, 0.3 + 1.4 + ny * 0.03, T.z, 1.5, -slope);
+    // front gable: open door flap and a cross above it
+    const front = T.z + T.hd + 0.03;
+    box(1.0, 1.15, 0.04, T.x, 0.88, front, [0.22, 0.2, 0.16]);
+    box(0.5, 1.2, 0.06, T.x - 0.75, 0.9, front + 0.03, canvas, 0, 0.5); // flap tied back
+    const cross = (x: number, y: number, z: number, s: number) => {
+      box(s, s, 0.03, x, y, z, white);
+      box(s * 0.7, s * 0.22, 0.05, x, y, z + 0.01, red);
+      box(s * 0.22, s * 0.7, 0.05, x, y, z + 0.01, red);
+    };
+    cross(T.x, 2.05, front, 0.7);
+    // stretchers in a row beside the tent
+    for (const [i, z] of [-1.9, -0.6, 0.7].entries()) {
+      const x = 2.3 + (i % 2) * 0.15;
+      box(0.75, 0.06, 1.95, x, 0.55, z, [0.42, 0.44, 0.28]); // canvas
+      for (const sx of [-0.4, 0.4]) box(0.06, 0.06, 2.3, x + sx, 0.55, z, darkWood); // poles
+      for (const sx of [-0.4, 0.4]) for (const sz of [-0.8, 0.8]) box(0.06, 0.28, 0.06, x + sx, 0.4, z + sz, darkWood);
+      box(0.5, 0.12, 0.3, x, 0.63, z - 0.75, white); // pillow
+      if (i === 1) box(0.7, 0.1, 1.2, x, 0.64, z + 0.2, [0.55, 0.5, 0.36]); // blanket
+    }
+    // medical crates, marked on top
+    const medCrate = (x: number, z: number, ry: number) => {
+      box(0.9, 0.7, 0.7, x, 0.65, z, white, 0, ry);
+      const a = box(0.55, 0.03, 0.16, x, 1.01, z, red, 0, ry);
+      const b = box(0.16, 0.03, 0.55, x, 1.01, z, red, 0, ry);
+      return [a, b];
+    };
+    medCrate(2.5, 2.2, 0.15);
+    medCrate(1.4, 2.4, -0.2);
+    box(1.1, 1.1, 1.1, -3.0, 0.85, 2.0, crate, 0, 0.3);
+    // water drums
+    for (const [x, z] of [[-3.1, 0.6], [-3.2, -0.2]]) cyl(1.0, 0.6, x, 0.8, z, [0.28, 0.36, 0.22]);
   } else if (kind === "bunker") {
     // dugout: sandbag walls, log roof, dark entrance
     box(5, 1.2, 0.9, 0, 0.6, -2, sand);
@@ -548,6 +703,35 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
 
   const m = merge(`outpost-${kind}`, parts);
   m.receiveShadows = true;
+  m.isPickable = false;
+  return m;
+}
+
+/**
+ * Demolition charge (origin at its underside, ~0.5 wide): a bundle of three dynamite sticks held by
+ * tape, a detonator box with a red lamp on top and a short wire.
+ */
+export function createChargeMesh(scene: Scene): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const stick = (y: number, z: number) => {
+    const m = MeshBuilder.CreateCylinder("stick", { height: 0.46, diameter: 0.11, tessellation: 8 }, scene);
+    m.rotation.z = Math.PI / 2;
+    m.position.set(0, y, z);
+    m.material = mat(scene, [0.66, 0.2, 0.12]);
+    parts.push(m);
+  };
+  stick(0.055, -0.058);
+  stick(0.055, 0.058);
+  stick(0.15, 0);
+  for (const x of [-0.13, 0.13]) box(0.05, 0.23, 0.25, x, 0.1, 0, [0.16, 0.16, 0.14]); // tape
+  box(0.17, 0.08, 0.13, 0, 0.24, 0, [0.14, 0.15, 0.12]); // detonator
+  const lamp = MeshBuilder.CreateSphere("lamp", { diameter: 0.045, segments: 4 }, scene);
+  lamp.position.set(0.05, 0.29, 0.03);
+  lamp.material = mat(scene, [1, 0.15, 0.08], { emissive: true });
+  parts.push(lamp);
+  box(0.02, 0.02, 0.2, -0.05, 0.29, 0.12, [0.85, 0.75, 0.2], 0.4); // wire
+  const m = merge("charge", parts);
   m.isPickable = false;
   return m;
 }
@@ -656,11 +840,29 @@ export function createGrenadeTemplate(scene: Scene): Mesh {
   return m;
 }
 
-export function createExplosionTemplates(scene: Scene): { flash: Mesh; smoke: Mesh; scorch: Mesh } {
-  const flash = MeshBuilder.CreateIcoSphere("flash", { radius: 1, subdivisions: 1, flat: true }, scene);
-  flash.material = mat(scene, [1, 0.62, 0.2], { emissive: true });
-  const smoke = MeshBuilder.CreateIcoSphere("smoke", { radius: 1, subdivisions: 1, flat: true }, scene);
-  smoke.material = mat(scene, [0.62, 0.58, 0.52]);
+export interface ExplosionTemplates {
+  flash: Mesh; core: Mesh; smoke: Mesh; darkSmoke: Mesh; dust: Mesh; debris: Mesh; spark: Mesh; ring: Mesh; scorch: Mesh;
+}
+
+export function createExplosionTemplates(scene: Scene): ExplosionTemplates {
+  const ico = (name: string, c: RGB, emissive = false) => {
+    const m = MeshBuilder.CreateIcoSphere(name, { radius: 1, subdivisions: 1, flat: true }, scene);
+    m.material = mat(scene, c, { emissive });
+    return m;
+  };
+  const flash = ico("flash", [1, 0.55, 0.16], true); // orange fireball
+  const core = ico("flashCore", [1, 0.93, 0.62], true); // white-hot core
+  const smoke = ico("smoke", [0.62, 0.58, 0.52]);
+  const darkSmoke = ico("darkSmoke", [0.28, 0.26, 0.24]); // lingering column of dark smoke
+  const dust = ico("dust", [0.58, 0.5, 0.38]); // earth thrown up, crawling along the ground
+  const debris = MeshBuilder.CreateBox("debris", { width: 0.34, height: 0.2, depth: 0.26 }, scene);
+  debris.material = mat(scene, [0.3, 0.23, 0.16]);
+  const spark = MeshBuilder.CreateBox("spark", { width: 0.12, height: 0.12, depth: 0.36 }, scene);
+  spark.material = mat(scene, [1, 0.72, 0.3], { emissive: true });
+  const ring = MeshBuilder.CreateTorus("shockwave", { diameter: 2, thickness: 0.18, tessellation: 28 }, scene);
+  ring.scaling.y = 0.3;
+  ring.bakeCurrentTransformIntoVertices();
+  ring.material = mat(scene, [1, 0.86, 0.6], { emissive: true });
   const scorch = MeshBuilder.CreateDisc("scorch", { radius: 1, tessellation: 10 }, scene);
   scorch.rotation.x = Math.PI / 2;
   scorch.bakeCurrentTransformIntoVertices();
@@ -669,11 +871,11 @@ export function createExplosionTemplates(scene: Scene): { flash: Mesh; smoke: Me
   sm.specularColor = Color3.Black();
   sm.zOffset = -6;
   scorch.material = sm;
-  for (const m of [flash, smoke, scorch]) {
+  for (const m of [flash, core, smoke, darkSmoke, dust, debris, spark, ring, scorch]) {
     m.isPickable = false;
     m.isVisible = false;
   }
-  return { flash, smoke, scorch };
+  return { flash, core, smoke, darkSmoke, dust, debris, spark, ring, scorch };
 }
 
 // ------------------------------------------------------------------ bonus aura

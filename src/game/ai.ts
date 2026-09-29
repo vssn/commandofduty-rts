@@ -4,7 +4,8 @@ import type { Unit } from "./unit";
 
 /**
  * Small opponent: keeps its barracks busy (riflemen with some grenadiers), takes outposts with
- * two-man squads, builds and mans jeeps once it holds a workshop, and attacks in growing waves.
+ * two-man squads, builds and mans jeeps once it holds a workshop, trains a few medics once it holds
+ * the field hospital (they tag along with the attack waves), and attacks in growing waves.
  */
 export class EnemyAI {
   private waveTimer = 150;
@@ -28,10 +29,15 @@ export class EnemyAI {
     if (workshop && workshop.production!.queue.length === 0 && jeeps.length < 2 && g.credits[ENEMY] >= UNITS.jeep.cost + 150) {
       g.queueUnit("jeep", ENEMY);
     }
+    const hospital = g.hospitalOf(ENEMY);
+    const medics = mine.filter((u) => u.type === "medic");
+    if (hospital && hospital.production!.queue.length === 0 && medics.length < 3 && g.credits[ENEMY] >= UNITS.medic.cost + 100) {
+      g.queueUnit("medic", ENEMY);
+    }
 
     // soldiers standing in an outpost that is not ours yet are busy taking it
     const capturing = (u: Unit) => g.outposts.some((o) => o.owner !== ENEMY && Math.hypot(u.x - o.x, u.z - o.z) <= o.radius);
-    const available = mine.filter((u) => u.path.length === 0 && !u.target && !u.boarding && !capturing(u));
+    const available = mine.filter((u) => u.armed && u.path.length === 0 && !u.target && !u.boarding && !capturing(u));
 
     // man empty jeeps with the nearest idle soldier
     for (const j of jeeps) {
@@ -66,6 +72,9 @@ export class EnemyAI {
     if (this.waveTimer <= 0 && waveReady) {
       const t = g.playerBarracks;
       g.commandMove(idle, { x: t.x, z: t.z }, true, false);
+      // idle medics follow the wave a little behind it and patch up the wounded on the way
+      const followers = medics.filter((m) => !m.patient && m.path.length === 0).slice(0, 2);
+      if (followers.length) g.commandMove(followers, { x: (t.x + idle[0].x) / 2, z: (t.z + idle[0].z) / 2 }, false, false);
       this.waveTimer = 75;
       this.waveSize = Math.min(10, this.waveSize + 1);
     }

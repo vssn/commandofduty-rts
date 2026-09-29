@@ -1,9 +1,10 @@
 import {
-  Color3, Color4, DirectionalLight, FreeCamera, HemisphericLight, Scene, Tools, TransformNode, Vector3, type Engine,
+  Color3, Color4, DirectionalLight, FreeCamera, HemisphericLight, MeshBuilder, MultiMaterial, Scene, StandardMaterial, Tools,
+  TransformNode, Vector3, type AbstractMesh, type Engine,
 } from "@babylonjs/core";
 import { PLAYER, type UnitType } from "../config";
 import {
-  createJeepBody, createJeepGun, createJeepWheel, createSoldierTemplates, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y,
+  createChargeMesh, createJeepBody, createJeepGun, createJeepWheel, createSoldierTemplates, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y,
   type SoldierTemplates,
 } from "../world/models";
 import { buildLeg, buildUpper } from "../game/views";
@@ -29,7 +30,34 @@ function soldier(scene: Scene, tpl: SoldierTemplates, legs = true): TransformNod
  * soldiers as a heroic 3/4 bust shot from slightly below, the jeep in a low front 3/4 view.
  * Warm key light, cool rim light, transparent background (the button supplies the backdrop).
  */
-export async function renderPortraits(engine: Engine): Promise<Record<UnitType, string>> {
+export type PortraitImages = Record<UnitType, string> & { cloak: string; charge: string };
+
+/** Gives every material of `meshes` a translucent, cold glow: the cloaked agent's ghostly look. */
+function ghost(meshes: AbstractMesh[]) {
+  const done = new Map<StandardMaterial, StandardMaterial>();
+  const g = (m: StandardMaterial) => {
+    let c = done.get(m);
+    if (!c) {
+      c = m.clone(`${m.name}-ghost`);
+      c.alpha = 0.32;
+      c.emissiveColor = new Color3(0.25, 0.6, 0.75);
+      done.set(m, c);
+    }
+    return c;
+  };
+  for (const mesh of meshes) {
+    const src = mesh.material;
+    if (src instanceof MultiMaterial) {
+      const mm = src.clone(`${src.name}-ghost`) as MultiMaterial;
+      mm.subMaterials = src.subMaterials.map((s) => (s instanceof StandardMaterial ? g(s) : s));
+      mesh.material = mm;
+    } else if (src instanceof StandardMaterial) {
+      mesh.material = g(src);
+    }
+  }
+}
+
+export async function renderPortraits(engine: Engine): Promise<PortraitImages> {
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 0);
   scene.detachControl();
@@ -65,7 +93,7 @@ export async function renderPortraits(engine: Engine): Promise<Record<UnitType, 
     return Tools.CreateScreenshotUsingRenderTargetAsync(engine, cam, { width: SIZE, height: SIZE }, "image/png", 4);
   };
 
-  const result = {} as Record<UnitType, string>;
+  const result = {} as PortraitImages;
 
   // rifleman: slightly from below and to the side, rifle at the ready
   const rifle = createSoldierTemplates(scene, PLAYER);
@@ -79,6 +107,13 @@ export async function renderPortraits(engine: Engine): Promise<Record<UnitType, 
   node = soldier(scene, gren);
   node.rotation.y = 0.3;
   result.grenadier = await shoot(new Vector3(-0.75, 2.25, 2.5), new Vector3(0.12, 2.18, 0), 0.8);
+  node.dispose();
+
+  // medic: turned so the red cross on helmet, armband and satchel shows
+  const medic = createSoldierTemplates(scene, PLAYER, "medic");
+  node = soldier(scene, medic);
+  node.rotation.y = 0.5;
+  result.medic = await shoot(new Vector3(-0.7, 2.3, 2.4), new Vector3(0.05, 2.0, 0), 0.76);
   node.dispose();
 
   // jeep: low front three-quarter view with driver and gunner behind the MG
@@ -105,6 +140,35 @@ export async function renderPortraits(engine: Engine): Promise<Record<UnitType, 
   driver.position.set(D.driver.x, D.bedY + 0.42 - HIP_Y, D.driver.z);
   jeep.rotation.y = Math.PI + 0.6;
   result.jeep = await shoot(new Vector3(-2.2, 2.4, -7.4), new Vector3(0.1, 1.35, 0), 0.6);
+
+  // demolition charge: close-up of the bundle strapped to the jeep's bonnet, lamp glowing
+  jeep.rotation.y = 0;
+  turret.rotation.y = 0;
+  const charge = createChargeMesh(scene);
+  charge.parent = jeep;
+  charge.position.set(0.45, 1.44, 1.45);
+  charge.rotation.y = 0.5;
+  charge.scaling.setAll(1.7);
+  const glow = MeshBuilder.CreateSphere("glow", { diameter: 0.3, segments: 8 }, scene);
+  const glowMat = new StandardMaterial("glowMat", scene);
+  glowMat.emissiveColor = new Color3(1, 0.3, 0.15);
+  glowMat.disableLighting = true;
+  glowMat.alpha = 0.3;
+  glow.material = glowMat;
+  glow.parent = charge;
+  glow.position.set(0.05, 0.29, 0.03);
+  charge.computeWorldMatrix(true);
+  const cw = charge.getAbsolutePosition().add(new Vector3(0, 0.25, 0));
+  result.charge = await shoot(cw.add(new Vector3(-1.0, 0.95, 1.55)), cw, 0.75);
+  jeep.dispose(false, true);
+
+  // cloak: the agent fading into a translucent, cold shimmer
+  const agent = createSoldierTemplates(scene, PLAYER, "agent");
+  ghost([agent.body, agent.arms, agent.head, agent.leg, agent.shin]);
+  node = soldier(scene, agent);
+  node.rotation.y = -0.45;
+  result.cloak = await shoot(new Vector3(0.9, 2.1, 2.9), new Vector3(0.05, 1.75, 0), 0.8);
+  node.dispose();
 
   scene.dispose();
   return result;
