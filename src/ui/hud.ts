@@ -1,4 +1,4 @@
-import { ARTILLERY, COMMANDOS, PLAYER, UNITS, type UnitType } from "../config";
+import { ARTILLERY, COMMANDOS, PLAYER, UNITS, type StructureType, type UnitType } from "../config";
 import type { AudioSystem } from "../audio/audio";
 import type { Game, GameEvent } from "../game/game";
 import type { InputController } from "./input";
@@ -22,6 +22,9 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   notReady: "Noch nicht bereit",
   enemySearching: "Tote entdeckt – der Feind durchsucht die Umgebung",
   tracked: "Eine Patrouille folgt unserer Spur",
+  built: "Bau begonnen",
+  cannotBuild: "Nur auf freiem Gelände nahe eigener Stellungen oder der Basis",
+  structureLost: "Befestigung zerstört",
 };
 
 function $(id: string): HTMLElement {
@@ -75,7 +78,10 @@ export class Hud {
     });
     game.on((ev, team, data) => {
       if (ev === "captured" && data) {
-        if (team === PLAYER) this.toast(`${data.outpost.name} eingenommen${data.bonus ? ` · +${data.bonus} Credits` : ""}`);
+        if (team === PLAYER) {
+          const n = data.structures ?? 0;
+          this.toast(`${data.outpost.name} eingenommen${data.bonus ? ` · +${data.bonus} Credits` : ""}${n ? ` · ${n} ${n === 1 ? "Befestigung" : "Befestigungen"} übernommen` : ""}`);
+        }
         return;
       }
       if (ev === "outpostLost" && data) {
@@ -102,6 +108,25 @@ export class Hud {
       queued++;
     }
     if (queued) this.audio.buildConfirm();
+  }
+
+  private buildTiles: { type: StructureType; btn: HTMLElement }[] = [];
+
+  /** Conquest: tiles for MG nests and bollards start choosing a spot (N / B). */
+  bindBuild(input: InputController) {
+    this.buildTiles = [...document.querySelectorAll<HTMLElement>(".build-btn[data-build]")].map((btn) => {
+      const type = btn.dataset.build as StructureType;
+      btn.title = type === "mgnest"
+        ? `MG-Nest ($${UNITS.mgnest.cost}) · nahe eigener Stellungen oder der Basis errichten (N) · ein Soldat muss es besetzen; besetzt verhindert es die Einnahme der Stellung`
+        : `Poller ($${UNITS.bollard.cost}) · Sperre gegen Fahrzeuge, Fußtruppen kommen durch (B) · Shift: mehrere setzen`;
+      btn.addEventListener("click", () => this.enabled && input.toggleBuild(type));
+      return { type, btn };
+    });
+    const prev = input.onTargetingChange;
+    input.onTargetingChange = () => {
+      prev?.();
+      for (const t of this.buildTiles) t.btn.classList.toggle("armed", input.targeting === t.type);
+    };
   }
 
   private artilleryBtn: HTMLButtonElement | null = null;
@@ -170,6 +195,7 @@ export class Hud {
   /** Puts the rendered unit portraits into the build buttons. */
   setPortraits(images: PortraitImages) {
     for (const b of this.buttons) b.btn.querySelector<HTMLImageElement>(".portrait")!.src = images[b.type];
+    for (const t of this.buildTiles) t.btn.querySelector<HTMLImageElement>(".portrait")!.src = images[t.type];
     // commandos abilities: rendered art replaces the drawn fallback icons
     for (const id of ["cloak", "charge"] as const) {
       const btn = $(`btn-${id}`);
@@ -237,6 +263,8 @@ export class Hud {
       b.btn.classList.toggle("poor", credits < UNITS[b.type].cost);
     }
 
+    for (const t of this.buildTiles) t.btn.classList.toggle("poor", credits < UNITS[t.type].cost);
+
     if (this.artilleryBtn && g.mode === "skirmish") {
       // cooldown as clock wipe, remaining seconds in the badge
       const cd = g.artillery.cooldownOf(PLAYER);
@@ -258,16 +286,21 @@ export class Hud {
     if (g.selection.size) {
       const units = [...g.selection];
       const hp = (units.reduce((s, u) => s + u.hp / u.maxHp, 0) / units.length) * 100;
-      const byType = (["agent", "rifleman", "grenadier", "medic", "jeep"] as UnitType[])
+      const byType = (["agent", "rifleman", "grenadier", "medic", "jeep", "mgnest", "bollard"] as UnitType[])
         .map((t) => [t, units.filter((u) => u.type === t)] as const)
         .filter(([, list]) => list.length);
       const title = byType.map(([t, list]) => `${list.length} ${list.length === 1 ? UNITS[t].name : UNITS[t].plural}`).join(", ");
       info = `<strong>${title}</strong><span>Ø Zustand ${Math.round(hp)}%</span>`;
-      const jeeps = units.filter((u) => u.type === "jeep");
+      const building = units.find((u) => u.buildT > 0);
+      if (building) info += `<span class="hint">Im Bau: ${Math.round((1 - building.buildT / building.stats.buildTime) * 100)}%</span>`;
+      const jeeps = units.filter((u) => u.hasMg && u.buildT <= 0);
       if (jeeps.length) {
         const manned = jeeps.filter((j) => j.gunner).length;
-        info += `<span class="hint">${manned === jeeps.length ? "MG besetzt" : manned === 0 ? "Kein MG-Schütze – Soldat zuweisen (Rechtsklick auf Jeep)" : `MG besetzt: ${manned} von ${jeeps.length}`}</span>`;
+        const what = jeeps[0].type === "mgnest" ? "MG-Nest" : "Jeep";
+        info += `<span class="hint">${manned === jeeps.length ? "MG besetzt" : manned === 0 ? `Kein MG-Schütze – Soldat zuweisen (Rechtsklick auf ${what})` : `MG besetzt: ${manned} von ${jeeps.length}`}</span>`;
       }
+      const post = units.length === 1 ? units[0].anchor : null;
+      if (post) info += `<span class="hint">Gehört zu: ${post.name}</span>`;
       const medics = units.filter((u) => u.type === "medic");
       if (medics.length) {
         const busy = medics.filter((m) => m.healing).length;

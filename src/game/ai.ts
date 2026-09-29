@@ -1,17 +1,19 @@
-import { ARTILLERY, ENEMY, UNITS } from "../config";
+import { ARTILLERY, BUILD, ENEMY, UNITS } from "../config";
 import type { Game } from "./game";
 import type { Unit } from "./unit";
 
 /**
  * Small opponent: keeps its barracks busy (riflemen with some grenadiers), takes outposts with
  * two-man squads, builds and mans jeeps once it holds a workshop, trains a few medics once it holds
- * the field hospital (they tag along with the attack waves), and attacks in growing waves.
+ * the field hospital (they tag along with the attack waves), fortifies its front outposts with MG
+ * nests once it has spare credits, and attacks in growing waves.
  */
 export class EnemyAI {
   private waveTimer = 150;
   private captureTimer = 5;
   private waveSize = 5;
   private artilleryTimer = 20;
+  private buildTimer = 90;
 
   constructor(private readonly game: Game) {}
 
@@ -20,7 +22,9 @@ export class EnemyAI {
     const b = g.enemyBarracks;
     if (!b.alive || g.result) return;
 
-    const mine = g.units.filter((u) => u.alive && u.team === ENEMY && !u.vehicle);
+    const all = g.units.filter((u) => u.alive && u.team === ENEMY && !u.vehicle);
+    const mine = all.filter((u) => !u.isStructure);
+    const guns = all.filter((u) => u.hasMg && u.buildT <= 0);
     const soldiers = mine.filter((u) => !u.isVehicle);
     const jeeps = mine.filter((u) => u.type === "jeep");
 
@@ -39,8 +43,8 @@ export class EnemyAI {
     const capturing = (u: Unit) => g.outposts.some((o) => o.owner !== ENEMY && Math.hypot(u.x - o.x, u.z - o.z) <= o.radius);
     const available = mine.filter((u) => u.armed && u.path.length === 0 && !u.target && !u.boarding && !capturing(u));
 
-    // man empty jeeps with the nearest idle soldier
-    for (const j of jeeps) {
+    // man empty jeeps and MG nests with the nearest idle soldier
+    for (const j of guns) {
       if (j.gunner || soldiers.some((s) => s.boarding === j)) continue;
       if (g.commandBoard(available.filter((u) => !u.isVehicle), j, false)) {
         const i = available.findIndex((u) => u.boarding === j);
@@ -65,6 +69,7 @@ export class EnemyAI {
     }
 
     if (g.mode === "skirmish") this.useArtillery(dt, mine);
+    if (g.mode === "base") this.fortify(dt, all);
 
     this.waveTimer -= dt;
     const idle = available.filter((u) => u.armed && u.path.length === 0);
@@ -77,6 +82,30 @@ export class EnemyAI {
       if (followers.length) g.commandMove(followers, { x: (t.x + idle[0].x) / 2, z: (t.z + idle[0].z) / 2 }, false, false);
       this.waveTimer = 75;
       this.waveSize = Math.min(10, this.waveSize + 1);
+    }
+  }
+
+  /**
+   * Places an MG nest at the owned outpost closest to the player's base, on the side facing it
+   * (at most two nests, only with credits to spare for troops).
+   */
+  private fortify(dt: number, all: Unit[]) {
+    const g = this.game;
+    this.buildTimer -= dt;
+    if (this.buildTimer > 0) return;
+    this.buildTimer = 20;
+    if (all.filter((u) => u.type === "mgnest").length >= 2 || g.credits[ENEMY] < UNITS.mgnest.cost + 500) return;
+    const foe = g.playerBarracks;
+    const posts = g.outposts
+      .filter((o) => o.owner === ENEMY && !all.some((u) => u.type === "mgnest" && u.anchor === o))
+      .sort((a, b) => Math.hypot(a.x - foe.x, a.z - foe.z) - Math.hypot(b.x - foe.x, b.z - foe.z));
+    const o = posts[0];
+    if (!o) return;
+    const toward = Math.atan2(foe.x - o.x, foe.z - o.z);
+    for (let i = 0; i < 8; i++) {
+      const a = toward + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.35;
+      const r = o.radius + BUILD.outpostReach * 0.5;
+      if (g.placeStructure("mgnest", ENEMY, o.x + Math.sin(a) * r, o.z + Math.cos(a) * r)) return;
     }
   }
 

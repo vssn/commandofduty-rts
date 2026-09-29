@@ -1,9 +1,10 @@
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { ARTILLERY, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameMode, PLAYER, START_CREDITS, UNITS, type Team, type UnitType } from "../config";
+import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
 import { toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
-  createAuraTemplate, createBarracksMesh, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun, createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM,
+  createAuraTemplate, createBarracksMesh, createBollardMesh, createMgNestMesh, createPennant, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun,
+  createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM, NEST_DIM,
 } from "../world/models";
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
@@ -16,7 +17,7 @@ import type { NavGrid } from "./nav";
 import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
-import { JeepView, SoldierView, type JeepTemplates, type SoldierTemplates, type UnitView } from "./views";
+import { BollardView, JeepView, NestView, SoldierView, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
 
 export type WeaponKind = "rifle" | "mg" | "sniper";
 export interface Tracer { ax: number; ay: number; az: number; bx: number; by: number; bz: number; t: number; hit: boolean; kind: WeaponKind }
@@ -28,8 +29,8 @@ export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
   | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
-  | "enemySearching" | "tracked";
-export interface GameEventData { outpost: Outpost; bonus: number }
+  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost";
+export interface GameEventData { outpost: Outpost; bonus: number; structures?: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
 const TRACER_LIFE = 0.09;
@@ -59,6 +60,8 @@ export class Game {
 
   private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent" | "medic", SoldierTemplates>>;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
+  private readonly nestTpl: Record<Team, NestTemplates>;
+  private readonly bollardTpl: Mesh;
   private readonly ringTpl: Mesh;
   private readonly blobTpl: Mesh;
   /** Aura templates for 1, 2 and 3 simultaneous bonuses. */
@@ -109,6 +112,14 @@ export class Game {
     }
     shadows.addShadowCaster(wheel);
     shadows.addShadowCaster(gun);
+    const nest = createMgNestMesh(scene);
+    const pennants: [Mesh, Mesh] = [createPennant(scene, PLAYER), createPennant(scene, ENEMY)];
+    this.nestTpl = {
+      0: { body: nest, gun, crew: this.soldierTpl[PLAYER].rifleman, pennants },
+      1: { body: nest, gun, crew: this.soldierTpl[ENEMY].rifleman, pennants },
+    };
+    this.bollardTpl = createBollardMesh(scene);
+    for (const m of [nest, this.bollardTpl, ...pennants]) shadows.addShadowCaster(m);
 
     this.effects = new Effects(scene, shadows, this);
     this.artillery = new Artillery(scene, this);
@@ -200,10 +211,15 @@ export class Game {
     const name = `${type}-${team}`;
     const view: UnitView = type === "jeep"
       ? new JeepView(this.scene, this.jeepTpl[team], name, this.blobTpl)
-      : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
+      : type === "mgnest"
+        ? new NestView(this.scene, this.nestTpl[team], name)
+        : type === "bollard"
+          ? new BollardView(this.scene, this.bollardTpl, name)
+          : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
     const ring = this.ringTpl.createInstance("ring");
     ring.isPickable = false;
     if (type === "jeep") ring.scaling.set(2.6, 1, 2.6);
+    if (type === "mgnest" || type === "bollard") ring.scaling.set(1.9, 1, 1.9);
     const u = new Unit(type, team, x, z, view, ring);
     u.px = x;
     u.pz = z;
@@ -335,11 +351,88 @@ export class Game {
     if (p) this.credits[team] += p.cancel(type);
   }
 
+  // ---------------------------------------------------------------- building
+
+  /**
+   * Where `team` may place a structure at (x, z): near an own outpost (the structure then belongs to
+   * it) or near the own barracks, on free ground. Bollards are laid across the approach, their row
+   * at right angles to the direction from the anchor; MG nests face away from it.
+   */
+  placement(type: StructureType, team: Team, x: number, z: number): { ok: boolean; anchor: Outpost | null; heading: number } {
+    let anchor: Outpost | null = null, center: V2 | null = null, best = Infinity;
+    for (const o of this.outposts) {
+      if (o.owner !== team || o.destroyed) continue;
+      const d = Math.hypot(x - o.x, z - o.z);
+      if (d <= o.radius + BUILD.outpostReach && d < best) { best = d; anchor = o; center = o; }
+    }
+    const base = team === PLAYER ? this.playerBarracks : this.enemyBarracks;
+    const db = Math.hypot(x - base.x, z - base.z);
+    if (base.alive && db <= BUILD.baseReach && db < best) { anchor = null; center = base; }
+    const heading = center ? Math.atan2(x - center.x, z - center.z) : 0;
+    if (!center || Math.abs(x) > MAP_HALF - 3 || Math.abs(z) > MAP_HALF - 3) return { ok: false, anchor, heading };
+    const f = BUILD.footprint[type];
+    let ok = this.nav.areaFree(x, z, f.hw, f.hd, heading, 0) && !this.nav.isBlocked(x, z, 0);
+    // never on top of a unit or another structure
+    if (ok) ok = !this.units.some((u) => u.alive && !u.vehicle && Math.hypot(u.x - x, u.z - z) < Math.max(f.hw, f.hd) + u.radius);
+    return { ok, anchor, heading };
+  }
+
+  /** Pays for and places a structure; it is built on the spot over its build time. */
+  placeStructure(type: StructureType, team: Team, x: number, z: number): Unit | null {
+    if (this.mode !== "base") return null;
+    const p = this.placement(type, team, x, z);
+    if (!p.ok) {
+      if (team === PLAYER) this.emit("cannotBuild", PLAYER);
+      return null;
+    }
+    if (this.credits[team] < UNITS[type].cost) {
+      this.emit("noCredits", team);
+      return null;
+    }
+    this.credits[team] -= UNITS[type].cost;
+    const u = this.spawnUnit(type, team, x, z);
+    u.heading = u.turret = p.heading;
+    u.anchor = p.anchor;
+    u.buildT = UNITS[type].buildTime;
+    this.blockStructure(u, 1);
+    u.postMove(0, this);
+    if (team === PLAYER) this.emit("built", PLAYER);
+    return u;
+  }
+
+  private blockStructure(u: Unit, delta: 1 | -1) {
+    const f = BUILD.footprint[u.type as StructureType];
+    this.nav.structure(u.x, u.z, f.hw, f.hd, u.heading, u.type === "bollard" ? [1] : [0, 1], delta);
+  }
+
+  /** Structures of `o` pass to its new owner (called when the outpost is taken). Returns how many. */
+  transferStructures(o: Outpost, team: Team): number {
+    let n = 0;
+    for (const u of this.units) {
+      if (!u.alive || u.anchor !== o || u.team === team) continue;
+      u.team = team;
+      u.stop();
+      u.selected = false;
+      this.selection.delete(u);
+      n++;
+    }
+    return n;
+  }
+
+  /** A manned MG nest of the outpost's owner keeps the outpost from being taken. */
+  guardedBy(o: Outpost): Unit | null {
+    return this.units.find((u) => u.alive && u.type === "mgnest" && u.anchor === o && u.team === o.owner && u.gunner && u.gunner.alive) ?? null;
+  }
+
   // ---------------------------------------------------------------- selection
 
   select(units: Iterable<Unit>, additive = false) {
     if (!additive) this.clearSelection();
-    for (const u of units) {
+    let list = [...units];
+    // structures only join a selection on their own (a single click), never a group
+    if (list.some((u) => !u.isStructure)) list = list.filter((u) => !u.isStructure);
+    else if (list.length > 1) list = [];
+    for (const u of list) {
       if (!u.alive || u.team !== PLAYER || u.vehicle) continue;
       u.selected = true;
       this.selection.add(u);
@@ -378,7 +471,7 @@ export class Game {
   // ---------------------------------------------------------------- commands
 
   commandMove(units: Iterable<Unit>, p: V2, attackMove = false, showMarker = true) {
-    const list = [...units].filter((u) => u.alive && !u.vehicle);
+    const list = [...units].filter((u) => u.alive && !u.vehicle && !u.isStructure);
     if (!list.length) return;
     let cx = 0, cz = 0;
     for (const u of list) { cx += u.x; cz += u.z; }
@@ -439,7 +532,7 @@ export class Game {
    * aboard as the gunner. Returns false if nobody can board.
    */
   commandBoard(units: Iterable<Unit>, jeep: Unit, showMarker = true): boolean {
-    if (!jeep.alive || jeep.type !== "jeep" || jeep.gunner) return false;
+    if (!jeep.alive || !jeep.hasMg || jeep.gunner || jeep.buildT > 0) return false;
     if (this.units.some((u) => u.boarding === jeep && u.alive)) return false;
     let best: Unit | null = null, bd = Infinity;
     for (const u of units) {
@@ -544,7 +637,8 @@ export class Game {
     // the player's units only engage what they can actually see
     const sees = u.team === PLAYER ? this.canSee : null;
     for (const o of this.units) {
-      if (!o.alive || o.vehicle || o.team === u.team || o.cloaked) continue;
+      // bollards are only attacked on explicit orders
+      if (!o.alive || o.vehicle || o.team === u.team || o.cloaked || o.type === "bollard") continue;
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
       if (d < bd) { bd = d; best = o; }
@@ -598,7 +692,7 @@ export class Game {
     for (const u of this.units) {
       const current = this.auras.get(u);
       let level = 0;
-      if (u.alive && !u.vehicle && !u.fogHidden) {
+      if (u.alive && !u.vehicle && !u.fogHidden && !u.isStructure) {
         const b = this.bonusesOf(u);
         level = (b.cover ? 1 : 0) + (b.outpost ? 1 : 0) + (b.elevated ? 1 : 0);
       }
@@ -637,7 +731,7 @@ export class Game {
       if (!t.isVehicle && this.cover && this.cover.at(t.x, t.z)) defence += COMBAT.cover;
       if (this.outpostAt(t.x, t.z)) defence += COMBAT.outpost;
       // the heavy machine gun punches through cover
-      if (u.type === "jeep") defence *= 1 - JEEP_MG.pierce;
+      if (u.hasMg) defence *= 1 - JEEP_MG.pierce;
       p -= defence;
     }
     return Math.max(COMBAT.minHit, p);
@@ -647,7 +741,11 @@ export class Game {
     this.onShot?.(from.x, from.z, kind);
     const spread = hit ? 0.3 : 1.6;
     let ax: number, ay: number, az: number;
-    if (from.isVehicle) {
+    if (from.type === "mgnest") {
+      ax = from.x + Math.sin(from.turret) * 1.9;
+      az = from.z + Math.cos(from.turret) * 1.9;
+      ay = from.y + NEST_DIM.gunY + 0.05;
+    } else if (from.isVehicle) {
       // muzzle of the MG on its swivel
       const px = from.x - Math.sin(from.heading) * -JEEP_DIM.turret.z, pz = from.z - Math.cos(from.heading) * -JEEP_DIM.turret.z;
       ax = px + Math.sin(from.turret) * 1.6;
@@ -683,11 +781,14 @@ export class Game {
         t.kill();
         this.selection.delete(t);
         this.onKilled?.(t);
-        if (t.type === "jeep") {
-          this.releaseGunner(t);
-          this.effects.explode(t.x, t.z, 30, 2.5, null, 1.6);
+        if (t.hasMg) this.releaseGunner(t);
+        if (t.type === "jeep") this.effects.explode(t.x, t.z, 30, 2.5, null, 1.6);
+        if (t.isStructure) {
+          this.blockStructure(t, -1);
+          if (t.type === "mgnest") this.effects.explode(t.x, t.z, 0, 0.1, null, 1.1);
+          if (t.team === PLAYER) this.emit("structureLost", PLAYER);
         }
-        if (t.team === PLAYER) this.emit("unitLost", PLAYER);
+        if (t.team === PLAYER && !t.isStructure) this.emit("unitLost", PLAYER);
       } else if (by) {
         t.onAttacked(by);
       }
@@ -724,7 +825,8 @@ export class Game {
     if (this.mode === "skirmish" && !this.result) this.checkSkirmishEnd();
 
     // soft separation; heavier and moving units push lighter / idle ones aside
-    const active = this.units.filter((u) => u.alive && !u.vehicle);
+    const active = this.units.filter((u) => u.alive && !u.vehicle && !u.isStructure);
+    for (const u of this.units) if (u.alive && u.isStructure) u.postMove(dt, this);
     for (let i = 0; i < active.length; i++) {
       const a = active[i];
       for (let j = i + 1; j < active.length; j++) {

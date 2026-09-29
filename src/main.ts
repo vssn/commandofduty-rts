@@ -103,6 +103,7 @@ document.getElementById("menu-controls")!.addEventListener("click", () => {
   help.hidden = !help.hidden;
 });
 hud.bindArtillery(input);
+hud.bindBuild(input);
 hud.bindCommandos(input);
 
 // ------------------------------------------------------------------ touch controls

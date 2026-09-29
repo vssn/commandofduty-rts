@@ -9,7 +9,9 @@ export type Team = 0 | 1;
 export const PLAYER: Team = 0;
 export const ENEMY: Team = 1;
 
-export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic";
+export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic" | StructureType;
+/** Buildable defences (conquest): they share the unit machinery (targeting, damage, MG, gunner) but never move. */
+export type StructureType = "mgnest" | "bollard";
 
 export interface UnitStats {
   name: string;
@@ -28,6 +30,8 @@ export interface UnitStats {
   vehicle: boolean;
   /** Relative weight when units push each other aside. */
   mass: number;
+  /** Built structure: stationary, placed near own outposts or the base. */
+  structure?: boolean;
 }
 
 export const UNITS: Record<UnitType, UnitStats> = {
@@ -48,11 +52,33 @@ export const UNITS: Record<UnitType, UnitStats> = {
     name: "Sanitäter", plural: "Sanitäter", cost: 150, buildTime: 5, hp: 80, speed: 3.8, turn: 11,
     range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 0.55, vehicle: false, mass: 1,
   },
+  /** Sandbagged machine-gun position; fires only while a soldier mans it. */
+  mgnest: {
+    name: "MG-Nest", plural: "MG-Nester", cost: 400, buildTime: 6, hp: 480, speed: 0, turn: 0,
+    range: 16, acquire: 18, damage: 13, cooldown: 0.12, radius: 1.45, vehicle: true, mass: 1000, structure: true,
+  },
+  /** Row of concrete bollards: vehicles cannot pass, infantry walks between the posts. */
+  bollard: {
+    name: "Poller", plural: "Poller", cost: 50, buildTime: 2, hp: 260, speed: 0, turn: 0,
+    range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 1.6, vehicle: true, mass: 1000, structure: true,
+  },
   /** Commandos only: special agent in coat and cap. Fragile but fast; only fires when ordered. */
   agent: {
     name: "Agent", plural: "Agenten", cost: 0, buildTime: 0, hp: 60, speed: 6.6, turn: 12,
     range: 9, acquire: 0, damage: 14, cooldown: 0.9, radius: 0.5, vehicle: false, mass: 1,
   },
+};
+
+/**
+ * Building defences (conquest). A structure may be placed within `outpostReach` of the edge of an
+ * own outpost's area or within `baseReach` of the own barracks. Structures at an outpost change
+ * hands when the outpost is taken; a manned MG nest prevents that until it is destroyed.
+ */
+export const BUILD = {
+  outpostReach: 5,
+  baseReach: 20,
+  /** Footprints (half sizes); bollards only block vehicles. */
+  footprint: { mgnest: { hw: 1.3, hd: 1.3 }, bollard: { hw: 1.65, hd: 0.3 } } as Record<StructureType, { hw: number; hd: number }>,
 };
 
 /**
@@ -106,7 +132,7 @@ export const COMMANDOS = {
 /** Skirmish: starting forces per side (no reinforcements) and starting credits. Every jeep starts
  *  with its own MG gunner aboard (extra riflemen on top of the listed infantry). */
 export const SKIRMISH = {
-  forces: { rifleman: 10, grenadier: 5, medic: 2, jeep: 3 } as Record<Exclude<UnitType, "agent">, number>,
+  forces: { rifleman: 10, grenadier: 5, medic: 2, jeep: 3 } as Record<"rifleman" | "grenadier" | "medic" | "jeep", number>,
   credits: 400,
 };
 
@@ -127,7 +153,7 @@ export const ARTILLERY = {
 };
 
 /** How far units and structures of the player can see (fog of war). */
-export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, barracks: 20, outpost: 13 };
+export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, mgnest: 19, bollard: 3, barracks: 20, outpost: 13 };
 
 /** Grenades: area damage that also hurts friendly units (and the thrower) inside the blast. */
 export const GRENADE = {

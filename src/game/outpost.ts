@@ -28,6 +28,8 @@ export class Outpost {
   progress = 0;
   /** True while soldiers of both teams are inside. */
   contested = false;
+  /** True while a manned MG nest of the owner keeps attackers from taking it. */
+  guarded = false;
   private bonusPaid = false;
   /** Workshops build jeeps, field hospitals medics for their owner. */
   readonly production: Production | null;
@@ -118,9 +120,10 @@ export class Outpost {
     if (this.production && this.owner !== null) this.production.update(dt, g, this.owner, this.spawn, this.rally);
     this.flag.rotation.y = Math.sin(this.flagT * 2.1) * 0.25;
 
+    this.guarded = false;
     const inside: [number, number] = [0, 0];
     // the commandos agent is a saboteur: he neither takes outposts nor stops the enemy from holding them
-    const occupants = g.units.filter((u) => u.alive && !u.vehicle && u.type !== "agent" && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
+    const occupants = g.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && u.type !== "agent" && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
     for (const u of occupants) inside[u.team]++;
     this.contested = inside[0] > 0 && inside[1] > 0;
     if (this.contested) return; // enemy soldier present: progress is frozen, nobody heals
@@ -136,6 +139,9 @@ export class Outpost {
       if (this.progress === 0) this.capturer = null;
       return;
     }
+    // a manned MG nest holds the outpost: it has to be destroyed first
+    this.guarded = this.owner !== null && !!g.guardedBy(this);
+    if (this.guarded) return;
     if (this.capturer !== present) {
       this.capturer = present;
       this.progress = 0;
@@ -158,7 +164,8 @@ export class Outpost {
       g.credits[team] += bonus;
     }
     this.applyOwnerColors();
-    g.emit("captured", team, { outpost: this, bonus });
+    const structures = g.transferStructures(this, team);
+    g.emit("captured", team, { outpost: this, bonus, structures });
     if (previous !== null) g.emit("outpostLost", previous, { outpost: this, bonus: 0 });
   }
 }

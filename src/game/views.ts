@@ -1,5 +1,5 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import { HIP_X, HIP_Y, JEEP_DIM, KNEE, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
+import { HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import type { Unit } from "./unit";
 
@@ -64,6 +64,7 @@ export function buildLeg(tpl: SoldierTemplates, parent: TransformNode, x: number
   return { thigh, shin };
 }
 export interface JeepTemplates { body: Mesh; wheel: Mesh; gun: Mesh; crew: SoldierTemplates }
+export interface NestTemplates { body: Mesh; gun: Mesh; crew: SoldierTemplates; pennants: [Mesh, Mesh] }
 
 /** Visual representation of a unit; all animation lives here, the Unit only holds game state. */
 export interface UnitView {
@@ -356,5 +357,114 @@ export class JeepView implements UnitView {
     this.root.rotation.set(-0.3 * tip, u.heading + tip * 0.6, tip * 1.3);
     this.root.position.y = u.y + hop - (t > 3 ? (t - 3) * 0.5 : 0);
     this.gunner.setEnabled(false);
+  }
+}
+
+/** Share of a structure's construction that is done (1 = finished). */
+function built(u: Unit): number {
+  return u.stats.buildTime > 0 ? 1 - u.buildT / u.stats.buildTime : 1;
+}
+
+/**
+ * MG nest: sandbag ring rising out of the ground while it is built, a swivelling MG on its tripod,
+ * the gunner standing in the pit behind it once manned, and a pennant in the owner's colour.
+ */
+export class NestView implements UnitView {
+  readonly root: TransformNode;
+  private readonly turret: TransformNode;
+  private readonly gun: InstancedMesh;
+  private readonly gunner: TransformNode;
+  private readonly pennants: InstancedMesh[];
+  private gunnerShown = 0;
+
+  constructor(scene: Scene, tpl: NestTemplates, name: string) {
+    this.root = new TransformNode(name, scene);
+    const body = tpl.body.createInstance("nest");
+    body.parent = this.root;
+    body.isPickable = false;
+    this.turret = new TransformNode("nestTurret", scene);
+    this.turret.parent = this.root;
+    this.turret.position.set(0, NEST_DIM.gunY, 0.35);
+    this.gun = tpl.gun.createInstance("nestGun");
+    this.gun.parent = this.turret;
+    this.gun.isPickable = false;
+    // the gunner stands in the shallow pit, only his upper body shows above the sandbags
+    this.gunner = new TransformNode("nestGunner", scene);
+    this.gunner.parent = this.turret;
+    const crewBody = tpl.crew.body.createInstance("crewBody");
+    crewBody.parent = this.gunner;
+    crewBody.isPickable = false;
+    buildUpper(tpl.crew, this.gunner).arms.rotation.x = 0.25;
+    this.gunner.setEnabled(false);
+    this.pennants = tpl.pennants.map((p) => {
+      const m = p.createInstance("pennant");
+      m.parent = this.root;
+      m.position.set(-1.05, 0.15, -0.95);
+      m.isPickable = false;
+      return m;
+    });
+  }
+
+  sync(u: Unit, dt: number) {
+    const k = built(u);
+    this.root.position.set(u.x, u.y - (1 - k) * 0.9, u.z);
+    this.root.rotation.set(0, u.heading, 0);
+    this.turret.setEnabled(k >= 1);
+    this.turret.rotation.y = u.turret - u.heading;
+    this.gun.position.z = -u.recoil * 0.12;
+    this.pennants.forEach((p, i) => p.setEnabled(i === u.team && k >= 1));
+    this.pennants[u.team].rotation.y = Math.sin(performance.now() * 0.002 + u.id) * 0.3;
+    this.gunnerShown += ((u.gunner ? 1 : 0) - this.gunnerShown) * Math.min(1, dt * 6);
+    this.gunner.setEnabled(this.gunnerShown > 0.02);
+    this.gunner.position.set(0, -NEST_DIM.gunY - 0.85 - (1 - this.gunnerShown) * 1.0, -0.75);
+  }
+
+  setEnabled(on: boolean) {
+    this.root.setEnabled(on);
+  }
+
+  dispose() {
+    this.root.dispose();
+  }
+
+  animateDeath(u: Unit, t: number) {
+    // blown apart: the gun is thrown over, the sandbags slump and sink
+    const f = Math.min(1, t / 0.5);
+    this.gunner.setEnabled(false);
+    this.turret.rotation.set(-f * 1.2, u.turret - u.heading + f * 0.8, f * 0.6);
+    this.root.scaling.set(1 + f * 0.15, 1 - f * 0.55, 1 + f * 0.15);
+    this.root.position.y = u.y - (t > 3 ? (t - 3) * 0.4 : 0);
+  }
+}
+
+/** Bollards: rise out of the ground while being set, topple and sink when destroyed. */
+export class BollardView implements UnitView {
+  readonly root: TransformNode;
+
+  constructor(scene: Scene, tpl: Mesh, name: string) {
+    this.root = new TransformNode(name, scene);
+    const m = tpl.createInstance("bollards");
+    m.parent = this.root;
+    m.isPickable = false;
+  }
+
+  sync(u: Unit) {
+    const k = built(u);
+    this.root.position.set(u.x, u.y - (1 - k) * 1.1, u.z);
+    this.root.rotation.set(0, u.heading, 0);
+  }
+
+  setEnabled(on: boolean) {
+    this.root.setEnabled(on);
+  }
+
+  dispose() {
+    this.root.dispose();
+  }
+
+  animateDeath(u: Unit, t: number) {
+    const f = Math.min(1, t / 0.4);
+    this.root.rotation.set(f * 0.5, u.heading, f * 0.25);
+    this.root.position.y = u.y - f * 0.3 - (t > 3 ? (t - 3) * 0.5 : 0);
   }
 }

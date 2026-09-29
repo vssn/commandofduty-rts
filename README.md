@@ -82,6 +82,22 @@ eigenen Jeep): der nächststehende steigt auf und bedient das MG hinten. Das MG 
 und ignoriert die Hälfte der Deckungs-/Haltungsboni. Der Schütze kann nicht mehr aussteigen; erst wenn der Jeep zerstört
 wird, springt er ab und ist wieder ein normaler Soldat.
 
+## Befestigungen (Eroberung)
+
+| Bau | Kosten | Taste | Besonderheit |
+| --- | --- | --- | --- |
+| MG-Nest | 400 | N | Sandsackring mit MG (480 HP, Reichweite 16); schießt nur, wenn ein Soldat es besetzt (Soldat auswählen, Rechtsklick aufs Nest) |
+| Poller | 50 | B | Reihe aus drei Betonpollern: Fahrzeuge kommen nicht durch, Fußtruppen laufen zwischen den Pfosten hindurch |
+
+Kachel anklicken (oder Taste) und den Platz mit Linksklick wählen; Shift hält den Baumodus für mehrere Stück, Rechtsklick/Esc
+bricht ab. Gebaut werden darf auf freiem Gelände nahe einer eigenen Stellung (bis 5 Einheiten über ihren Kreis hinaus) oder
+im Umkreis von 20 um die eigene Kaserne – die erlaubten Zonen werden beim Platzieren grün umrandet. Poller werden quer zur
+Stellung bzw. Basis ausgerichtet, das MG-Nest schaut nach außen. Nach dem Setzen wird kurz gebaut (Nest 6 s, Poller 2 s).
+Befestigungen an einer Stellung gehören zu ihr: wird die Stellung eingenommen, gehen sie an den neuen Besitzer über.
+Ein **besetztes MG-Nest verhindert die Einnahme** seiner Stellung – es muss erst zerstört werden. Gewehre richten an
+Befestigungen nur halben Schaden an; Granaten, Artillerie und Sprengladungen wirken voll. Poller werden nie von selbst
+angegriffen, nur auf Befehl. Die KI errichtet mit genug Credits bis zu zwei MG-Nester an ihren vordersten Stellungen und besetzt sie.
+
 ## Fog of War
 
 Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; alles jenseits der Spielfläche liegt in
@@ -150,6 +166,7 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 | Minimap | Links: Kamera springen, Rechts: Einheiten dorthin schicken |
 | Q (Shift+Q: 5×) | Soldat ausbilden, Rechtsklick auf den Button bricht ab |
 | Strg+1–9 / 1–9 | Gruppe speichern / abrufen (zweimal drücken zentriert die Kamera) |
+| N · B | MG-Nest · Poller errichten (Shift: mehrere) |
 | S · H · Esc | Stopp · zur Basis · abwählen |
 
 ## Aufbau

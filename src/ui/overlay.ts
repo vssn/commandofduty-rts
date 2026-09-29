@@ -1,5 +1,5 @@
 import { Engine, Matrix, Vector3, Viewport, type Camera } from "@babylonjs/core";
-import { ARTILLERY, COMMANDOS, PLAYER } from "../config";
+import { ARTILLERY, BUILD, COMMANDOS, PLAYER, type StructureType } from "../config";
 import { ORDER_LINE_LIFE, type Game } from "../game/game";
 import type { Unit } from "../game/unit";
 
@@ -22,6 +22,8 @@ export class Overlay {
   dragRect: ScreenRect | null = null;
   /** Impact area preview while choosing an artillery target. */
   targetPreview: { x: number; z: number; r: number; ok: boolean } | null = null;
+  /** Placement preview while choosing where to build a structure (build zones are shown too). */
+  buildPreview: { type: StructureType; x: number; z: number; heading: number; ok: boolean } | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -158,7 +160,7 @@ export class Overlay {
 
     // outposts: capture progress (paused and blinking while contested)
     for (const o of game.outposts) {
-      if (o.progress <= 0 || o.capturer === null) continue;
+      if ((o.progress <= 0 || o.capturer === null) && !o.guarded) continue;
       if (sees && o.owner !== PLAYER && o.capturer !== PLAYER && !sees(o.x, o.z)) continue;
       const p = this.projectDev(o.x, o.y + 8.5, o.z);
       if (!p) continue;
@@ -171,7 +173,7 @@ export class Overlay {
       ctx.font = `${11 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.fillText(o.contested ? `${o.name} – umkämpft` : o.name, p.x, y - 4 * s);
+      ctx.fillText(o.guarded ? `${o.name} – MG-Nest verhindert Einnahme` : o.contested ? `${o.name} – umkämpft` : o.name, p.x, y - 4 * s);
     }
 
     // health bars
@@ -190,7 +192,14 @@ export class Overlay {
       if (!p) continue;
       const w = (jeep ? 44 : 26) * s;
       this.bar(p.x, p.y, w, 4 * s, u.hp / u.maxHp, jeep ? 8 : 5, u.selected, u.team === PLAYER);
-      if (jeep && u.team === PLAYER) {
+      if (u.buildT > 0) {
+        // construction progress under the health bar
+        const k = 1 - u.buildT / u.stats.buildTime, bw = w, bx = Math.round(p.x - bw / 2), by = Math.round(p.y + 5 * s);
+        ctx.fillStyle = "rgba(10, 12, 10, 0.75)";
+        ctx.fillRect(bx - s, by - s, bw + 2 * s, 3 * s + 2 * s);
+        ctx.fillStyle = "#e3d49a";
+        ctx.fillRect(bx, by, bw * k, 3 * s);
+      } else if (u.hasMg && u.team === PLAYER) {
         // MG crew indicator: filled when a gunner is aboard
         const x = Math.round(p.x + w / 2 + 4 * s), y = Math.round(p.y - 2 * s);
         ctx.fillStyle = u.gunner ? "#5ee060" : "rgba(10,12,10,0.75)";
@@ -209,6 +218,16 @@ export class Overlay {
         ctx.fillRect(x - c * 0.35, y - c * 0.11, c * 0.7, c * 0.22);
         ctx.fillRect(x - c * 0.11, y - c * 0.35, c * 0.22, c * 0.7);
       }
+    }
+
+    // building: allowed zones around own outposts and the base, footprint at the cursor
+    const bp = this.buildPreview;
+    if (bp) {
+      for (const o of game.outposts) if (o.owner === PLAYER && !o.destroyed) this.groundCircle(game, o.x, o.z, o.radius + BUILD.outpostReach, "125, 255, 134", false);
+      const base = game.playerBarracks;
+      if (base.alive) this.groundCircle(game, base.x, base.z, BUILD.baseReach, "125, 255, 134", false);
+      const f = BUILD.footprint[bp.type];
+      this.groundRect(game, bp.x, bp.z, f.hw, f.hd, bp.heading, bp.ok ? "125, 255, 134" : "255, 80, 60");
     }
 
     // artillery: impact area preview while targeting, countdown over ordered strikes
@@ -315,6 +334,26 @@ export class Overlay {
       ctx.lineWidth = 1 * s;
       ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     }
+  }
+
+  /** Filled rotated rectangle on the terrain (structure footprint). */
+  private groundRect(game: Game, cx: number, cz: number, hw: number, hd: number, rot: number, rgb: string) {
+    const ctx = this.ctx, s = this.scale;
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    ctx.beginPath();
+    [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].forEach(([lx, lz], i) => {
+      const x = cx + lx * c + lz * sn, z = cz - lx * sn + lz * c;
+      const p = this.project(x, game.terrain.heightAt(x, z) + 0.2, z);
+      if (!p) return;
+      if (i === 0) ctx.moveTo(p.x * s, p.y * s);
+      else ctx.lineTo(p.x * s, p.y * s);
+    });
+    ctx.closePath();
+    ctx.fillStyle = `rgba(${rgb}, 0.35)`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${rgb}, 0.95)`;
+    ctx.lineWidth = 2 * s;
+    ctx.stroke();
   }
 
   /** Circle on the terrain (follows the hills), optionally filled. */

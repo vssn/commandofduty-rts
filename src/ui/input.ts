@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core";
-import { ARTILLERY, COMMANDOS, PLAYER } from "../config";
+import { ARTILLERY, COMMANDOS, PLAYER, UNITS } from "../config";
 import type { Barracks } from "../game/barracks";
 import type { Game } from "../game/game";
 import type { Unit } from "../game/unit";
@@ -7,7 +7,11 @@ import type { Overlay } from "./overlay";
 import { CURSORS, type CursorKind } from "./cursors";
 import type { RtsCamera } from "./rtsCamera";
 
-export type Targeting = "artillery" | "sniper" | "charge";
+export type Targeting = "artillery" | "sniper" | "charge" | "mgnest" | "bollard";
+
+function isBuild(t: Targeting | null): t is "mgnest" | "bollard" {
+  return t === "mgnest" || t === "bollard";
+}
 
 const EDGE = 14;
 const DRAG_THRESHOLD = 6;
@@ -74,7 +78,8 @@ export class InputController {
     const p = this.local(e);
     if (this.targeting) {
       if (e.button === 0) {
-        if (this.confirmTarget(p.x, p.y)) this.setTargeting(null);
+        // Shift keeps the build mode for placing several structures in a row
+        if (this.confirmTarget(p.x, p.y) && !(e.shiftKey && isBuild(this.targeting))) this.setTargeting(null);
       } else if (e.button === 2) {
         this.setTargeting(null);
       }
@@ -125,6 +130,8 @@ export class InputController {
     } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey && (e.key === "c" || e.key === "C")) {
       this.setTargeting(this.targeting === "charge" ? null : "charge");
     }
+    else if (g.mode === "base" && !e.ctrlKey && !e.metaKey && (e.key === "n" || e.key === "N")) this.toggleBuild("mgnest");
+    else if (g.mode === "base" && !e.ctrlKey && !e.metaKey && (e.key === "b" || e.key === "B")) this.toggleBuild("bollard");
     else if (e.key === "s" || e.key === "S") g.commandStop(g.selection);
     else if (e.key === "h" || e.key === "H") {
       const b = g.playerBarracks;
@@ -211,7 +218,7 @@ export class InputController {
     const now = performance.now();
     const own = this.unitAt(x, y, "own");
     if (own) {
-      if (own.type === "jeep" && !own.gunner && !g.selection.has(own) && [...g.selection].some((u) => !u.isVehicle)) {
+      if (own.hasMg && !own.gunner && !g.selection.has(own) && [...g.selection].some((u) => !u.isVehicle && u.armed)) {
         g.commandBoard(g.selection, own);
       } else if (!g.selection.has(own) && this.canHeal(own)) {
         g.commandHeal(g.selection, own);
@@ -263,7 +270,7 @@ export class InputController {
     if (g.selection.size) {
       // soldiers onto an own unmanned jeep: one of them climbs aboard as the gunner
       const own = this.unitAt(x, y, "own");
-      if (own && own.type === "jeep" && !own.gunner && !g.selection.has(own)) {
+      if (own && own.hasMg && !own.gunner && !g.selection.has(own)) {
         if (g.commandBoard(g.selection, own)) return;
       }
       // medics onto a wounded comrade; the rest of the selection moves along to him
@@ -285,8 +292,22 @@ export class InputController {
   }
 
   /** Carries out the pending targeted action at the cursor; true if it was issued. */
+  /** Starts (or ends) choosing a spot for a structure. */
+  toggleBuild(type: "mgnest" | "bollard") {
+    if (this.targeting === type) return this.setTargeting(null);
+    if (this.game.credits[PLAYER] < UNITS[type].cost) {
+      this.game.emit("noCredits", PLAYER);
+      return;
+    }
+    this.setTargeting(type);
+  }
+
   private confirmTarget(x: number, y: number): boolean {
     const g = this.game, m = g.commandos;
+    if (isBuild(this.targeting)) {
+      const at = this.groundAt(x, y);
+      return !!at && !!g.placeStructure(this.targeting, PLAYER, at.x, at.z);
+    }
     if (this.targeting === "artillery") {
       const at = this.groundAt(x, y);
       return !!at && g.orderArtillery(PLAYER, at.x, at.z);
@@ -307,6 +328,7 @@ export class InputController {
   setTargeting(mode: Targeting | null) {
     this.targeting = mode;
     if (!mode) this.overlay.targetPreview = null;
+    if (!isBuild(mode)) this.overlay.buildPreview = null;
     this.onTargetingChange?.();
   }
 
@@ -314,7 +336,14 @@ export class InputController {
     const g = this.game;
     if (this.targeting) {
       let kind: CursorKind = "artillery";
-      if (this.targeting === "artillery") {
+      if (isBuild(this.targeting)) {
+        // footprint at the cursor: green where it may be placed (and can be paid), red otherwise
+        const at = this.groundAt(x, y);
+        const type = this.targeting;
+        const pl = at && g.placement(type, PLAYER, at.x, at.z);
+        this.overlay.buildPreview = at && pl ? { type, x: at.x, z: at.z, heading: pl.heading, ok: pl.ok && g.credits[PLAYER] >= UNITS[type].cost } : null;
+        kind = "arrow";
+      } else if (this.targeting === "artillery") {
         // preview of the impact area: red if the strike can be ordered there, grey if not
         const at = this.groundAt(x, y);
         this.overlay.targetPreview = at
@@ -338,7 +367,7 @@ export class InputController {
     const own = this.unitAt(x, y, "own");
     let kind: CursorKind = "arrow";
     if (this.unitAt(x, y, "enemy") || this.buildingAt(x, y)?.team === 1) kind = "attack";
-    else if (g.selection.size && own?.type === "jeep" && !own.gunner && [...g.selection].some((u) => !u.isVehicle)) kind = "board";
+    else if (g.selection.size && own?.hasMg && !own.gunner && own.buildT <= 0 && [...g.selection].some((u) => !u.isVehicle && u.armed)) kind = "board";
     else if (own && this.canHeal(own)) kind = "heal";
     else if (own) kind = "select";
     else if (g.selection.size) kind = "move";

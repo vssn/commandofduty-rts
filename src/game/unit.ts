@@ -3,6 +3,7 @@ import { COMBAT, GRENADE, JEEP_MG, MEDIC, ROAD, SLOPE, UNITS, type Team, type Un
 import type { V2 } from "../world/layout";
 import type { Game } from "./game";
 import type { NavLayer } from "./nav";
+import type { Outpost } from "./outpost";
 import type { UnitView } from "./views";
 
 /** Anything that can be shot at. */
@@ -88,6 +89,12 @@ export class Unit implements Target {
   combatT = 99;
 
   // --- medic
+  // --- structure
+  /** Seconds of construction left (structures); nothing works until it reaches 0. */
+  buildT = 0;
+  /** Outpost this structure belongs to: it changes hands with it. Null = at the base. */
+  anchor: Outpost | null = null;
+
   /** Wounded soldier this medic is walking to or treating. */
   patient: Unit | null = null;
   /** True while the medic is treating his patient this frame (kneels, hands forward). */
@@ -103,7 +110,8 @@ export class Unit implements Target {
 
   constructor(
     readonly type: UnitType,
-    readonly team: Team,
+    /** Only structures change sides (when their outpost is taken). */
+    public team: Team,
     public x: number,
     public z: number,
     readonly view: UnitView,
@@ -120,6 +128,16 @@ export class Unit implements Target {
     return this.stats.vehicle;
   }
 
+  /** Built defence (MG nest, bollards): never moves. */
+  get isStructure(): boolean {
+    return !!this.stats.structure;
+  }
+
+  /** Carries a machine gun that needs a soldier to man it (jeep, MG nest). */
+  get hasMg(): boolean {
+    return this.type === "jeep" || this.type === "mgnest";
+  }
+
   /** Vehicles plan on the layer with larger obstacle clearance. */
   get navLayer(): NavLayer {
     return this.stats.vehicle ? 1 : 0;
@@ -127,8 +145,8 @@ export class Unit implements Target {
 
   /** Can currently shoot (a jeep needs a gunner, the medic never can). */
   get armed(): boolean {
-    if (this.type === "medic") return false;
-    return this.type !== "jeep" || !!this.gunner;
+    if (this.type === "medic" || this.type === "bollard" || this.buildT > 0) return false;
+    return !this.hasMg || !!this.gunner;
   }
 
   /** Fired or took fire in the last few seconds: a medic cannot treat him now. */
@@ -228,6 +246,11 @@ export class Unit implements Target {
     if (this.vehicle) return; // riding as gunner: the jeep does everything
     this.px = this.x;
     this.pz = this.z;
+    if (this.buildT > 0) {
+      this.buildT = Math.max(0, this.buildT - dt);
+      this.moving = false;
+      return;
+    }
     this.cooldown -= dt;
     this.combatT += dt;
     this.throwT += dt;
@@ -277,6 +300,8 @@ export class Unit implements Target {
             else this.fireRifle(t, g);
           }
         }
+      } else if (this.isStructure) {
+        this.loseTarget(g); // cannot follow: wait for the next target in range
       } else if (this.explicitTarget || d <= this.stats.acquire + 4) {
         if (!this.isVehicle || this.explicitTarget) {
           this.repathT -= dt;
@@ -292,7 +317,7 @@ export class Unit implements Target {
       }
     }
     if (fighting) this.combatT = 0;
-    if (this.isVehicle && !fighting) this.aimTurret(this.x + Math.sin(this.heading), this.z + Math.cos(this.heading), dt);
+    if (this.isVehicle && !fighting && !this.isStructure) this.aimTurret(this.x + Math.sin(this.heading), this.z + Math.cos(this.heading), dt);
 
     if (moving && this.path.length) this.followPath(dt, g);
     this.moving = moving && this.path.length > 0;

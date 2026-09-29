@@ -828,6 +828,93 @@ export function createJeepGun(scene: Scene): Mesh {
   return m;
 }
 
+// ------------------------------------------------------------------ built structures
+
+/** MG nest dimensions shared by model and animation. */
+export const NEST_DIM = {
+  /** Pivot of the machine gun on its tripod. */
+  gunY: 1.05,
+  /** Outer radius of the sandbag ring. */
+  radius: 1.45,
+};
+
+/**
+ * MG nest (hidden template): a shallow pit ringed by two courses of sandbags, open at the back,
+ * with a tripod for the gun in front. The gun and the gunner are separate instances.
+ */
+export function createMgNestMesh(scene: Scene): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const bags: RGB[] = [[0.62, 0.55, 0.4], [0.57, 0.5, 0.36], [0.66, 0.6, 0.44]];
+  const pit = MeshBuilder.CreateCylinder("pit", { height: 0.06, diameter: NEST_DIM.radius * 2 - 0.3, tessellation: 16 }, scene);
+  pit.position.y = 0.04;
+  pit.material = mat(scene, [0.3, 0.24, 0.17]);
+  parts.push(pit);
+  const r = NEST_DIM.radius - 0.28;
+  for (let course = 0; course < 2; course++) {
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      // gap at the back (angle PI) for getting in and out
+      const a = ((i + (course ? 0.5 : 0)) / n) * Math.PI * 2;
+      if (Math.abs(Math.PI - a) < 0.5) continue;
+      const m = box(0.66, 0.3, 0.42, Math.sin(a) * r, 0.17 + course * 0.29, Math.cos(a) * r, bags[(i + course) % 3], 0, a);
+      m.rotation.z = (i % 2 ? 0.04 : -0.04);
+    }
+  }
+  // tripod under the gun
+  for (const a of [0, 2.1, -2.1]) {
+    box(0.06, 1.05, 0.06, Math.sin(a) * 0.28, 0.52, 0.35 + Math.cos(a) * 0.28, [0.16, 0.16, 0.17]).rotation.set(Math.cos(a) * 0.3, 0, -Math.sin(a) * 0.3);
+  }
+  box(0.4, 0.3, 0.3, -0.75, 0.2, -0.25, [0.3, 0.36, 0.2]); // ammo crates
+  box(0.4, 0.3, 0.3, -0.75, 0.2, 0.15, [0.3, 0.36, 0.2]);
+  const m = merge("mgNest", parts);
+  m.receiveShadows = true;
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+/** Small team pennant on a thin pole (hidden template, one per team). */
+export function createPennant(scene: Scene, team: Team): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  box(0.05, 1.6, 0.05, 0, 0.8, 0, [0.35, 0.3, 0.22]);
+  box(0.03, 0.34, 0.55, 0, 1.42, 0.28, TEAM_COLOR[team]);
+  const m = merge(`pennant${team}`, parts);
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+/** Bollards (hidden template): three striped concrete posts in a row along x, ~3.3 wide. */
+export function createBollardMesh(scene: Scene): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const concrete: RGB = [0.66, 0.65, 0.61];
+  for (const x of [-1.15, 0, 1.15]) {
+    const post = MeshBuilder.CreateCylinder("post", { height: 1.1, diameterTop: 0.36, diameterBottom: 0.44, tessellation: 10 }, scene);
+    post.position.set(x, 0.55, 0);
+    post.material = mat(scene, concrete);
+    parts.push(post);
+    for (const [y, c] of [[0.7, [0.9, 0.72, 0.12]], [0.84, [0.12, 0.12, 0.11]]] as [number, RGB][]) {
+      const band = MeshBuilder.CreateCylinder("band", { height: 0.13, diameter: 0.41, tessellation: 10 }, scene);
+      band.position.set(x, y, 0);
+      band.material = mat(scene, c);
+      parts.push(band);
+    }
+    const cap = MeshBuilder.CreateSphere("cap", { diameter: 0.36, segments: 6, slice: 0.5 }, scene);
+    cap.position.set(x, 1.1, 0);
+    cap.material = mat(scene, concrete);
+    parts.push(cap);
+    box(0.62, 0.08, 0.62, x, 0.04, 0, [0.5, 0.49, 0.46]); // footing
+  }
+  const m = merge("bollards", parts);
+  m.receiveShadows = true;
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
 // ------------------------------------------------------------------ explosions
 
 export function createGrenadeTemplate(scene: Scene): Mesh {

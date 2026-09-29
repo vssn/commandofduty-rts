@@ -4,7 +4,7 @@ import {
 } from "@babylonjs/core";
 import { PLAYER, type UnitType } from "../config";
 import {
-  createChargeMesh, createJeepBody, createJeepGun, createJeepWheel, createSoldierTemplates, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y,
+  createBollardMesh, createChargeMesh, createJeepBody, createJeepGun, createMgNestMesh, createPennant, NEST_DIM, createJeepWheel, createSoldierTemplates, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y,
   type SoldierTemplates,
 } from "../world/models";
 import { buildLeg, buildUpper } from "../game/views";
@@ -161,6 +161,29 @@ export async function renderPortraits(engine: Engine): Promise<PortraitImages> {
   const cw = charge.getAbsolutePosition().add(new Vector3(0, 0.25, 0));
   result.charge = await shoot(cw.add(new Vector3(-1.0, 0.95, 1.55)), cw, 0.75);
   jeep.dispose(false, true);
+
+  // MG nest: manned, seen from the front and slightly above so the sandbag ring reads
+  const nestRoot = new TransformNode("portraitNest", scene);
+  createMgNestMesh(scene).createInstance("nest").parent = nestRoot;
+  const nestGun = new TransformNode("nestTurret", scene);
+  nestGun.parent = nestRoot;
+  nestGun.position.set(0, NEST_DIM.gunY, 0.35);
+  createJeepGun(scene).createInstance("gun").parent = nestGun;
+  const nestCrew = soldier(scene, rifle, false);
+  nestCrew.parent = nestGun;
+  nestCrew.position.set(0, -NEST_DIM.gunY - 0.85, -0.75);
+  const pennant = createPennant(scene, PLAYER).createInstance("pennant");
+  pennant.parent = nestRoot;
+  pennant.position.set(-1.05, 0.15, -0.95);
+  nestRoot.rotation.y = Math.PI + 0.5;
+  result.mgnest = await shoot(new Vector3(-1.2, 3.1, -4.2), new Vector3(0, 0.9, 0), 0.72);
+  nestRoot.dispose();
+
+  // bollards: low three-quarter view along the row
+  const bollards = createBollardMesh(scene).createInstance("bollards");
+  bollards.rotation.y = 0.55;
+  result.bollard = await shoot(new Vector3(-1.6, 1.9, -3.4), new Vector3(0, 0.55, 0), 0.8);
+  bollards.dispose();
 
   // cloak: the agent fading into a translucent, cold shimmer
   const agent = createSoldierTemplates(scene, PLAYER, "agent");

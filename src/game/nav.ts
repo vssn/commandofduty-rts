@@ -18,7 +18,12 @@ const CLEARANCE: Record<NavLayer, number> = { 0: 0.45, 1: 1.9 };
 export class NavGrid {
   readonly cs = 1;
   readonly n = Math.round(MAP_HALF * 2);
+  /** Effective obstacle grid per layer: static obstacles or any dynamic one. */
   private readonly blocked: [Uint8Array, Uint8Array];
+  /** Static obstacles only (map buildings, trees, hedges). */
+  private readonly base: [Uint8Array, Uint8Array];
+  /** Number of player-built structures covering each cell. */
+  private readonly dyn: [Uint16Array, Uint16Array];
   private readonly g: Float32Array;
   private readonly f: Float32Array;
   private readonly from: Int32Array;
@@ -29,6 +34,8 @@ export class NavGrid {
   constructor() {
     const size = this.n * this.n;
     this.blocked = [new Uint8Array(size), new Uint8Array(size)];
+    this.base = [new Uint8Array(size), new Uint8Array(size)];
+    this.dyn = [new Uint16Array(size), new Uint16Array(size)];
     this.g = new Float32Array(size);
     this.f = new Float32Array(size);
     this.from = new Int32Array(size);
@@ -42,7 +49,7 @@ export class NavGrid {
       const p = pad + CLEARANCE[layer];
       this.eachCell(cx, cz, Math.hypot(hw, hd) + p, (x, z, k) => {
         const l = toLocal(cx, cz, rot, x, z);
-        if (Math.abs(l.x) < hw + p && Math.abs(l.z) < hd + p) this.blocked[layer][k] = 1;
+        if (Math.abs(l.x) < hw + p && Math.abs(l.z) < hd + p) this.blocked[layer][k] = this.base[layer][k] = 1;
       });
     }
   }
@@ -52,9 +59,38 @@ export class NavGrid {
     for (const layer of [0, 1] as NavLayer[]) {
       this.eachCell(cx, cz, Math.hypot(hw, hd), (x, z, k) => {
         const l = toLocal(cx, cz, rot, x, z);
-        if (Math.abs(l.x) < hw && Math.abs(l.z) < hd) this.blocked[layer][k] = 0;
+        if (Math.abs(l.x) < hw && Math.abs(l.z) < hd) {
+          this.base[layer][k] = 0;
+          this.blocked[layer][k] = this.dyn[layer][k] > 0 ? 1 : 0;
+        }
       });
     }
+  }
+
+  /**
+   * Adds (`delta` 1) or removes (-1) a built structure's rotated rectangle on the given layers.
+   * Structures are counted per cell, so removing one never frees a tree or another structure.
+   */
+  structure(cx: number, cz: number, hw: number, hd: number, rot: number, layers: readonly NavLayer[], delta: 1 | -1) {
+    for (const layer of layers) {
+      const p = CLEARANCE[layer];
+      this.eachCell(cx, cz, Math.hypot(hw, hd) + p, (x, z, k) => {
+        const l = toLocal(cx, cz, rot, x, z);
+        if (Math.abs(l.x) >= hw + p || Math.abs(l.z) >= hd + p) return;
+        this.dyn[layer][k] = Math.max(0, this.dyn[layer][k] + delta);
+        this.blocked[layer][k] = this.base[layer][k] || this.dyn[layer][k] > 0 ? 1 : 0;
+      });
+    }
+  }
+
+  /** True if a rectangle is free of static obstacles and structures on `layer` (without clearance). */
+  areaFree(cx: number, cz: number, hw: number, hd: number, rot: number, layer: NavLayer): boolean {
+    let free = true;
+    this.eachCell(cx, cz, Math.hypot(hw, hd) + 0.5, (x, z, k) => {
+      const l = toLocal(cx, cz, rot, x, z);
+      if (Math.abs(l.x) < hw + 0.5 && Math.abs(l.z) < hd + 0.5 && (this.base[layer][k] || this.dyn[layer][k])) free = false;
+    });
+    return free;
   }
 
   /** Blocks a round obstacle such as a tree trunk, on both layers. */
@@ -62,7 +98,7 @@ export class NavGrid {
     for (const layer of [0, 1] as NavLayer[]) {
       const rr = r + CLEARANCE[layer];
       this.eachCell(cx, cz, rr, (x, z, k) => {
-        if ((x - cx) ** 2 + (z - cz) ** 2 < rr * rr) this.blocked[layer][k] = 1;
+        if ((x - cx) ** 2 + (z - cz) ** 2 < rr * rr) this.blocked[layer][k] = this.base[layer][k] = 1;
       });
     }
   }
