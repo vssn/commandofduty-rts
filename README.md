@@ -42,6 +42,13 @@ rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **
 | Tarnen | X | 7 s unsichtbar – der Feind sieht und beschießt ihn nicht (Schießen beendet die Tarnung); 22 s Abklingzeit |
 | Sprengladung | C | 4 Stück: auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
 
+**Suche und Fährten:** Stirbt ein Gegner, durchsuchen Kameraden in Hörweite (20) sofort die Umgebung; wer später an der
+Leiche vorbeikommt (9), löst die Suche ebenfalls aus. Suchende kämmen das Gebiet in wachsenden Kreisen ab (bis 24),
+erkennen den Agenten schon auf 22 Einheiten und kehren nach etwa 45 s auf Posten bzw. Route zurück. Der Agent
+hinterlässt Fußspuren (sichtbar im eigenen Sichtbereich, verblassen nach knapp 2 Minuten; getarnt keine Spuren).
+Fußpatrouillen, die auf frische Spuren stoßen, folgen ihnen in Laufrichtung und durchsuchen am Spurende die Gegend.
+Über Gegnern zeigt „?“ Suche/Fährte, „!“ dass sie den Agenten entdeckt haben.
+
 Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
 
 ## Wirtschaft (Eroberung)

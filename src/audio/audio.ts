@@ -14,6 +14,8 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   targetEliminated: "Ziel ausgeschaltet",
   cloaked: "Tarnung aktiv",
   chargePlanted: "Ladung platziert",
+  enemySearching: "Sie suchen die Gegend ab",
+  tracked: "Man folgt unserer Spur",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",

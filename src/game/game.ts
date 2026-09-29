@@ -27,7 +27,8 @@ export interface OrderLine { unit: Unit; x: number; z: number; target: Target | 
 export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
-  | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady";
+  | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
+  | "enemySearching" | "tracked";
 export interface GameEventData { outpost: Outpost; bonus: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -49,6 +50,8 @@ export class Game {
   readonly enemyBarracks: Barracks;
   readonly effects: Effects;
   readonly artillery: Artillery;
+  /** Called whenever a unit dies (commandos: comrades react to the death). */
+  onKilled: ((u: Unit) => void) | null = null;
   /** Commandos mission state (agent, charges, patrols) when that mode is played. */
   commandos: CommandosMission | null = null;
   /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
@@ -621,6 +624,7 @@ export class Game {
         t.hp = 0;
         t.kill();
         this.selection.delete(t);
+        this.onKilled?.(t);
         if (t.type === "jeep") {
           this.releaseGunner(t);
           this.effects.explode(t.x, t.z, 30, 2.5, null, 1.6);

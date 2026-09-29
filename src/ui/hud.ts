@@ -19,6 +19,8 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   cloaked: "Tarnung aktiv",
   chargePlanted: "Ladung platziert – in Deckung!",
   notReady: "Noch nicht bereit",
+  enemySearching: "Tote entdeckt – der Feind durchsucht die Umgebung",
+  tracked: "Eine Patrouille folgt unserer Spur",
 };
 
 function $(id: string): HTMLElement {

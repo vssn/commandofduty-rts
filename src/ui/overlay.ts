@@ -228,6 +228,38 @@ export class Overlay {
         ctx.strokeText(text, x, y);
         ctx.fillText(text, x, y);
       };
+      // the agent's footprints (only where the player can see), fading with age
+      let side = 1;
+      for (const f of cm.trail) {
+        side = -side;
+        if (sees && !sees(f.x, f.z)) continue;
+        const age = cm.time - f.t;
+        const alpha = 0.5 * Math.max(0, 1 - age / 110);
+        if (alpha <= 0.02) continue;
+        const ox = Math.cos(f.heading) * 0.22 * side, oz = -Math.sin(f.heading) * 0.22 * side;
+        const p = this.project(f.x + ox, game.terrain.heightAt(f.x, f.z) + 0.1, f.z + oz);
+        if (!p) continue;
+        ctx.fillStyle = `rgba(40, 30, 20, ${alpha})`;
+        ctx.beginPath();
+        ctx.ellipse(p.x * s, p.y * s, 2.2 * s, 3.4 * s, -f.heading, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // what the enemy knows: "!" = has spotted the agent, "?" = searching or following tracks
+      for (const u of game.units) {
+        if (!u.alive || u.team === PLAYER || u.fogHidden || u.vehicle) continue;
+        const spotted = u.target === cm.agent;
+        if (!spotted && !u.intel) continue;
+        const p = this.project(u.x, u.y + (u.isVehicle ? 4.8 : 3.9), u.z);
+        if (!p) continue;
+        ctx.font = `900 ${16 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3.5 * s;
+        ctx.strokeStyle = "rgba(10, 10, 8, 0.9)";
+        ctx.fillStyle = spotted ? "#ff4a3a" : u.intel === "track" ? "#ffb347" : "#ffe066";
+        const mark = spotted ? "!" : "?";
+        ctx.strokeText(mark, p.x * s, p.y * s);
+        ctx.fillText(mark, p.x * s, p.y * s);
+      }
       for (const c of cm.planted) {
         const p = this.project(c.x, game.terrain.heightAt(c.x, c.z) + 2.2, c.z);
         if (!p) continue;

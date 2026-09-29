@@ -10,7 +10,29 @@ import { Unit } from "./unit";
 type ChargeTarget = Unit | Outpost;
 
 interface Charge { target: ChargeTarget; x: number; z: number; fuse: number; mesh: InstancedMesh }
-interface Patrol { units: Unit[]; route: V2[]; next: number; wait: number }
+interface Patrol {
+  units: Unit[];
+  route: V2[];
+  next: number;
+  wait: number;
+  /** Time stamp of the footprint the patrol is following (-1 = not tracking). */
+  trackT: number;
+  onFoot: boolean;
+}
+interface Footprint { x: number; z: number; t: number; heading: number }
+interface Death { x: number; z: number; t: number; found: boolean }
+interface Search { cx: number; cz: number; t0: number; until: number }
+
+/** Footprints stay readable this long (seconds). */
+const TRAIL_LIFE = 110;
+/** A patrol notices tracks within this distance. */
+const TRACK_NOTICE = 6.5;
+/** Chance per check (every 1.5 s) that a patrol near fresh tracks picks them up. */
+const TRACK_CHANCE = 0.55;
+/** Comrades within this distance hear a death; others discover the body when passing within FIND. */
+const HEAR = 20;
+const FIND = 9;
+const SEARCH = { duration: 45, radiusMin: 5, radiusMax: 24, vigilance: 22 };
 
 /**
  * "Commandos" mode: a single special agent behind enemy lines. The enemy holds every outpost,
@@ -36,6 +58,18 @@ export class CommandosMission {
   private spottedCooldown = 0;
   private chargeTpl!: Mesh;
   private agentMaterials: StandardMaterial[] = [];
+  /** The agent's footprints, oldest first (none while cloaked). */
+  readonly trail: Footprint[] = [];
+  /** Mission clock in seconds. */
+  time = 0;
+  private readonly deaths: Death[] = [];
+  private readonly searches = new Map<Unit, Search>();
+  /** Post of every guard, to return to after a search. */
+  private readonly homes = new Map<Unit, V2>();
+  private trackCheckT = 0;
+  private findCheckT = 0;
+  private searchMsgCooldown = 0;
+  private trackMsgCooldown = 0;
 
   constructor(private readonly game: Game) {}
 
@@ -74,6 +108,7 @@ export class CommandosMission {
         const p = g.nav.freePoint(o.x + Math.cos(a) * o.radius * 0.45, o.z + Math.sin(a) * o.radius * 0.45);
         const u = g.spawnUnit(i === 0 && o.kind === "depot" ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
         u.heading = a;
+        this.homes.set(u, { x: p.x, z: p.z });
       }
     }
 
@@ -87,7 +122,7 @@ export class CommandosMission {
         const p = g.nav.freePoint(r[0].x + k * 1.5, r[0].z + 3);
         return g.spawnUnit(t, ENEMY, p.x, p.z);
       });
-      this.patrols.push({ units, route: r, next: 1, wait: Math.random() * 4 });
+      this.patrols.push({ units, route: r, next: 1, wait: Math.random() * 4, trackT: -1, onFoot: true });
     }
     for (let i = 0; i < COMMANDOS.jeepPatrols; i++) {
       const r = route(i * 5 + 1, 4, 5);
@@ -95,7 +130,7 @@ export class CommandosMission {
       const jeep = g.spawnUnit("jeep", ENEMY, p.x, p.z);
       const gunner = g.spawnUnit("rifleman", ENEMY, p.x + 2, p.z);
       g.board(gunner, jeep);
-      this.patrols.push({ units: [jeep], route: r, next: 1, wait: 2 + i * 3 });
+      this.patrols.push({ units: [jeep], route: r, next: 1, wait: 2 + i * 3, trackT: -1, onFoot: false });
     }
 
     // the agent is dropped at a random spot away from outposts, patrols and the enemy base
@@ -112,6 +147,133 @@ export class CommandosMission {
     tpl.isPickable = false;
     this.chargeTpl = tpl;
     g.select([this.agent]);
+    g.onKilled = (u) => {
+      if (u.team === ENEMY) this.onEnemyKilled(u);
+    };
+  }
+
+  // ---------------------------------------------------------------- searching & tracking
+
+  /** A soldier died: comrades within earshot start searching at once, others when they find him. */
+  private onEnemyKilled(u: Unit) {
+    const death: Death = { x: u.x, z: u.z, t: this.time, found: false };
+    this.deaths.push(death);
+    const heard = this.game.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && Math.hypot(o.x - u.x, o.z - u.z) < HEAR);
+    if (heard.length) this.discover(death, heard);
+  }
+
+  private discover(d: Death, finders: Unit[]) {
+    d.found = true;
+    // everybody around the finders joins the search of the area around the body
+    const team = this.game.units.filter(
+      (o) => o.alive && o.team === ENEMY && !o.vehicle && finders.some((f) => Math.hypot(f.x - o.x, f.z - o.z) < HEAR),
+    );
+    for (const o of team) this.startSearch(o, d.x, d.z);
+    if (team.length && this.searchMsgCooldown <= 0) {
+      this.game.emit("enemySearching", PLAYER);
+      this.searchMsgCooldown = 15;
+    }
+  }
+
+  private startSearch(u: Unit, cx: number, cz: number) {
+    this.searches.set(u, { cx, cz, t0: this.time, until: this.time + SEARCH.duration * (0.8 + Math.random() * 0.4) });
+    u.intel = "search";
+    u.path = []; // pick the first search point right away
+  }
+
+  /** Searchers comb the area in growing circles and are extra watchful; then they go back. */
+  private updateSearches() {
+    const g = this.game, a = this.agent;
+    for (const [u, s] of this.searches) {
+      if (!u.alive) {
+        this.searches.delete(u);
+        continue;
+      }
+      if (this.time > s.until) {
+        this.searches.delete(u);
+        u.intel = "";
+        const home = this.homes.get(u);
+        if (home) u.orderMove(home, false, g); // guards return to their post, patrols resume their route
+        continue;
+      }
+      // heightened vigilance: they spot the agent from farther away than usual
+      if (a.alive && !a.cloaked && !u.target && Math.hypot(a.x - u.x, a.z - u.z) < SEARCH.vigilance) u.target = a;
+      if (u.target || u.path.length) continue;
+      const k = Math.min(1, (this.time - s.t0) / (s.until - s.t0));
+      const r = SEARCH.radiusMin + (SEARCH.radiusMax - SEARCH.radiusMin) * k * (0.6 + Math.random() * 0.4);
+      const ang = Math.random() * Math.PI * 2;
+      u.orderMove(g.nav.freePoint(s.cx + Math.cos(ang) * r, s.cz + Math.sin(ang) * r, u.navLayer), true, g);
+    }
+  }
+
+  /** Bodies that nobody heard fall are discovered by whoever walks past. */
+  private findBodies() {
+    const g = this.game;
+    for (const d of this.deaths) {
+      if (d.found || this.time - d.t > 90) continue;
+      const finders = g.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && Math.hypot(o.x - d.x, o.z - d.z) < FIND);
+      if (finders.length) this.discover(d, finders);
+    }
+  }
+
+  private recordTrail() {
+    const a = this.agent;
+    const now = this.time;
+    while (this.trail.length && now - this.trail[0].t > TRAIL_LIFE) this.trail.shift();
+    if (!a.alive || a.cloaked) return; // a cloaked agent leaves no readable tracks
+    const last = this.trail[this.trail.length - 1];
+    if (last && Math.hypot(a.x - last.x, a.z - last.z) < 1.4) return;
+    this.trail.push({ x: a.x, z: a.z, t: now, heading: a.heading });
+  }
+
+  /** Foot patrols that come across fresh tracks follow them in the direction the agent went. */
+  private updateTracking(dt: number) {
+    const g = this.game;
+    this.trackCheckT -= dt;
+    const check = this.trackCheckT <= 0;
+    if (check) this.trackCheckT = 1.5;
+    for (const p of this.patrols) {
+      if (!p.onFoot) continue;
+      const alive = p.units.filter((u) => u.alive);
+      if (!alive.length) continue;
+      const lead = alive[0];
+      if (alive.some((u) => this.searches.has(u))) continue;
+
+      if (p.trackT < 0) {
+        if (!check || alive.some((u) => u.target)) continue;
+        const spot = this.trail.find((f) => this.time - f.t < TRAIL_LIFE * 0.75 && Math.hypot(f.x - lead.x, f.z - lead.z) < TRACK_NOTICE);
+        if (!spot || Math.random() > TRACK_CHANCE) continue;
+        p.trackT = spot.t;
+        for (const u of alive) u.intel = "track";
+        if (this.trackMsgCooldown <= 0) {
+          g.emit("tracked", PLAYER);
+          this.trackMsgCooldown = 20;
+        }
+      }
+      if (alive.some((u) => u.path.length || u.target)) continue;
+
+      // follow a few footprints further along, towards where the agent went
+      const i = this.trail.findIndex((f) => f.t >= p.trackT);
+      if (i < 0) {
+        this.loseTrack(p, alive); // the tracks have faded
+        continue;
+      }
+      if (i >= this.trail.length - 1) {
+        // end of the trail: the agent must be close - search the area
+        const end = this.trail[this.trail.length - 1];
+        for (const u of alive) this.startSearch(u, end.x, end.z);
+        this.loseTrack(p, alive, true);
+        continue;
+      }
+      const next = this.trail[Math.min(this.trail.length - 1, i + 5)];
+      p.trackT = next.t;
+      g.commandMove(alive, g.nav.freePoint(next.x, next.z), true, false);
+    }
+  }
+
+  private loseTrack(p: Patrol, alive: Unit[], searching = false) {
+    p.trackT = -1;
+    if (!searching) for (const u of alive) u.intel = "";
   }
 
   /** The agent's templates are used by him alone, so his materials can fade for the cloak. */
@@ -256,9 +418,20 @@ export class CommandosMission {
   update(dt: number) {
     const g = this.game, a = this.agent;
     if (g.result) return;
+    this.time += dt;
     this.sniperCd -= dt;
     this.cloakCd -= dt;
     this.spottedCooldown -= dt;
+    this.searchMsgCooldown -= dt;
+    this.trackMsgCooldown -= dt;
+    this.recordTrail();
+    this.findCheckT -= dt;
+    if (this.findCheckT <= 0) {
+      this.findCheckT = 0.5;
+      this.findBodies();
+    }
+    this.updateSearches();
+    this.updateTracking(dt);
 
     // cloak: the agent fades out while invisible
     const alpha = a.cloaked ? 0.22 : 1;
@@ -342,8 +515,8 @@ export class CommandosMission {
     for (const p of this.patrols) {
       const alive = p.units.filter((u) => u.alive);
       if (!alive.length) continue;
-      const busy = alive.some((u) => u.path.length > 0 || u.target);
-      if (busy || this.alertT > 0) continue;
+      const busy = alive.some((u) => u.path.length > 0 || u.target || this.searches.has(u));
+      if (busy || this.alertT > 0 || p.trackT >= 0) continue;
       p.wait -= dt;
       if (p.wait > 0) continue;
       const wp = p.route[p.next];

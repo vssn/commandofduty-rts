@@ -44,6 +44,8 @@ export class Unit implements Target {
   get cloaked(): boolean {
     return this.cloakT > 0;
   }
+  /** Commandos: what an enemy soldier is doing about the agent (shown as "?" above him). */
+  intel: "" | "search" | "track" = "";
   /** Enemy unit currently hidden by the player's fog of war. */
   fogHidden = false;
   /** Set once the death animation has finished and the meshes are gone. */
