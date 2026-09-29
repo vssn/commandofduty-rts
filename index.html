@@ -2,7 +2,9 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Command of Duty</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,6 +24,27 @@
           </div>
         </div>
         <div id="loading">Lade Einsatzgebiet …</div>
+
+        <!-- touch controls: camera arrows, zoom, stop / deselect / cancel (no right mouse button on phones) -->
+        <div id="touch-ui">
+          <div class="dpad">
+            <button class="pad up" data-pan="0,1" aria-label="Karte nach oben">▲</button>
+            <button class="pad left" data-pan="-1,0" aria-label="Karte nach links">◀</button>
+            <button class="pad right" data-pan="1,0" aria-label="Karte nach rechts">▶</button>
+            <button class="pad down" data-pan="0,-1" aria-label="Karte nach unten">▼</button>
+          </div>
+          <div class="touch-actions">
+            <button id="t-cancel" class="t-btn warn" hidden>Abbrechen</button>
+            <button id="t-stop" class="t-btn">Stopp</button>
+            <button id="t-deselect" class="t-btn">Abwählen</button>
+            <div class="t-zoom">
+              <button id="t-zoom-in" class="t-btn" aria-label="Hineinzoomen">+</button>
+              <button id="t-zoom-out" class="t-btn" aria-label="Herauszoomen">−</button>
+            </div>
+          </div>
+          <div class="touch-hint">Tippen: auswählen · mit Auswahl tippen: Befehl · ziehen: Rahmen</div>
+        </div>
+        <div id="rotate-hint">Bitte das Gerät ins Querformat drehen</div>
 
         <div id="menu">
           <div class="menu-panel">

@@ -495,3 +495,121 @@ body.mode-commandos .mode-base-only, body.mode-commandos .credits-row { display:
 .mission-info .pips { display: flex; gap: 5px; }
 .mission-info .pip { width: 16px; height: 16px; border: 1px solid #6b3a2a; background: #2a1510; transform: rotate(45deg); }
 .mission-info .pip.done { background: #ff6a3a; border-color: #ffb08a; }
+
+/* ---------------------------------------------------------------- touch & small screens */
+
+#touch-ui, #rotate-hint { display: none; }
+body.touch-ui:not(.in-menu) #touch-ui { display: block; }
+#touch-ui { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+#touch-ui button { pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.dpad {
+  position: absolute;
+  left: max(10px, env(safe-area-inset-left));
+  bottom: 12px;
+  width: 132px;
+  height: 132px;
+}
+.pad {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  color: var(--text);
+  background: rgba(22, 23, 16, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.pad:active, .pad.held { background: rgba(233, 181, 60, 0.85); color: #16170f; }
+.pad.up { left: 44px; top: 0; }
+.pad.down { left: 44px; bottom: 0; }
+.pad.left { left: 0; top: 44px; }
+.pad.right { right: 0; top: 44px; }
+.touch-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.t-btn {
+  min-width: 96px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: rgba(22, 23, 16, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.t-btn:active { background: rgba(233, 181, 60, 0.85); color: #16170f; }
+.t-btn.warn { color: #16170f; background: rgba(255, 106, 70, 0.9); border-color: #ffb08a; }
+.t-btn[hidden] { display: none; }
+.t-zoom { display: flex; gap: 8px; }
+.t-zoom .t-btn { min-width: 44px; font-size: 20px; padding: 6px 0; width: 44px; }
+.touch-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(12, 13, 8, 0.6);
+  white-space: nowrap;
+}
+
+/* phones and small tablets in landscape: compact sidebar with only the essentials */
+@media (max-width: 1000px), (max-height: 560px) {
+  #sidebar { width: 172px; padding: 6px; gap: 6px; }
+  .brand, .help, #sidebar .panel:has(#btn-music), #sidebar .panel:has(#selection-info) { display: none; }
+  .credits-row { padding: 3px 8px; }
+  .credits { font-size: 16px; }
+  .panel { padding: 5px; }
+  .panel h2 { margin-bottom: 4px; font-size: 10px; }
+  .build-grid { gap: 5px; }
+  .build-name { font-size: 10px; letter-spacing: 0.02em; padding: 2px; }
+  .build-cost { font-size: 11px; }
+  .build-btn kbd { display: none; }
+  .mission-info { font-size: 11px; }
+  .mission-info strong { font-size: 12px; }
+  #toast { font-size: 12px; top: 8px; padding: 4px 12px; }
+  /* main menu */
+  #menu { padding: 0 4vw; overflow-y: auto; align-items: flex-start; padding-top: 14px; }
+  .menu-title { font-size: 40px; }
+  .menu-brief { font-size: 13px; margin: 10px 0 14px; }
+  .menu-btn { min-width: 200px; padding: 9px 16px; font-size: 15px; }
+  .menu-sub { margin: 8px 0 8px; }
+  .mode-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .mode-img { aspect-ratio: 16 / 8; }
+  .mode-text, .menu-foot { display: none; }
+  .mode-body { padding: 8px 10px 10px; gap: 6px; }
+  .mode-title { font-size: 20px; margin-top: -30px; }
+  .mode-tags em { font-size: 9px; padding: 1px 5px; }
+  body.menu-choose .menu-kicker, body.menu-choose .menu-title span { display: none; }
+  body.menu-choose .menu-title { font-size: 28px; }
+}
+@media (max-width: 640px) and (orientation: landscape) {
+  #sidebar { width: 150px; }
+}
+/* phones held upright: the game needs landscape */
+@media (orientation: portrait) and (max-width: 760px) {
+  #rotate-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(12, 13, 8, 0.96);
+  }
+}

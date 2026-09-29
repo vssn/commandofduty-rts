@@ -75,7 +75,8 @@ wird, springt er ab und ist wieder ein normaler Soldat.
 
 ## Fog of War
 
-Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; gegnerische Einheiten sind nur im aktuellen
+Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; alles jenseits der Spielfläche liegt in
+dauerhaftem Nebel (weicher Übergang an der Kartengrenze); gegnerische Einheiten sind nur im aktuellen
 Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 Einheiten weit, der Geländewagen 21.
 Die Sicht ist höhenabhängig: Jeder Sichtstrahl merkt sich den steilsten „Horizont“ (Hügelkamm, Baumkrone, Dachfirst)
 und nur was darüber hinausragt ist sichtbar. Wer oben steht, blickt über Wälder und Dörfer ins Tal, ein Hügelkamm
@@ -117,6 +118,15 @@ in den Hang, bergab längere Schritte mit Rücklage. Auf Straßen und Feldwegen 
 Alles wird zur Laufzeit erzeugt, es gibt keine Audiodateien: die Musik (Web Audio, `src/audio/music.ts`), leise
 Schussgeräusche mit Entfernung und Stereo-Panorama sowie Funkmeldungen über die Sprachausgabe des Browsers.
 Der Ton startet mit dem ersten Klick (Autoplay-Richtlinie der Browser). Taste **M** schaltet die Musik.
+
+## Smartphone & Tablet
+
+Auf Touch-Geräten (automatisch erkannt) gibt es keinen Rechtsklick: **Tippen** auf eine eigene Einheit wählt aus
+(zweimal tippen: alle sichtbaren gleichen Typs), **mit Auswahl tippen** ist der Befehl (Bewegen, Angreifen/Scharfschuss,
+Sammelpunkt; eigener unbemannter Jeep = Schütze zuweisen), **ziehen** zieht einen Auswahlrahmen. Eine Touch-Leiste
+bietet Pfeiltasten zum Scrollen (halten), Zoom +/−, Stopp, Abwählen und Abbrechen (Zielauswahl); die Minimap verschiebt
+wie gewohnt den Ausschnitt. Auf kleinen Bildschirmen wird die Seitenleiste auf Minimap, Credits und Kacheln reduziert,
+das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 
 ## Steuerung
 

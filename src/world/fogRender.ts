@@ -36,8 +36,10 @@ void main(void) {
   vec4 world = invViewProj * vec4(vUV * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
   world /= world.w;
   vec2 fuv = (world.xz + mapHalf) / (2.0 * mapHalf);
-  // beyond the playable area counts as explored
-  float v = (fuv.x < 0.0 || fuv.y < 0.0 || fuv.x > 1.0 || fuv.y > 1.0) ? 0.45 : fogAt(fuv);
+  // beyond the playable area lies permanent fog: it fades from the map edge into darkness
+  float v = fogAt(clamp(fuv, vec2(0.0), vec2(1.0)));
+  float outside = max(abs(world.x), abs(world.z)) - mapHalf;
+  v = mix(v, 0.0, smoothstep(-2.0, 10.0, outside));
   // a touch of world-space noise breaks up banding in the soft gradients
   float n = fract(sin(dot(floor(world.xz * 3.0), vec2(12.9898, 78.233))) * 43758.5453);
   v = clamp(v + (n - 0.5) * 0.03, 0.0, 1.0);

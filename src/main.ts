@@ -105,6 +105,48 @@ document.getElementById("menu-controls")!.addEventListener("click", () => {
 hud.bindArtillery(input);
 hud.bindCommandos(input);
 
+// ------------------------------------------------------------------ touch controls
+// Phones have no right mouse button and no hover: taps become commands (see InputController.tap),
+// arrow buttons pan the map, and stop / deselect / cancel get their own buttons.
+const enableTouchUi = () => document.body.classList.add("touch-ui");
+if (window.matchMedia("(pointer: coarse)").matches) enableTouchUi();
+window.addEventListener("pointerdown", (e) => e.pointerType === "touch" && enableTouchUi(), { passive: true });
+for (const btn of document.querySelectorAll<HTMLButtonElement>("#touch-ui .pad")) {
+  const [x, z] = btn.dataset.pan!.split(",").map(Number);
+  const release = () => {
+    input.setPad(0, 0);
+    btn.classList.remove("held");
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    input.setPad(x, z);
+    try {
+      btn.setPointerCapture(e.pointerId); // keep receiving "up" even if the finger slides off
+    } catch {
+      /* not capturable (e.g. synthetic event) - pointerup/cancel still release */
+    }
+    btn.classList.add("held");
+  });
+  btn.addEventListener("pointerup", release);
+  btn.addEventListener("pointercancel", release);
+  btn.addEventListener("lostpointercapture", release);
+}
+const tapBtn = (id: string, fn: () => void) => document.getElementById(id)!.addEventListener("click", fn);
+tapBtn("t-zoom-in", () => cam.zoom(-1.5));
+tapBtn("t-zoom-out", () => cam.zoom(1.5));
+tapBtn("t-stop", () => game.commandStop(game.selection));
+tapBtn("t-deselect", () => {
+  input.setTargeting(null);
+  game.clearSelection();
+});
+tapBtn("t-cancel", () => input.setTargeting(null));
+const cancelBtn = document.getElementById("t-cancel")!;
+const prevTargeting = input.onTargetingChange;
+input.onTargetingChange = () => {
+  prevTargeting?.();
+  cancelBtn.hidden = !input.targeting;
+};
+
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
   if (mode === "skirmish") {

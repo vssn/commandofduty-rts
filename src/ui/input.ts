@@ -11,6 +11,8 @@ export type Targeting = "artillery" | "sniper" | "charge";
 
 const EDGE = 14;
 const DRAG_THRESHOLD = 6;
+/** Fingers are less precise: a larger movement is needed before a tap becomes a drag. */
+const TOUCH_DRAG_THRESHOLD = 14;
 const PICK_RADIUS = 18;
 const DOUBLE_CLICK_MS = 320;
 
@@ -32,6 +34,10 @@ export class InputController {
   private readonly groups = new Map<string, Unit[]>();
   private cursorKind: CursorKind | null = null;
   private cursorT = 0;
+  /** The current/last pointer is a finger: taps also issue commands, no edge scrolling. */
+  private touch = false;
+  /** Camera pan from the on-screen arrow buttons (-1..1 per axis). */
+  private readonly pad = { x: 0, z: 0 };
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -63,6 +69,7 @@ export class InputController {
   }
 
   private onDown(e: PointerEvent) {
+    this.touch = e.pointerType === "touch";
     if (this.game.result || !this.enabled) return;
     const p = this.local(e);
     if (this.targeting) {
@@ -82,12 +89,14 @@ export class InputController {
   }
 
   private onMove(e: PointerEvent) {
+    this.touch = e.pointerType === "touch";
     this.mouseX = e.clientX;
     this.mouseY = e.clientY;
-    this.inWindow = true;
+    this.inWindow = !this.touch; // a finger resting near the edge must not scroll the map
     const p = this.local(e);
     if (this.dragStart) {
-      if (!this.dragging && Math.hypot(p.x - this.dragStart.x, p.y - this.dragStart.y) > DRAG_THRESHOLD) this.dragging = true;
+      const threshold = this.touch ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD;
+      if (!this.dragging && Math.hypot(p.x - this.dragStart.x, p.y - this.dragStart.y) > threshold) this.dragging = true;
       if (this.dragging) this.overlay.dragRect = { x0: this.dragStart.x, y0: this.dragStart.y, x1: p.x, y1: p.y };
     }
     this.updateCursor(p.x, p.y);
@@ -111,10 +120,10 @@ export class InputController {
     else if (e.key === "Escape") g.clearSelection();
     else if ((e.key === "a" || e.key === "A") && !e.ctrlKey && !e.metaKey && g.mode === "skirmish") {
       this.setTargeting(this.targeting ? null : "artillery");
-    } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey) {
-      const k = e.key.toLowerCase();
-      if (k === "x") g.commandos?.cloak();
-      else if (k === "c") this.setTargeting(this.targeting === "charge" ? null : "charge");
+    } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey && (e.key === "x" || e.key === "X")) {
+      g.commandos?.cloak();
+    } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey && (e.key === "c" || e.key === "C")) {
+      this.setTargeting(this.targeting === "charge" ? null : "charge");
     }
     else if (e.key === "s" || e.key === "S") g.commandStop(g.selection);
     else if (e.key === "h" || e.key === "H") {
@@ -168,6 +177,10 @@ export class InputController {
   }
 
   private click(x: number, y: number, shift: boolean) {
+    if (this.touch) {
+      this.tap(x, y);
+      return;
+    }
     const g = this.game;
     const u = this.unitAt(x, y, "own");
     const now = performance.now();
@@ -187,6 +200,40 @@ export class InputController {
     const b = this.buildingAt(x, y);
     if (b && b.team === PLAYER) g.selectBuilding(b);
     else if (!shift) g.clearSelection();
+  }
+
+  /**
+   * Touch has no right button: a tap selects when nothing is selected (or on an own unit), and
+   * otherwise it is the command - move, attack, snipe, set the rally point, board a jeep.
+   */
+  private tap(x: number, y: number) {
+    const g = this.game;
+    const now = performance.now();
+    const own = this.unitAt(x, y, "own");
+    if (own) {
+      if (own.type === "jeep" && !own.gunner && !g.selection.has(own) && [...g.selection].some((u) => !u.isVehicle)) {
+        g.commandBoard(g.selection, own);
+      } else if (this.lastClick.unit === own && now - this.lastClick.t < DOUBLE_CLICK_MS * 1.3) {
+        g.select(g.units.filter((o) => o.alive && o.team === PLAYER && o.type === own.type && this.onScreen(o)));
+      } else {
+        g.select([own]);
+      }
+      this.lastClick = { t: now, unit: own };
+      return;
+    }
+    this.lastClick = { t: now, unit: null };
+    const b = this.buildingAt(x, y);
+    if (b && b.team === PLAYER && !g.selection.size) {
+      g.selectBuilding(b);
+      return;
+    }
+    if (g.selection.size || g.selectedBuilding) this.command(x, y);
+  }
+
+  /** On-screen arrow buttons: pan direction while held. */
+  setPad(x: number, z: number) {
+    this.pad.x = x;
+    this.pad.z = z;
   }
 
   private onScreen(u: Unit): boolean {
@@ -302,6 +349,10 @@ export class InputController {
       else if (this.mouseX > window.innerWidth - EDGE) dx = 1;
       if (this.mouseY < EDGE) dz = 1;
       else if (this.mouseY > window.innerHeight - EDGE) dz = -1;
+    }
+    if (this.pad.x || this.pad.z) {
+      dx = this.pad.x;
+      dz = this.pad.z;
     }
     if (this.keys.has("ArrowLeft")) dx = -1;
     if (this.keys.has("ArrowRight")) dx = 1;

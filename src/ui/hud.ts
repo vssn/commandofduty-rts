@@ -158,7 +158,7 @@ export class Hud {
     const pips = Array.from({ length: COMMANDOS.targets }, (_, i) => `<span class="pip${i < m.destroyedOutposts ? " done" : ""}"></span>`).join("");
     const html = `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>` +
       `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
-      `<span>Scharfschuss (Rechtsklick auf Gegner): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
+      `<span>Scharfschuss (Gegner anklicken/antippen): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
     if (html !== this.lastMission) {
       $("mission-info").innerHTML = html;
       this.lastMission = html;
