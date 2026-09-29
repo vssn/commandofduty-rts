@@ -137,9 +137,10 @@ export class SoldierView implements UnitView {
     // walk cycle advances with distance so the feet don't slide; uphill = short, quick steps,
     // downhill = longer strides
     const grade = Math.max(-0.6, Math.min(0.6, u.grade));
-    this.phase += moved * 2.1 * (1 + grade * 0.9);
+    this.phase += moved * 2.9 * (1 + grade * 0.9);
     this.stride += ((walking ? 1 : 0) - this.stride) * Math.min(1, dt * 10);
-    const swing = Math.sin(this.phase) * 0.55 * (1 - grade * 0.35) * this.stride;
+    // quicker cadence with slightly shorter steps, so the feet keep pace with the ground
+    const swing = Math.sin(this.phase) * 0.48 * (1 - grade * 0.35) * this.stride;
 
     // postures: kneel = lunge with lowered hips, prone = body flat, head and weapon raised forward
     const blend = Math.min(1, dt * 5);
