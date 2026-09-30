@@ -3,6 +3,7 @@ import { ENEMY, PLAYER, type UnitType } from "../config";
 import type { Game } from "../game/game";
 import type { Unit } from "../game/unit";
 import { toWorld } from "../world/layout";
+import { Searchlight, type StreetLights } from "../world/lighting";
 
 const SIZE = { width: 640, height: 400 };
 
@@ -16,6 +17,7 @@ export async function renderModeArt(
   scene: Scene,
   game: Game,
   followSun: (focus: Vector3) => void,
+  night: { setNight: (on: boolean) => void; streetLights: StreetLights },
 ): Promise<{ conquest: string; skirmish: string; commandos: string }> {
   const cam = new FreeCamera("modeArtCam", Vector3.Zero(), scene);
   cam.minZ = 0.5;
@@ -50,27 +52,47 @@ export async function renderModeArt(
     temp.push(u);
     return u;
   };
-  const jeepA = place("jeep", PLAYER, -3, 4, 0.25);
-  const gunner = place("rifleman", PLAYER, -3, 2, 0);
-  game.board(gunner, jeepA);
-  place("jeep", PLAYER, 5, 1, -0.2);
-  const foe = place("rifleman", ENEMY, 2, 18, Math.PI);
-  for (const [lx, lz, s] of [[-7, -2, "kneel"], [-4.5, -3, "prone"], [-1, -2.5, "kneel"], [2.5, -3.2, "stand"], [6, -2.4, "kneel"], [9, -3, "prone"]] as const) {
-    const u = place(lx === -1 ? "grenadier" : "rifleman", PLAYER, lx, lz, 0.1, s);
+  // player: two manned jeeps up front, a long firing line of riflemen, grenadiers and a medic behind
+  const foe = place("rifleman", ENEMY, 2, 20, Math.PI);
+  for (const [lx, lz, h] of [[-4, 5, 0.25], [6, 3.5, -0.15]] as const) {
+    const jeep = place("jeep", PLAYER, lx, lz, h);
+    game.board(place("rifleman", PLAYER, lx, lz - 2, 0), jeep);
+    jeep.target = foe;
+  }
+  const line: [number, number, Unit["stance"], UnitType][] = [
+    [-11, -1, "prone", "rifleman"], [-8, -2, "kneel", "rifleman"], [-5.5, -1.5, "stand", "grenadier"], [-3, -2.6, "prone", "rifleman"],
+    [-0.5, -2, "kneel", "rifleman"], [2, -2.8, "stand", "rifleman"], [4.5, -1.8, "kneel", "grenadier"], [7, -2.5, "prone", "rifleman"],
+    [9.5, -1.6, "kneel", "rifleman"], [12, -2.4, "stand", "rifleman"], [-6, -6, "kneel", "rifleman"], [1, -6.5, "stand", "rifleman"], [8, -6, "kneel", "rifleman"],
+  ];
+  for (const [lx, lz, st, type] of line) {
+    const u = place(type, PLAYER, lx, lz, 0.1 + (Math.random() - 0.5) * 0.2, st);
     u.target = foe; // weapons shouldered
   }
-  jeepA.target = foe;
+  place("medic", PLAYER, -2, -5, 0.4, "kneel");
+  // enemy: a line of soldiers and a jeep across the field
+  const enemies: [number, number, Unit["stance"]][] = [[-9, 21, "kneel"], [-5, 22, "prone"], [-1, 20.5, "stand"], [5, 21.5, "kneel"], [9, 20, "prone"], [13, 22, "kneel"], [-12, 23, "stand"]];
+  for (const [lx, lz, st] of enemies) place(lx === -1 ? "grenadier" : "rifleman", ENEMY, lx, lz, Math.PI, st).target = foe;
+  place("jeep", ENEMY, 16, 25, Math.PI + 0.4);
   // let the poses settle (knees bent, prone, weapons up) without running the battle
   for (let i = 0; i < 12; i++) for (const u of temp) if (!u.vehicle) u.postMove(0.1, game);
-  game.effects.explode(at.x + 1, at.z + 13, 0, 0.1, null, 1.6);
-  game.effects.update(0.12);
+  // an artillery barrage in different stages: an old smoke column, bursts in the enemy line, a fresh
+  // fireball right in front of our own line
+  const boom = (lx: number, lz: number, size: number, age: number) => {
+    game.effects.explode(at.x + lx, at.z + lz, 0, 0.1, null, size);
+    game.effects.update(age);
+  };
+  boom(-8, 26, 1.8, 1.4);
+  boom(10, 24, 1.6, 0.5);
+  boom(1, 19, 2.0, 0.25);
+  boom(-3, 11, 1.7, 0.09);
   const skirmish = await shoot(
-    new Vector3(at.x - 6, y(at.x, at.z) + 5, at.z - 10),
-    new Vector3(at.x + 1, y(at.x, at.z + 5) + 1.4, at.z + 6),
-    0.72,
+    new Vector3(at.x - 8, y(at.x, at.z) + 9.5, at.z - 19),
+    new Vector3(at.x + 1, y(at.x, at.z + 8), at.z + 11),
+    0.78,
   );
 
-  // --- Commandos: the agent kneels behind cover with his scoped rifle, a guarded watchtower beyond
+  // --- Commandos (at night): over the agent's shoulder towards a guarded watchtower, a searchlight
+  // beam sweeping the ground just past him
   for (const u of temp) {
     u.view.dispose();
     u.ring.dispose();
@@ -96,15 +118,27 @@ export async function renderModeArt(
   agent.heading = Math.atan2(guard.x - agent.x, guard.z - agent.z);
   agent.target = guard;
   for (let i = 0; i < 12; i++) for (const u of temp) if (!u.vehicle) u.postMove(0.1, game);
-  // over-the-shoulder view: behind and right of the kneeling agent, looking past him at the tower
   const fx = Math.sin(agent.heading), fz = Math.cos(agent.heading);
-  const eye = { x: agent.x - fx * 3.6 + fz * 1.6, z: agent.z - fz * 3.6 - fx * 1.6 };
-  const look = { x: agent.x + fx * 6, z: agent.z + fz * 6 };
+  // searchlight right of the tower; its beam crosses the picture and its spot lands in the grass
+  // ahead of the agent, a little to his left - he is kneeling just outside it
+  const rx = fz, rz = -fx; // agent's right
+  const lampAt = game.nav.freePoint(guard.x + rx * 6 - fx * 1, guard.z + rz * 6 - fz * 1);
+  const searchlight = new Searchlight(scene, game.terrain, game.shadows, lampAt.x, lampAt.z, 3.4);
+  searchlight.aim(agent.x + fx * 6.5 - rx * 3, agent.z + fz * 6.5 - rz * 3);
+  night.setNight(true);
+  night.streetLights.setOn(true);
+  scene.imageProcessingConfiguration.exposure = 1.35; // a touch brighter than in game, for the artwork
+  // over-the-shoulder view: behind and right of the kneeling agent, looking past him at the tower
+  const eye = { x: agent.x - fx * 4.2 + rx * 1.4, z: agent.z - fz * 4.2 + rz * 1.4 };
+  const look = { x: agent.x + fx * 11, z: agent.z + fz * 11 };
   const commandos = await shoot(
-    new Vector3(eye.x, agent.y + 2.6, eye.z),
-    new Vector3(look.x, agent.y + 1.1, look.z),
-    0.78,
+    new Vector3(eye.x, agent.y + 3.6, eye.z),
+    new Vector3(look.x, agent.y + 0.2, look.z),
+    0.82,
   );
+  night.setNight(false);
+  night.streetLights.setOn(false);
+  searchlight.dispose();
 
   // clean up: temporary units, the explosion and the camera
   for (const u of temp) {

@@ -29,7 +29,7 @@ export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
   | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
-  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost";
+  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning";
 export interface GameEventData { outpost: Outpost; bonus: number; structures?: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -79,6 +79,11 @@ export class Game {
   private sinceUnitsHit = Infinity;
   /** Extra sight range a unit currently has from high ground (fog of war), for UI display. */
   sightBonusOf: ((u: Unit) => number) | null = null;
+  /**
+   * Night (commandos): the range at which `viewer` notices `target`, given its normal `range`
+   * (null = daylight, the normal range applies).
+   */
+  spotRange: ((viewer: Unit, target: Unit, range: number) => number) | null = null;
   /** Player's fog of war: whether a point is in sight (null = no fog). */
   canSee: ((x: number, z: number) => boolean) | null = null;
   /** Cover lookup; assigned after the scenery exists. */
@@ -93,7 +98,7 @@ export class Game {
     readonly terrain: Terrain,
     readonly nav: NavGrid,
     readonly layout: MapLayout,
-    private readonly shadows: ShadowGenerator,
+    readonly shadows: ShadowGenerator,
   ) {
     const soldiers = (team: Team) => ({
       rifleman: createSoldierTemplates(scene, team),
@@ -390,13 +395,19 @@ export class Game {
       return null;
     }
     this.credits[team] -= UNITS[type].cost;
-    const u = this.spawnUnit(type, team, x, z);
-    u.heading = u.turret = p.heading;
-    u.anchor = p.anchor;
+    const u = this.spawnStructure(type, team, x, z, p.heading, p.anchor);
     u.buildT = UNITS[type].buildTime;
+    if (team === PLAYER) this.emit("built", PLAYER);
+    return u;
+  }
+
+  /** Puts a finished structure down (no cost, no placement rules). */
+  spawnStructure(type: StructureType, team: Team, x: number, z: number, heading: number, anchor: Outpost | null): Unit {
+    const u = this.spawnUnit(type, team, x, z);
+    u.heading = u.turret = heading;
+    u.anchor = anchor;
     this.blockStructure(u, 1);
     u.postMove(0, this);
-    if (team === PLAYER) this.emit("built", PLAYER);
     return u;
   }
 
@@ -641,6 +652,7 @@ export class Game {
       if (!o.alive || o.vehicle || o.team === u.team || o.cloaked || o.type === "bollard") continue;
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
+      if (this.spotRange && d >= this.spotRange(u, o, range)) continue;
       if (d < bd) { bd = d; best = o; }
     }
     if (best) return best;

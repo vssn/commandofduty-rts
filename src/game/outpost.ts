@@ -38,10 +38,16 @@ export class Outpost {
   readonly rot: number;
   private readonly ring: Mesh;
   private readonly flag: Mesh;
+  /** Extra flags around the area, hoisted in the owner's colour once the outpost is taken. */
+  private readonly banners: { flag: Mesh; x: number; z: number; y: number }[] = [];
+  /** 0 = banners lowered, 1 = fully hoisted. */
+  private hoist = 0;
   private readonly model: Mesh;
   /** Blown up (commandos): no owner, no income, cannot be taken any more. */
   destroyed = false;
   private flagT = Math.random() * 10;
+  /** Seconds until the owner may be warned again that this outpost is being taken. */
+  private warnCooldown = 0;
 
   constructor(spec: OutpostSpec, scene: Scene, terrain: Terrain, shadows: ShadowGenerator) {
     const cfg = OUTPOSTS[spec.kind];
@@ -80,6 +86,24 @@ export class Outpost {
     this.flag.position.set(polePos.x + 0.9, poleY + 5.35, polePos.z);
     this.flag.isPickable = false;
     shadows.addShadowCaster(this.flag);
+
+    // three more flagpoles on the edge of the area; bare until the outpost has an owner
+    for (const a of [0.5, 2.6, 4.6]) {
+      const p = toWorld(spec.x, spec.z, spec.rot, Math.sin(a) * this.radius * 0.88, Math.cos(a) * this.radius * 0.88);
+      const y = terrain.heightAt(p.x, p.z);
+      const bannerPole = MeshBuilder.CreateCylinder("bannerPole", { height: 4, diameter: 0.1, tessellation: 6 }, scene);
+      bannerPole.position.set(p.x, y + 2, p.z);
+      bannerPole.material = mat(scene, [0.62, 0.6, 0.55]);
+      bannerPole.isPickable = false;
+      shadows.addShadowCaster(bannerPole);
+      const flag = MeshBuilder.CreateBox("banner", { width: 1.3, height: 0.8, depth: 0.05 }, scene);
+      flag.setPivotPoint(new Vector3(-0.65, 0, 0));
+      flag.position.set(p.x + 0.65, y, p.z);
+      flag.isPickable = false;
+      flag.setEnabled(false);
+      shadows.addShadowCaster(flag);
+      this.banners.push({ flag, x: p.x, z: p.z, y });
+    }
     this.applyOwnerColors();
   }
 
@@ -95,6 +119,9 @@ export class Outpost {
   private applyOwnerColors() {
     const c = this.owner === null ? NEUTRAL : TEAM_COLOR[this.owner];
     this.flag.material = mat(this.flag.getScene(), c);
+    // a new owner hoists his own flags from the bottom
+    this.hoist = 0;
+    for (const b of this.banners) b.flag.material = this.flag.material;
     this.ring.material = mat(this.ring.getScene(), c, { emissive: true });
     (this.ring.material as { zOffset: number }).zOffset = -8;
   }
@@ -112,13 +139,22 @@ export class Outpost {
     this.model.position.y -= 0.15;
     this.flag.setEnabled(false);
     this.ring.setEnabled(false);
+    for (const b of this.banners) b.flag.setEnabled(false);
   }
 
   update(dt: number, g: Game) {
     if (this.destroyed) return;
     this.flagT += dt;
+    this.warnCooldown -= dt;
     if (this.production && this.owner !== null) this.production.update(dt, g, this.owner, this.spawn, this.rally);
     this.flag.rotation.y = Math.sin(this.flagT * 2.1) * 0.25;
+    this.hoist = this.owner === null ? 0 : Math.min(1, this.hoist + dt / 2.5);
+    const up = this.hoist * this.hoist * (3 - 2 * this.hoist);
+    this.banners.forEach((b, i) => {
+      b.flag.setEnabled(up > 0.02);
+      b.flag.position.y = b.y + 0.7 + up * 2.85;
+      b.flag.rotation.y = Math.sin(this.flagT * 2.3 + i * 1.7) * 0.3;
+    });
 
     this.guarded = false;
     const inside: [number, number] = [0, 0];
@@ -145,6 +181,11 @@ export class Outpost {
     if (this.capturer !== present) {
       this.capturer = present;
       this.progress = 0;
+      // the owner hears about it once when the enemy starts taking his outpost
+      if (this.owner !== null && this.warnCooldown <= 0) {
+        this.warnCooldown = 30;
+        g.emit("outpostThreatened", this.owner, { outpost: this, bonus: 0 });
+      }
     }
     this.progress += dt / CAPTURE_TIME;
     if (this.progress >= 1) this.capture(present, g);

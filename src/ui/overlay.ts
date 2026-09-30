@@ -251,6 +251,20 @@ export class Overlay {
     // commandos: fuse countdowns, planting progress, cloak
     const cm = game.commandos;
     if (cm) {
+      // explosive caches: dashed yellow ring and a label, also in the dark
+      for (const c of cm.caches) {
+        if (c.taken) continue;
+        this.groundCircle(game, c.x, c.z, 2.2, "255, 210, 90", false);
+        const p = this.projectDev(c.x, game.terrain.heightAt(c.x, c.z) + 2.2, c.z);
+        if (!p) continue;
+        ctx.font = `bold ${11 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3 * s;
+        ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
+        ctx.fillStyle = "#ffd25a";
+        ctx.strokeText("Sprengstoff", p.x, p.y);
+        ctx.fillText("Sprengstoff", p.x, p.y);
+      }
       const label = (text: string, x: number, y: number, color: string) => {
         ctx.font = `bold ${12 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
         ctx.textAlign = "center";

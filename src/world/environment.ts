@@ -45,5 +45,44 @@ export function createEnvironment(scene: Scene) {
     sun.position.copyFrom(focus).subtractInPlace(SUN_DIR.scale(200));
   };
 
-  return { sun, shadows, followFocus };
+  const day = {
+    clear: scene.clearColor.clone(), fog: scene.fogColor.clone(),
+    hemi: [hemi.intensity, hemi.diffuse.clone(), hemi.groundColor.clone()] as const,
+    sun: [sun.intensity, sun.diffuse.clone()] as const,
+    darkness: shadows.getDarkness(), exposure: ip.exposure, contrast: ip.contrast, vignette: [ip.vignetteWeight, ip.vignetteColor.clone()] as const,
+  };
+
+  /** Moonlit night (commandos): dim blue moon light, dark sky, stronger vignette. `false` restores the day. */
+  const setNight = (on = true) => {
+    if (!on) {
+      scene.clearColor = day.clear.clone();
+      scene.fogColor = day.fog.clone();
+      [hemi.intensity] = day.hemi;
+      hemi.diffuse = day.hemi[1].clone();
+      hemi.groundColor = day.hemi[2].clone();
+      sun.intensity = day.sun[0];
+      sun.diffuse = day.sun[1].clone();
+      shadows.setDarkness(day.darkness);
+      ip.exposure = day.exposure;
+      ip.contrast = day.contrast;
+      ip.vignetteWeight = day.vignette[0];
+      ip.vignetteColor = day.vignette[1].clone();
+      return;
+    }
+    const night = new Color3(0.035, 0.045, 0.08);
+    scene.clearColor = new Color4(night.r, night.g, night.b, 1);
+    scene.fogColor = night;
+    hemi.intensity = 0.28;
+    hemi.diffuse = new Color3(0.45, 0.55, 0.85);
+    hemi.groundColor = new Color3(0.08, 0.08, 0.12);
+    sun.intensity = 0.42;
+    sun.diffuse = new Color3(0.6, 0.7, 1.0);
+    shadows.setDarkness(0.45);
+    ip.exposure = 0.92;
+    ip.contrast = 1.25;
+    ip.vignetteWeight = 2.2;
+    ip.vignetteColor = new Color4(0.01, 0.02, 0.05, 0);
+  };
+
+  return { sun, shadows, followFocus, setNight };
 }

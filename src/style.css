@@ -290,6 +290,71 @@ html, body {
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* capture / loss of outposts (conquest): square tiles top centre, progress fills clockwise */
+#capture-hud {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  pointer-events: none;
+}
+.cap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 132px;
+  will-change: transform, opacity;
+}
+.cap-square {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 2px solid #10110b;
+  outline: 1px solid var(--line);
+  background: conic-gradient(var(--a) 0 calc(var(--p) * 1%), var(--b) 0 100%);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
+}
+.cap-square::after {
+  /* dark centre with the percentage, so the ring of colour reads as a clock */
+  content: attr(data-pct);
+  position: absolute;
+  inset: 13px;
+  display: grid;
+  place-items: center;
+  background: rgba(12, 13, 8, 0.88);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.cap-name, .cap-state {
+  padding: 1px 8px;
+  background: rgba(12, 13, 8, 0.82);
+  white-space: nowrap;
+  text-align: center;
+}
+.cap-name { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+.cap-state { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+.cap.gain .cap-state { color: var(--blue); }
+.cap.loss .cap-state { color: var(--red); }
+.cap.loss .cap-square { animation: cap-alarm 0.9s ease-in-out infinite; }
+.cap.paused .cap-square { animation: cap-blink 0.5s steps(2) infinite; }
+.cap.done .cap-square { animation: cap-pop 0.45s ease-out; }
+@keyframes cap-alarm { 50% { box-shadow: 0 0 0 3px rgba(239, 74, 60, 0.55), 0 3px 12px rgba(0, 0, 0, 0.5); } }
+@keyframes cap-blink { 50% { filter: brightness(0.55); } }
+@keyframes cap-pop { 40% { transform: scale(1.14); } }
+@media (max-width: 900px), (max-height: 500px) {
+  #capture-hud { top: 44px; gap: 8px; }
+  .cap { width: 100px; }
+  .cap-state { font-size: 9px; }
+  .cap-square { width: 46px; height: 46px; }
+  .cap-square::after { inset: 9px; font-size: 11px; }
+  .cap-name { font-size: 11px; }
+}
+
 #banner {
   position: absolute;
   inset: 0;
@@ -613,3 +678,7 @@ body.touch-ui:not(.in-menu) #touch-ui { display: block; }
     background: rgba(12, 13, 8, 0.96);
   }
 }
+
+/* commandos mission clock */
+.mission-info .clock { font-weight: 700; color: var(--accent); letter-spacing: 0.06em; }
+.mission-info .clock.urgent { color: var(--red); animation: cap-blink 1s steps(2) infinite; }

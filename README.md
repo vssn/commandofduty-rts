@@ -14,7 +14,9 @@ npm run build    # Produktionsbuild nach dist/
 Beim Laden erscheint das Hauptmenü; das Spiel ist pausiert, die Kamera fliegt langsam über die Karte. „Neues Spiel“
 öffnet die Modusauswahl mit drei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau), **Gefecht** und
 **Commandos** –, deren
-Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`). „Steuerung“ zeigt die Tastenbelegung,
+Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht
+mit Jeeps, Schützenlinie und Artilleriesalve in verschiedenen Phasen, und – bei Nacht – der Agent über die Schulter
+gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt die Tastenbelegung,
 „Ton“ schaltet Musik und Effekte. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
@@ -34,13 +36,23 @@ Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an ein
 Stellungen und Patrouillen startet (Mantel, Schirmmütze, Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
 nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
 zwischen den Stellungen und bemannte Geländewagen. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
-rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen**; fällt der Agent, ist die Mission gescheitert.
+rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen, in 10 Minuten**;
+fällt der Agent oder läuft die Zeit ab (Uhr im Auftragsfeld, Warnung bei 1 Minute), ist die Mission gescheitert.
+
+**Nacht:** Der Einsatz spielt bei Mondlicht. Im Dunkeln bemerkt der Feind den Agenten erst auf gut die halbe Entfernung
+(×0,55), im Licht einer Straßenlaterne dagegen früher (×1,25). Die Laternen stehen in jedem Modus entlang der Dorfstraßen,
+leuchten aber nur in dieser Nacht. An jeder Stellung schwenkt ein **Standscheinwerfer** seinen Lichtkegel über das Vorfeld;
+gerät der (ungetarnte) Agent hinein, folgt ihm der Kegel einige Sekunden, die Truppen in der Nähe eröffnen das Feuer
+bzw. rücken an. Drei zufällige Stellungen haben ein **besetztes MG-Nest** – getarnt kommt man daran vorbei.
+
+**Sprengstoff:** Der Agent startet ohne Sprengsätze. Vier **Verstecke** mit je 3 Sprengsätzen liegen zufällig an
+Waldrändern (abseits der Stellungen); sie sind auf der Minimap und im Gelände gelb markiert und werden durch Betreten geleert.
 
 | Fähigkeit | Taste | Wirkung |
 | --- | --- | --- |
 | Scharfschuss | Rechtsklick auf Gegner | Standardangriff: der Agent geht bei Bedarf näher heran und schießt, sobald das Ziel in Reichweite (42) und Sicht ist – Soldat sofort ausgeschaltet, Fahrzeug nur leicht beschädigt; 6 s Nachladen. Kameraden in der Nähe des Opfers suchen die Stelle ab. |
-| Tarnen | X | 7 s unsichtbar – der Feind sieht und beschießt ihn nicht (Schießen beendet die Tarnung); 22 s Abklingzeit |
-| Sprengladung | C | 8 Stück: auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
+| Tarnen | X | 10 s unsichtbar – der Feind sieht und beschießt ihn nicht (Schießen beendet die Tarnung); 22 s Abklingzeit |
+| Sprengladung | C | aus den Verstecken (je 3): auf feindlichen Geländewagen oder in einer feindlichen Stellung anbringen (1,5 s), 5 s Zünder, großer Flächenschaden – rechtzeitig Abstand nehmen |
 
 **Suche und Fährten:** Stirbt ein Gegner, durchsuchen Kameraden in Hörweite (20) sofort die Umgebung; wer später an der
 Leiche vorbeikommt (9), löst die Suche ebenfalls aus. Suchende kämmen das Gebiet in wachsenden Kreisen ab (bis 24),
@@ -58,6 +70,14 @@ Eine Stellung wird eingenommen, indem mindestens ein eigener Soldat 20 Sekunden 
 feindlicher Soldat im Bereich ist (sonst pausiert der Fortschritt). Die erste Einnahme einer Stellung bringt einmalig
 +200 Credits, danach liefert sie laufendes Einkommen (1,5–3 Credits/s). Eigene Soldaten in einer eigenen,
 nicht umkämpften Stellung heilen langsam (1 HP/s, im Feldlazarett 3 HP/s). Werte stehen in `src/config.ts`.
+
+Einnahme und Verlust werden oben mittig angezeigt (in Eroberung und Gefecht): für jede Stellung, die man gerade einnimmt, ein Quadrat, das sich im
+Uhrzeigersinn in Spielerfarbe füllt (über der Farbe des bisherigen Besitzers), mit Name und Prozent – es fliegt von
+der Stellung aus nach oben ein und am Ende wieder zu ihr zurück (liegt sie außerhalb des Bildes, zum Rand in ihrer Richtung); nimmt der Feind eine
+eigene Stellung ein, frisst sich sein Rot in das eigene Blau und das Quadrat pulsiert als Warnung. Umkämpft (angehalten)
+blinkt es, am Ende zeigt es kurz „Eingenommen“ bzw. „Verloren“. Sobald der Feind beginnt, eine eigene Stellung einzunehmen, warnt der
+Funk („Achtung! Der Feind nimmt die Stellung … ein“, höchstens alle 30 s pro Stellung); ihr Verlust wird ebenfalls angesagt. Eingenommene Stellungen hissen zusätzlich an drei
+Masten am Rand ihres Bereichs Flaggen in der Farbe des Besitzers; beim Besitzerwechsel werden sie neu gehisst.
 
 ## Einheiten
 
@@ -144,6 +164,17 @@ Alles wird zur Laufzeit erzeugt, es gibt keine Audiodateien: die Musik (Web Audi
 Schussgeräusche mit Entfernung und Stereo-Panorama sowie Funkmeldungen über die Sprachausgabe des Browsers.
 Der Ton startet mit dem ersten Klick (Autoplay-Richtlinie der Browser). Taste **M** schaltet die Musik.
 
+Jeder Bildschirm hat eigene Musik, beim Wechsel wird übergeblendet:
+
+| Wo | Musik |
+| --- | --- |
+| Menü | 120 bpm, E-Moll: Elektro-Bass, verzerrte E-Gitarre (Powerchords, ab Takt 9 Leadmelodie), Drumcomputer, im Hintergrund marschierende Stiefel |
+| Eroberung | die dramatische Kriegsmusik in D-Moll (Streicher, Pauken, Bass-Ostinato, Snare, Blech, Horn) |
+| Gefecht | 70 bpm, A-Moll, getragen: Flächen, Herzschlag-Trommel, gezupfte Arpeggien, Cello-Melodie, fernes Grollen |
+| Commandos | minimaler Thriller: tiefer Drone, tickender Zeitgeber, gedämpfter Puls, Herzschlag, dissonante Anschwellungen, Sonar-Pings |
+
+Soldaten quittieren eine Auswahl mit „M-hm?“ und einen Befehl zufällig mit „Hm!“, „M-h-hm“, „Ah-hm“ oder „H-h-hm“.
+
 ## Smartphone & Tablet
 
 Auf Touch-Geräten (automatisch erkannt) gibt es keinen Rechtsklick: **Tippen** auf eine eigene Einheit wählt aus
@@ -182,6 +213,7 @@ src/
                       feine, kachelbare Körnungstextur über den Vertex-Farben
     crops.ts          Bewuchs der Felder (kleine, unterschiedlich hohe Büschel in Reihen)
     fortification.ts  Sandsack-Befestigung der Kaserne (Mauer, Eckbastionen, Tor, verbarrikadierte Fenster)
+    lighting.ts       Straßenlaternen, Lichtkegel/-flecken (additiv, ohne echte Lichtquellen), Standscheinwerfer
     fogRender.ts      Fog-of-War-Shader (Tiefenpuffer → Weltposition → Nebeltextur)
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
@@ -195,7 +227,7 @@ src/
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
-    commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Patrouillen, Alarm
+    commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Verstecke, Patrouillen, Alarm, Scheinwerfer, Zeitlimit
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     production.ts     Bauschleife für Kaserne und Werkstatt
@@ -204,7 +236,7 @@ src/
     ai.ts             einfacher Gegner (produziert, nimmt Stellungen ein, greift in Wellen an)
   audio/
     audio.ts          Audio-Kontext, Schüsse, Funkmeldungen, Stummschalter
-    music.ts          prozeduraler Soundtrack
+    music.ts          prozeduraler Soundtrack mit vier Themen (Menü, Eroberung, Gefecht, Commandos)
   ui/
     rtsCamera.ts      RTS-Kamera mit Zoom
     input.ts          Maus/Tastatur, Screen-Space-Picking, Rahmenauswahl

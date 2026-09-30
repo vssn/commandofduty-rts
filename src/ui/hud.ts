@@ -1,6 +1,7 @@
-import { ARTILLERY, COMMANDOS, PLAYER, UNITS, type StructureType, type UnitType } from "../config";
+import { ARTILLERY, COMMANDOS, ENEMY, PLAYER, UNITS, type StructureType, type UnitType } from "../config";
 import type { AudioSystem } from "../audio/audio";
 import type { Game, GameEvent } from "../game/game";
+import type { Outpost } from "../game/outpost";
 import type { InputController } from "./input";
 import type { PortraitImages } from "./portraits";
 
@@ -25,7 +26,14 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   built: "Bau begonnen",
   cannotBuild: "Nur auf freiem Gelände nahe eigener Stellungen oder der Basis",
   structureLost: "Befestigung zerstört",
+  cacheFound: "Versteck geplündert – 3 Sprengsätze aufgenommen",
+  timeWarning: "Nur noch eine Minute!",
 };
+
+const COLOR = { own: "#4d8dff", enemy: "#ef4a3c", neutral: "rgba(46, 48, 36, 0.95)" };
+
+/** One capture/loss tile at the top of the screen. */
+interface CaptureTile { el: HTMLElement; square: HTMLElement; state: HTMLElement; key: string; doneT: number }
 
 function $(id: string): HTMLElement {
   return document.getElementById(id)!;
@@ -40,6 +48,10 @@ export class Hud {
   private readonly toastEl = $("toast");
   private readonly banner = $("banner");
   private toastTimer = 0;
+  private readonly captureHud = $("capture-hud");
+  private readonly captureTiles = new Map<Outpost, CaptureTile>();
+  /** Screen position (client pixels) of an outpost, clamped to the view; set by main. */
+  locate: ((o: Outpost) => { x: number; y: number } | null) | null = null;
   /** False while the main menu is shown (build hotkeys are ignored). */
   enabled = false;
   private last = { credits: -1, info: "", income: -1 };
@@ -77,11 +89,16 @@ export class Hud {
       if (type && this.enabled && !game.result && !e.ctrlKey && !e.metaKey) this.train(type, e.shiftKey ? 5 : 1);
     });
     game.on((ev, team, data) => {
+      if ((ev === "captured" || ev === "outpostLost") && data && team === PLAYER) this.finishCapture(data.outpost, ev === "captured");
       if (ev === "captured" && data) {
         if (team === PLAYER) {
           const n = data.structures ?? 0;
           this.toast(`${data.outpost.name} eingenommen${data.bonus ? ` · +${data.bonus} Credits` : ""}${n ? ` · ${n} ${n === 1 ? "Befestigung" : "Befestigungen"} übernommen` : ""}`);
         }
+        return;
+      }
+      if (ev === "outpostThreatened" && data) {
+        if (team === PLAYER) this.toast(`Feind nimmt ${data.outpost.name} ein!`);
         return;
       }
       if (ev === "outpostLost" && data) {
@@ -183,8 +200,13 @@ export class Hud {
     t.charge.classList.toggle("poor", m.charges <= 0);
 
     const pips = Array.from({ length: COMMANDOS.targets }, (_, i) => `<span class="pip${i < m.destroyedOutposts ? " done" : ""}"></span>`).join("");
+    const left = Math.ceil(m.timeLeft);
+    const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    const open = m.caches.filter((c) => !c.taken).length;
     const html = `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>` +
+      `<span class="clock${left <= 60 ? " urgent" : ""}">Zeit: ${clock}</span>` +
       `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
+      `<span>${open ? `Verstecke mit Sprengstoff (Minimap): ${open}` : "Alle Verstecke geleert"}</span>` +
       `<span>Scharfschuss (Gegner anklicken/antippen): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
     if (html !== this.lastMission) {
       $("mission-info").innerHTML = html;
@@ -223,12 +245,118 @@ export class Hud {
       skirmish: ["Der Feind wurde aufgerieben.", "Unsere Truppen wurden aufgerieben."],
       commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern.", "Der Agent ist gefallen. Auftrag gescheitert."],
     };
-    $("banner-text").textContent = texts[mode][result === "win" ? 0 : 1];
+    $("banner-text").textContent = mode === "commandos" && result === "lose" && this.game.commandos?.timeUp
+      ? "Die Zeit ist abgelaufen. Auftrag gescheitert."
+      : texts[mode][result === "win" ? 0 : 1];
     this.banner.classList.add("show", result);
+  }
+
+  /** Tile for an outpost, created on demand. */
+  private captureTile(o: Outpost): CaptureTile {
+    let tile = this.captureTiles.get(o);
+    if (!tile) {
+      const el = document.createElement("div");
+      el.className = "cap";
+      el.innerHTML = `<div class="cap-square"></div><div class="cap-name"></div><div class="cap-state"></div>`;
+      el.querySelector(".cap-name")!.textContent = o.name;
+      this.captureHud.appendChild(el);
+      tile = { el, square: el.querySelector(".cap-square")!, state: el.querySelector(".cap-state")!, key: "", doneT: 0 };
+      this.captureTiles.set(o, tile);
+      this.flyIn(o, el);
+    }
+    return tile;
+  }
+
+  /** Offset from a tile's centre to its outpost on screen (null if the outpost can't be located). */
+  private flight(o: Outpost, el: HTMLElement): string | null {
+    const p = this.locate?.(o);
+    if (!p) return null;
+    const r = el.getBoundingClientRect();
+    return `translate(${Math.round(p.x - (r.left + r.width / 2))}px, ${Math.round(p.y - (r.top + r.height / 2))}px) scale(0.2)`;
+  }
+
+  /** The tile flies up from its outpost into place. */
+  private flyIn(o: Outpost, el: HTMLElement) {
+    const from = this.flight(o, el) ?? "translateY(-8px) scale(0.9)";
+    el.animate(
+      [{ transform: from, opacity: 0 }, { transform: from, opacity: 1, offset: 0.12 }, { transform: "none", opacity: 1 }],
+      { duration: 650, easing: "cubic-bezier(0.2, 0.75, 0.25, 1)" },
+    );
+  }
+
+  /** The tile flies back down to its outpost and vanishes there. */
+  private flyOut(o: Outpost, el: HTMLElement) {
+    const to = this.flight(o, el) ?? "translateY(-8px) scale(0.9)";
+    const anim = el.animate(
+      [{ transform: "none", opacity: 1 }, { transform: to, opacity: 1, offset: 0.85 }, { transform: to, opacity: 0 }],
+      { duration: 600, easing: "cubic-bezier(0.55, 0, 0.8, 0.4)", fill: "forwards" },
+    );
+    anim.onfinish = () => el.remove();
+  }
+
+  /** Taken or lost: the tile shows the full square in the new owner's colour for a moment. */
+  private finishCapture(o: Outpost, won: boolean) {
+    if (this.game.mode === "commandos") return; // the agent blows outposts up instead
+    const tile = this.captureTile(o);
+    tile.doneT = 2.2;
+    const a = won ? COLOR.own : COLOR.enemy;
+    tile.el.className = "cap show done";
+    tile.square.style.setProperty("--a", a);
+    tile.square.style.setProperty("--b", a);
+    tile.square.style.setProperty("--p", "100");
+    tile.square.dataset.pct = won ? "✓" : "✕";
+    tile.state.textContent = won ? "Eingenommen" : "Verloren";
+    tile.state.style.color = won ? COLOR.own : COLOR.enemy;
+    tile.key = "done";
+  }
+
+  /**
+   * Conquest and skirmish: while the player takes an outpost, his colour fills the tile clockwise (over the
+   * previous owner's colour); while the enemy takes one of ours, red eats into our blue.
+   */
+  private updateCaptures(dt: number) {
+    const g = this.game;
+    const live = new Set<Outpost>();
+    if (g.mode !== "commandos") {
+      for (const o of g.outposts) {
+        if (o.destroyed || o.progress <= 0 || o.capturer === null) continue;
+        const gain = o.capturer === PLAYER;
+        const loss = o.capturer === ENEMY && o.owner === PLAYER;
+        if (!gain && !loss) continue;
+        live.add(o);
+        const tile = this.captureTile(o);
+        if (tile.doneT > 0) continue;
+        const a = gain ? COLOR.own : COLOR.enemy;
+        const b = o.owner === null ? COLOR.neutral : o.owner === PLAYER ? COLOR.own : COLOR.enemy;
+        const pct = Math.floor(o.progress * 100);
+        const state = o.contested ? "Umkämpft" : gain ? "Einnahme" : "Feind nimmt ein!";
+        const key = `${a}${b}${pct}${state}`;
+        if (key === tile.key) continue;
+        tile.key = key;
+        tile.el.className = `cap show ${gain ? "gain" : "loss"}${o.contested ? " paused" : ""}`;
+        tile.square.style.setProperty("--a", a);
+        tile.square.style.setProperty("--b", b);
+        tile.square.style.setProperty("--p", String(o.progress * 100));
+        tile.square.dataset.pct = `${pct}%`;
+        tile.state.textContent = state;
+        tile.state.style.color = "";
+      }
+    }
+    for (const [o, tile] of this.captureTiles) {
+      if (tile.doneT > 0) {
+        tile.doneT -= dt;
+        if (tile.doneT > 0) continue;
+      }
+      if (live.has(o)) continue;
+      // no longer being taken (finished, abandoned or progress faded): fade out and remove
+      this.captureTiles.delete(o);
+      this.flyOut(o, tile.el);
+    }
   }
 
   update(dt: number) {
     const g = this.game;
+    this.updateCaptures(dt);
     const real = g.credits[PLAYER];
     if (real < this.shownCredits) this.shownCredits = real;
     else this.shownCredits = Math.min(real, this.shownCredits + Math.max(60, (real - this.shownCredits) * 4) * dt);

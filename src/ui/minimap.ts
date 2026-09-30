@@ -156,6 +156,26 @@ export class Minimap {
       ctx.fill();
       ctx.stroke();
     }
+    // commandos: explosive caches, always marked (a yellow crate with a pulsing ring)
+    const caches = this.game.commandos?.caches ?? [];
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+    for (const c of caches) {
+      if (c.taken) continue;
+      const [x, y] = this.map(c.x, c.z);
+      ctx.strokeStyle = `rgba(255, 210, 90, ${0.35 + pulse * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 10 + pulse * 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#ffd25a";
+      ctx.strokeStyle = "#000";
+      ctx.fillRect(x - 6, y - 5, 12, 10);
+      ctx.strokeRect(x - 6, y - 5, 12, 10);
+      ctx.beginPath();
+      ctx.moveTo(x - 6, y - 1);
+      ctx.lineTo(x + 6, y - 1);
+      ctx.stroke();
+    }
     for (const u of this.game.units) {
       if (!u.alive || u.vehicle || u.fogHidden) continue;
       const [x, y] = this.map(u.x, u.z);

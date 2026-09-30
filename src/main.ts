@@ -21,6 +21,7 @@ import { COMPOUND } from "./world/fortification";
 import { createHedges } from "./world/hedges";
 import { createEnvironment } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
+import { createStreetLights } from "./world/lighting";
 import { FogRenderer } from "./world/fogRender";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
@@ -40,6 +41,8 @@ const hedges = createHedges(scene, layout, terrain, env.shadows);
 createCrops(scene, layout, terrain);
 createHouses(scene, layout, terrain, env.shadows, nav);
 const trees = createVegetation(scene, layout, terrain, env.shadows);
+// street lamps stand in every mode; they are only switched on for the night mission
+const streetLights = createStreetLights(scene, layout, terrain, env.shadows, nav);
 // trees and hedges are solid: nobody walks or drives through them. The tree radius covers the low
 // canopy, so soldiers don't poke their heads through the foliage; jeeps can't enter the woods at all.
 for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF) nav.blockCircle(t.x, t.z, 0.9);
@@ -82,6 +85,13 @@ const minimap = new Minimap(document.getElementById("minimap") as HTMLCanvasElem
 minimap.fog = fog;
 const audio = new AudioSystem(game, cam.focus);
 const hud = new Hud(game, audio);
+hud.locate = (o) => {
+  const p = overlay.project(o.x, o.y + 4, o.z);
+  if (!p) return null;
+  // off-screen outposts: fly towards the edge of the view in their direction
+  const r = overlay.canvas.getBoundingClientRect();
+  return { x: r.left + Math.min(Math.max(p.x, 0), r.width), y: r.top + Math.min(Math.max(p.y, 0), r.height) };
+};
 renderPortraits(engine).then((images) => hud.setPortraits(images), (e) => console.warn("portraits failed", e));
 const ai = new EnemyAI(game);
 
@@ -150,12 +160,17 @@ input.onTargetingChange = () => {
 
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
+  audio.setTheme(mode === "base" ? "conquest" : mode);
   if (mode === "skirmish") {
     game.setupSkirmish();
     document.body.classList.add("mode-skirmish");
   } else if (mode === "commandos") {
     const mission = new CommandosMission(game);
     mission.setup();
+    // the mission plays at night: moonlight, street lamps on, searchlights at the outposts
+    env.setNight();
+    streetLights.setOn(true);
+    mission.streetPools = streetLights.pools;
     game.commandos = mission;
     const b = game.playerBarracks; // removed in this mode: nothing blocks the view there any more
     fog.clearRect(b.x, b.z, 7, 5, b.rot);
@@ -197,7 +212,7 @@ document.getElementById("mode-skirmish")!.addEventListener("click", () => startG
 document.getElementById("mode-commandos")!.addEventListener("click", () => startGame("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
-renderModeArt(engine, scene, game, env.followFocus).finally(() => (renderingArt = false)).then(
+renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => (renderingArt = false)).then(
   (art) => {
     (document.getElementById("mode-img-conquest") as HTMLImageElement).src = art.conquest;
     (document.getElementById("mode-img-skirmish") as HTMLImageElement).src = art.skirmish;

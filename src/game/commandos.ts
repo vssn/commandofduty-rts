@@ -1,8 +1,9 @@
-import { MultiMaterial, StandardMaterial, type InstancedMesh, type Mesh } from "@babylonjs/core";
-import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type UnitType } from "../config";
+import { Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh } from "@babylonjs/core";
+import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
 import { toWorld, type V2 } from "../world/layout";
-import { createChargeMesh } from "../world/models";
+import { Searchlight } from "../world/lighting";
+import { createChargeMesh, mat } from "../world/models";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
 import { Unit } from "./unit";
@@ -22,6 +23,9 @@ interface Patrol {
 interface Footprint { x: number; z: number; t: number; heading: number }
 interface Death { x: number; z: number; t: number; found: boolean }
 interface Search { cx: number; cz: number; t0: number; until: number }
+/** Hidden explosives at the edge of a wood. */
+export interface Cache { x: number; z: number; taken: boolean; mesh: Mesh }
+interface Beam { light: Searchlight; post: Outpost; base: number; phase: number; lockT: number; alarmT: number }
 
 /** Footprints stay readable this long (seconds). */
 const TRAIL_LIFE = 110;
@@ -70,10 +74,20 @@ export class CommandosMission {
   private findCheckT = 0;
   private searchMsgCooldown = 0;
   private trackMsgCooldown = 0;
+  /** Explosive caches the agent has to reach (he starts without charges). */
+  readonly caches: Cache[] = [];
+  private readonly beams: Beam[] = [];
+  /** Lit spots of the street lamps (set by main when the lamps are switched on). */
+  streetPools: { x: number; z: number; r: number }[] = [];
+  /** The mission failed because the clock ran out. */
+  timeUp = false;
+  private warnedTime = false;
 
   constructor(private readonly game: Game) {}
 
   get sniperCooldown() { return Math.max(0, this.sniperCd); }
+  /** Seconds left on the mission clock. */
+  get timeLeft() { return Math.max(0, COMMANDOS.timeLimit - this.time); }
   get cloakCooldown() { return Math.max(0, this.cloakCd); }
 
   // ---------------------------------------------------------------- setup
@@ -112,6 +126,28 @@ export class CommandosMission {
       }
     }
 
+    // some outposts are covered by a manned MG nest on their edge
+    const nestPosts = [...g.outposts].sort(() => Math.random() - 0.5).slice(0, COMMANDOS.nests);
+    for (const o of nestPosts) {
+      for (let tries = 0; tries < 12; tries++) {
+        const a = Math.random() * Math.PI * 2, r = o.radius * 0.8;
+        const x = o.x + Math.sin(a) * r, z = o.z + Math.cos(a) * r;
+        if (!g.nav.areaFree(x, z, 1.3, 1.3, a, 0)) continue;
+        const nest = g.spawnStructure("mgnest", ENEMY, x, z, a, o);
+        g.board(g.spawnUnit("rifleman", ENEMY, x, z - 2), nest);
+        break;
+      }
+    }
+
+    // a searchlight at every outpost sweeps the approaches
+    for (const o of g.outposts) {
+      const base = Math.random() * Math.PI * 2;
+      const p = g.nav.freePoint(o.x + Math.sin(base) * (o.radius + 1.2), o.z + Math.cos(base) * (o.radius + 1.2));
+      const light = new Searchlight(g.scene, g.terrain, g.shadows, p.x, p.z, COMMANDOS.searchlight.poolRadius);
+      g.nav.blockCircle(p.x, p.z, 0.4);
+      this.beams.push({ light, post: o, base, phase: Math.random() * 10, lockT: 0, alarmT: 0 });
+    }
+
     // foot patrols walk loops between outposts, jeeps loop along longer routes
     const posts = g.outposts.map((o) => ({ x: o.x, z: o.z }));
     const route = (start: number, stride: number, len: number) =>
@@ -141,14 +177,66 @@ export class CommandosMission {
     this.agent.heading = Math.atan2(near.x - start.x, near.z - start.z);
     this.makeAgentMaterialsOwn();
 
+    this.placeCaches();
+
     const tpl = createChargeMesh(g.scene);
     tpl.isVisible = false;
     tpl.isPickable = false;
     this.chargeTpl = tpl;
     g.select([this.agent]);
+    // night: in the dark the enemy notices the agent late, under a lamp early
+    g.spotRange = (viewer, target, range) => {
+      if (viewer.team !== ENEMY || target !== this.agent) return range;
+      return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : COMMANDOS.night.dark);
+    };
     g.onKilled = (u) => {
       if (u.team === ENEMY) this.onEnemyKilled(u);
     };
+  }
+
+  /**
+   * Hides the explosive caches at the edge of different woods, well away from the outposts and
+   * from each other (and not right next to the agent).
+   */
+  private placeCaches() {
+    const g = this.game, a = this.agent;
+    const forests = [...g.layout.forests].sort(() => Math.random() - 0.5);
+    const lim = MAP_HALF - 6;
+    for (const f of forests) {
+      if (this.caches.length >= COMMANDOS.caches.count) break;
+      for (let tries = 0; tries < 30; tries++) {
+        const ang = Math.random() * Math.PI * 2, d = f.r + 1.5 + Math.random() * 3;
+        const x = f.x + Math.cos(ang) * d, z = f.z + Math.sin(ang) * d;
+        if (Math.abs(x) > lim || Math.abs(z) > lim || g.nav.isBlocked(x, z)) continue;
+        if (g.outposts.some((o) => Math.hypot(o.x - x, o.z - z) < o.radius + 10)) continue;
+        if (this.caches.some((c) => Math.hypot(c.x - x, c.z - z) < 25) || Math.hypot(a.x - x, a.z - z) < 12) continue;
+        this.caches.push({ x, z, taken: false, mesh: this.cacheMesh(x, z) });
+        break;
+      }
+    }
+  }
+
+  /** A crate under a camouflage tarp with a couple of ammunition boxes. */
+  private cacheMesh(x: number, z: number): Mesh {
+    const g = this.game, sc = g.scene;
+    const parts: Mesh[] = [];
+    const box = (w: number, h: number, d: number, px: number, py: number, pz: number, c: [number, number, number], ry = 0) => {
+      const m = MeshBuilder.CreateBox("cache", { width: w, height: h, depth: d }, sc);
+      m.position.set(px, py, pz);
+      m.rotation.y = ry;
+      m.material = mat(sc, c);
+      parts.push(m);
+    };
+    box(1.0, 0.6, 0.7, 0, 0.3, 0, [0.42, 0.31, 0.18]);
+    box(1.1, 0.08, 0.8, 0, 0.64, 0, [0.28, 0.33, 0.2], 0.1); // tarp
+    box(0.5, 0.3, 0.3, 0.75, 0.15, 0.3, [0.3, 0.36, 0.2], 0.5);
+    box(0.5, 0.3, 0.3, -0.7, 0.15, -0.25, [0.3, 0.36, 0.2], -0.3);
+    const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
+    merged.isPickable = false;
+    merged.position.set(x, g.terrain.heightAt(x, z), z);
+    merged.rotation.y = Math.random() * Math.PI;
+    g.shadows.addShadowCaster(merged);
+    return merged;
   }
 
   // ---------------------------------------------------------------- searching & tracking
@@ -440,9 +528,19 @@ export class CommandosMission {
     this.updatePlanting(dt);
     this.updateCharges(dt);
     this.updatePatrols(dt);
+    this.updateBeams(dt);
     this.updateAlert(dt);
+    this.updateCaches();
 
-    if (!a.alive) {
+    if (!this.warnedTime && this.timeLeft <= 60) {
+      this.warnedTime = true;
+      g.emit("timeWarning", PLAYER);
+    }
+    if (this.timeLeft <= 0 && a.alive) {
+      this.timeUp = true;
+      g.result = "lose";
+      g.emit("lose", PLAYER);
+    } else if (!a.alive) {
       g.result = "lose";
       g.emit("lose", PLAYER);
     } else if (this.destroyedOutposts >= COMMANDOS.targets) {
@@ -523,6 +621,81 @@ export class CommandosMission {
       p.wait = 3 + Math.random() * 4;
       const jitter = { x: wp.x + (Math.random() - 0.5) * 6, z: wp.z + (Math.random() - 0.5) * 6 };
       g.commandMove(alive, g.nav.freePoint(jitter.x, jitter.z, alive[0].navLayer), true, false);
+    }
+  }
+
+  /** Whether (x, z) lies in the light of a street lamp or a searchlight beam. */
+  isLit(x: number, z: number): boolean {
+    if (this.streetPools.some((p) => Math.hypot(p.x - x, p.z - z) < p.r)) return true;
+    return this.beams.some((b) => !b.post.destroyed && Math.hypot(b.light.tx - x, b.light.tz - z) < b.light.radius);
+  }
+
+  /** The agent walks over a cache and takes the charges in it. */
+  private updateCaches() {
+    const a = this.agent;
+    if (!a.alive) return;
+    for (const c of this.caches) {
+      if (c.taken || Math.hypot(c.x - a.x, c.z - a.z) > COMMANDOS.caches.pickup) continue;
+      c.taken = true;
+      c.mesh.dispose();
+      this.charges += COMMANDOS.caches.charges;
+      this.game.emit("cacheFound", PLAYER);
+    }
+  }
+
+  /**
+   * Searchlights sweep in front of their outpost. When the agent (uncloaked) steps into a beam it
+   * locks onto him and follows him for a few seconds, and the troops nearby are sent after him.
+   */
+  private updateBeams(dt: number) {
+    const g = this.game, a = this.agent, L = COMMANDOS.searchlight;
+    // a searchlight reaches no farther than a soldier can see
+    const reach = SIGHT.rifleman;
+    for (const b of this.beams) {
+      if (b.post.destroyed) {
+        b.light.setEnabled(false);
+        continue;
+      }
+      const inReach = Math.hypot(a.x - b.light.x, a.z - b.light.z) <= reach;
+      const lit = a.alive && !a.cloaked && inReach && Math.hypot(b.light.tx - a.x, b.light.tz - a.z) < b.light.radius;
+      if (lit) b.lockT = L.lock;
+      b.lockT -= dt;
+      let tx: number, tz: number;
+      if (!inReach) b.lockT = 0; // out of reach: the beam loses him
+      if (b.lockT > 0 && a.alive && !a.cloaked) {
+        tx = a.x;
+        tz = a.z;
+      } else {
+        const ang = b.base + Math.sin(this.time * 0.35 + b.phase) * 1.1;
+        const d = L.near + (L.far - L.near) * (0.5 + 0.5 * Math.sin(this.time * 0.23 + b.phase * 1.7));
+        tx = b.light.x + Math.sin(ang) * d;
+        tz = b.light.z + Math.cos(ang) * d;
+      }
+      // the beam swings over at a limited speed, so the agent can still dodge out of it
+      const dx = tx - b.light.tx, dz = tz - b.light.tz, dist = Math.hypot(dx, dz), step = 11 * dt;
+      if (dist > step) {
+        tx = b.light.tx + (dx / dist) * step;
+        tz = b.light.tz + (dz / dist) * step;
+      }
+      const out = Math.hypot(tx - b.light.x, tz - b.light.z);
+      if (out > reach) {
+        tx = b.light.x + ((tx - b.light.x) / out) * reach;
+        tz = b.light.z + ((tz - b.light.z) / out) * reach;
+      }
+      b.light.aim(tx, tz);
+
+      b.alarmT -= dt;
+      if (b.lockT > 0 && a.alive && !a.cloaked && b.alarmT <= 0) {
+        b.alarmT = 3;
+        for (const u of g.units) {
+          if (!u.alive || u.team !== ENEMY || u.vehicle || !u.armed) continue;
+          const d = Math.hypot(u.x - a.x, u.z - a.z);
+          if (d <= u.stats.acquire + 4) u.target = a; // in range: open fire
+          else if (!u.isStructure && Math.hypot(u.x - b.light.x, u.z - b.light.z) < 35) {
+            u.orderMove(g.nav.freePoint(a.x + (Math.random() - 0.5) * 6, a.z + (Math.random() - 0.5) * 6, u.navLayer), true, g);
+          }
+        }
+      }
     }
   }
 

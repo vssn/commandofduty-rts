@@ -116,6 +116,8 @@ export class MapLayout {
   ];
 
   readonly roads: Road[] = [];
+  /** Street lamps along the village streets; `rot` turns the lamp arm over the road. */
+  readonly streetLights: { x: number; z: number; rot: number }[] = [];
   readonly fields: Field[] = [];
   readonly houses: HouseSpec[] = [];
 
@@ -134,6 +136,23 @@ export class MapLayout {
     ];
     for (const [x1, z1, x2, z2, w] of streets) {
       this.roads.push({ a: toWorld(s.x, s.z, s.rot, x1, z1), b: toWorld(s.x, s.z, s.rot, x2, z2), w, kind: "asphalt" });
+    }
+    // street lamps every ~12 m, alternating sides, clear of the crossings
+    const crossings = [[-10, 0], [14, 0]];
+    for (const [x1, z1, x2, z2, w] of streets) {
+      const len = Math.hypot(x2 - x1, z2 - z1), dx = (x2 - x1) / len, dz = (z2 - z1) / len;
+      const n = Math.floor(len / 12);
+      for (let i = 0; i <= n; i++) {
+        const along = -len / 2 + 3 + i * ((len - 6) / Math.max(1, n));
+        const lx = (x1 + x2) / 2 + dx * along, lz = (z1 + z2) / 2 + dz * along;
+        if (crossings.some(([cx, cz]) => Math.hypot(lx - cx, lz - cz) < 6)) continue;
+        const side = i % 2 === 0 ? 1 : -1;
+        // perpendicular to the street, at the kerb
+        const px = lx + dz * side * (w / 2 + 0.8), pz = lz - dx * side * (w / 2 + 0.8);
+        const p = toWorld(s.x, s.z, s.rot, px, pz);
+        // local direction from the lamp back over the road
+        this.streetLights.push({ x: p.x, z: p.z, rot: s.rot + Math.atan2(-dz * side, dx * side) });
+      }
     }
 
     const lots: { lx: number; lz: number; turn: number }[] = [];

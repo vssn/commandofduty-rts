@@ -1,7 +1,7 @@
 import type { Vector3 } from "@babylonjs/core";
 import { ARTILLERY, PLAYER } from "../config";
 import type { Game, GameEvent } from "../game/game";
-import { MusicGenerator } from "./music";
+import { MusicGenerator, type MusicTheme } from "./music";
 
 const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   unitReady: "Einheit bereit",
@@ -16,6 +16,8 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   chargePlanted: "Ladung platziert",
   enemySearching: "Sie suchen die Gegend ab",
   tracked: "Man folgt unserer Spur",
+  cacheFound: "Sprengstoff aufgenommen",
+  timeWarning: "Noch eine Minute",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",
@@ -55,6 +57,7 @@ export class AudioSystem {
   private sfxGain!: GainNode;
   private noise!: AudioBuffer;
   private music: MusicGenerator | null = null;
+  private theme: MusicTheme = "menu";
   private recentShots: number[] = [];
   private lastGrunt = 0;
   private lastTick = 0;
@@ -81,6 +84,8 @@ export class AudioSystem {
       else if (ev === "commanded") this.grunt("command");
       else if (ev === "captured" && data) {
         if (team === PLAYER) this.announce("Stellung eingenommen");
+      } else if (ev === "outpostThreatened" && data) {
+        if (team === PLAYER) this.announce(`Achtung! Der Feind nimmt die Stellung ${data.outpost.name} ein`, true);
       } else if (ev === "outpostLost") {
         if (team === PLAYER) this.announce("Stellung verloren");
       } else if (team === PLAYER && ANNOUNCE[ev]) {
@@ -121,8 +126,14 @@ export class AudioSystem {
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
-    this.music = new MusicGenerator(ctx, this.musicGain, this.noise);
+    this.music = new MusicGenerator(ctx, this.musicGain, this.noise, this.theme);
     if (this.musicOn) this.music.start();
+  }
+
+  /** Menu music or the soundtrack of the chosen mode (cross-fades if already playing). */
+  setTheme(theme: MusicTheme) {
+    this.theme = theme;
+    this.music?.setTheme(theme);
   }
 
   setMusic(on: boolean) {
@@ -328,24 +339,26 @@ export class AudioSystem {
     out.gain.value = 0.9;
     out.connect(this.sfxGain);
 
-    const syllable = (t: number, dur: number, f0: number, f1: number, level: number, breath: number) => {
+    const syllable = (t: number, dur: number, f0: number, f1: number, level: number, breath: number, vowel: "m" | "a" = "m") => {
       const src = ctx.createOscillator();
       src.type = "sawtooth";
       src.frequency.setValueAtTime(f0, t);
       src.frequency.linearRampToValueAtTime(f1, t + dur);
-      // nasal "m": strong low resonance, weak higher formants, closed mouth
+      // nasal "m": strong low resonance, weak higher formants, closed mouth;
+      // open "a": first formant ~700 Hz, second ~1200 Hz, brighter
+      const open = vowel === "a";
       const lp = ctx.createBiquadFilter();
       lp.type = "lowpass";
-      lp.frequency.value = 900;
+      lp.frequency.value = open ? 2400 : 900;
       const f1n = ctx.createBiquadFilter();
       f1n.type = "peaking";
-      f1n.frequency.value = 260;
-      f1n.gain.value = 14;
+      f1n.frequency.value = open ? 700 : 260;
+      f1n.gain.value = open ? 12 : 14;
       f1n.Q.value = 3;
       const f2n = ctx.createBiquadFilter();
       f2n.type = "peaking";
-      f2n.frequency.value = 1100;
-      f2n.gain.value = 4;
+      f2n.frequency.value = open ? 1200 : 1100;
+      f2n.gain.value = open ? 9 : 4;
       f2n.Q.value = 4;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
@@ -372,12 +385,47 @@ export class AudioSystem {
       }
     };
 
+    /** Voiceless breath puff ("h") between syllables. */
+    const puff = (t: number, dur: number, level: number) => {
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 1300;
+      bp.Q.value = 0.8;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(level, t + 0.012);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      n.connect(bp).connect(ng).connect(out);
+      n.start(t, Math.random() * 0.5);
+      n.stop(t + dur + 0.02);
+    };
+
     const t = now + 0.02;
     if (kind === "select") {
       syllable(t, 0.13, base, base * 0.97, 0.06, 0);
       syllable(t + 0.2, 0.2, base * 1.02, base * 1.45, 0.07, 0.012);
-    } else {
-      syllable(t + 0.05, 0.16, base * 1.3, base * 0.85, 0.08, 0.02);
+      return;
+    }
+    // command acknowledged: a random one of several short, falling grunts
+    switch (Math.floor(Math.random() * 4)) {
+      case 0: // "Hm!"
+        syllable(t + 0.05, 0.16, base * 1.3, base * 0.85, 0.08, 0.02);
+        break;
+      case 1: // "M-h-hm"
+        syllable(t, 0.1, base * 1.05, base, 0.055, 0);
+        puff(t + 0.12, 0.07, 0.02);
+        syllable(t + 0.21, 0.17, base * 1.28, base * 0.84, 0.075, 0.015);
+        break;
+      case 2: // "Ah-hm"
+        syllable(t, 0.15, base * 1.15, base * 1.02, 0.06, 0.008, "a");
+        syllable(t + 0.21, 0.17, base * 1.22, base * 0.84, 0.075, 0.015);
+        break;
+      default: // "H-h-hm"
+        puff(t, 0.07, 0.022);
+        puff(t + 0.12, 0.07, 0.02);
+        syllable(t + 0.24, 0.16, base * 1.3, base * 0.85, 0.08, 0.018);
     }
   }
 

@@ -117,10 +117,23 @@ export const COMMANDOS = {
   targets: 6,
   /** Scharfschuss: kills any soldier outright, only scratches a vehicle. */
   sniper: { cooldown: 6, range: 42, vehicleDamage: 90 },
-  /** Tarnen: invisible to the enemy for a few seconds (firing breaks it). */
-  cloak: { duration: 7, cooldown: 22 },
-  /** Demolition charges: planted by hand on a vehicle or inside an outpost, then a short fuse. */
-  charges: { count: 8, plantTime: 1.5, fuse: 5, damage: 900, radius: 5.5, reach: 2.6 },
+  /** Tarnen: invisible to the enemy for a few seconds (firing breaks it); long enough to slip past an MG nest. */
+  cloak: { duration: 10, cooldown: 22 },
+  /** Demolition charges: planted by hand on a vehicle or inside an outpost, then a short fuse. The agent starts without any. */
+  charges: { count: 0, plantTime: 1.5, fuse: 5, damage: 900, radius: 5.5, reach: 2.6 },
+  /** Hidden caches at the edge of woods, marked on the minimap; each holds `charges` charges. */
+  caches: { count: 4, charges: 3, pickup: 1.8 },
+  /** Seconds until the mission fails. */
+  timeLimit: 600,
+  /** Outposts that get a manned MG nest. */
+  nests: 3,
+  /**
+   * Night: enemies spot the agent only at `dark` times their normal range, but at `lit` times it
+   * when he stands in the light of a street lamp; a searchlight beam gives him away at once.
+   */
+  night: { dark: 0.55, lit: 1.25 },
+  /** Searchlight beams sweep around each outpost (never farther than a soldier sees); the lit spot has this radius. */
+  searchlight: { poolRadius: 3.4, near: 9, far: 17, lock: 4 },
   /** Enemy forces: guards per outpost, foot patrols (3 men each) and patrolling jeeps. */
   garrison: 2,
   patrols: 5,
