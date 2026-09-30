@@ -17,6 +17,7 @@ export class Barracks implements Target {
   readonly production = new Production(["rifleman", "grenadier"]);
   readonly spawn: V2;
   rally: V2;
+  private readonly startRally: V2;
   private sinkT = 0;
 
   constructor(
@@ -35,6 +36,21 @@ export class Barracks implements Target {
     ring.isVisible = false;
     this.spawn = toWorld(x, z, rot, 0, 7.5);
     this.rally = toWorld(x, z, rot, 0, 16);
+    this.startRally = this.rally;
+  }
+
+  /** Back to the start of a game: intact, idle, default rally point. */
+  reset() {
+    this.hp = this.maxHp;
+    this.alive = true;
+    this.selected = false;
+    this.sinkT = 0;
+    this.production.clear();
+    this.rally = this.startRally;
+    this.mesh.setEnabled(true);
+    this.mesh.position.y = this.y;
+    this.mesh.rotation.z = 0;
+    this.ring.isVisible = false;
   }
 
   update(dt: number, g: Game) {

@@ -33,6 +33,16 @@ export class Artillery {
   }
 
   /** Seconds until `team` may order again (0 = ready). */
+  /** Cancels all strikes (new game). */
+  clear() {
+    for (const st of this.strikes) {
+      st.marker.dispose();
+      for (const sh of st.shells) sh.mesh?.dispose();
+    }
+    this.strikes.length = 0;
+    this.cooldown[0] = this.cooldown[1] = 0;
+  }
+
   cooldownOf(team: Team): number {
     return Math.max(0, this.cooldown[team]);
   }

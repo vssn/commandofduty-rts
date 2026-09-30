@@ -155,7 +155,11 @@ export class Game {
     this.playerBarracks = this.createBarracks(PLAYER, layout.playerBase, 0);
     this.enemyBarracks = this.createBarracks(ENEMY, layout.enemyBase, Math.PI);
 
-    // a few soldiers and one grenadier to start with on each side
+    this.spawnStartingUnits();
+  }
+
+  /** A few soldiers and one grenadier to start with on each side. */
+  private spawnStartingUnits() {
     for (const b of this.buildings) {
       (["rifleman", "rifleman", "rifleman", "grenadier"] as const).forEach((type, i) => {
         const p = b.rally;
@@ -197,6 +201,37 @@ export class Game {
     this.nav.blockRect(p.x, p.z, 6.5, 4.5, rot, 0.8);
     this.buildings.push(b);
     return b;
+  }
+
+  /**
+   * Back to the opening position of a conquest game (after the main menu's background battle):
+   * all units, structures and effects are removed, buildings and outposts restored, credits reset.
+   */
+  reset() {
+    for (const u of this.units) {
+      if (u.alive && u.isStructure) this.blockStructure(u, -1);
+      u.view.dispose();
+      u.ring.dispose();
+    }
+    this.units.length = 0;
+    for (const a of this.auras.values()) a.mesh.dispose();
+    this.auras.clear();
+    for (const m of this.markers) {
+      m.outer.dispose();
+      m.inner.dispose();
+    }
+    this.markers.length = this.tracers.length = this.orderLines.length = 0;
+    this.clearSelection();
+    this.result = null;
+    this.credits[0] = this.credits[1] = START_CREDITS;
+    this.time = 0;
+    this.sinceUnitsHit = Infinity;
+    this.baseAlertCooldown = 0;
+    for (const b of this.buildings) b.reset();
+    for (const o of this.outposts) o.reset();
+    this.effects.clear();
+    this.artillery.clear();
+    this.spawnStartingUnits();
   }
 
   on(fn: Listener) {

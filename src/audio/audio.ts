@@ -52,6 +52,8 @@ function save(key: string, on: boolean) {
 export class AudioSystem {
   musicOn = load("cod.music", true);
   sfxOn = load("cod.sfx", true);
+  /** True while the main menu's background battle runs: the game makes no sound, only music plays. */
+  quiet = false;
   private ctx: AudioContext | null = null;
   private musicGain!: GainNode;
   private sfxGain!: GainNode;
@@ -72,12 +74,13 @@ export class AudioSystem {
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
 
-    game.onShot = (x, z, kind) => (kind === "sniper" ? this.sniperShot(x, z) : this.shot(x, z, kind === "mg"));
-    game.onThrow = (x, z) => this.whoosh(x, z);
-    game.effects.onExplosion = (x, z, size) => this.explosion(x, z, size);
+    game.onShot = (x, z, kind) => !this.quiet && (kind === "sniper" ? this.sniperShot(x, z) : this.shot(x, z, kind === "mg"));
+    game.onThrow = (x, z) => !this.quiet && this.whoosh(x, z);
+    game.effects.onExplosion = (x, z, size) => !this.quiet && this.explosion(x, z, size);
     // incoming artillery: the whistle starts shortly before the first shell lands
-    game.artillery.onOrder = (_team, x, z) => window.setTimeout(() => this.whistle(x, z), Math.max(0, ARTILLERY.delay - 1.5) * 1000);
+    game.artillery.onOrder = (_team, x, z) => !this.quiet && window.setTimeout(() => this.whistle(x, z), Math.max(0, ARTILLERY.delay - 1.5) * 1000);
     game.on((ev, team, data) => {
+      if (this.quiet) return;
       if (ev === "unitLost" && team === PLAYER) this.lossDrum();
       if (ev === "boarded" && team === PLAYER) this.clank();
       if (ev === "selected") this.grunt("select");

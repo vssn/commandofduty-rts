@@ -232,12 +232,14 @@ export class Hud {
   }
 
   toast(msg: string) {
+    if (!this.enabled) return; // the menu's background battle stays silent
     this.toastEl.textContent = msg;
     this.toastEl.classList.add("show");
     this.toastTimer = 2.2;
   }
 
   private showBanner(result: "win" | "lose") {
+    if (!this.enabled) return; // the background battle behind the menu just restarts
     $("banner-title").textContent = result === "win" ? "Sieg" : "Niederlage";
     const mode = this.game.mode;
     const texts = {
@@ -296,6 +298,7 @@ export class Hud {
 
   /** Taken or lost: the tile shows the full square in the new owner's colour for a moment. */
   private finishCapture(o: Outpost, won: boolean) {
+    if (!this.enabled) return;
     if (this.game.mode === "commandos") return; // the agent blows outposts up instead
     const tile = this.captureTile(o);
     tile.doneT = 2.2;

@@ -107,6 +107,19 @@ export class Outpost {
     this.applyOwnerColors();
   }
 
+  /** Back to the start of a game: neutral, capture bonus unpaid. */
+  reset() {
+    this.owner = null;
+    this.capturer = null;
+    this.progress = 0;
+    this.contested = this.guarded = false;
+    this.bonusPaid = false;
+    this.warnCooldown = 0;
+    this.production?.clear();
+    this.rally = toWorld(this.x, this.z, this.rot, 0, 13);
+    this.applyOwnerColors();
+  }
+
   /** Hands the outpost to `team` without a capture (and without the capture bonus). */
   seize(team: Team) {
     this.owner = team;

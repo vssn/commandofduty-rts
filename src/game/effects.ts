@@ -49,6 +49,14 @@ export class Effects {
   /** Called for every explosion (sound, screen feedback). */
   onExplosion: ((x: number, z: number, size: number) => void) | null = null;
 
+  /** Removes every grenade, explosion piece and scorch mark (new game). */
+  clear() {
+    for (const gr of this.grenades) gr.mesh?.dispose();
+    for (const p of this.puffs) p.mesh.dispose();
+    for (const s of this.scorches) s.mesh.dispose();
+    this.grenades.length = this.puffs.length = this.scorches.length = 0;
+  }
+
   constructor(scene: Scene, shadows: ShadowGenerator, private readonly game: Game) {
     this.grenadeTpl = createGrenadeTemplate(scene);
     this.tpl = createExplosionTemplates(scene);

@@ -11,7 +11,9 @@ npm run build    # Produktionsbuild nach dist/
 
 ## Hauptmenü
 
-Beim Laden erscheint das Hauptmenü; das Spiel ist pausiert, die Kamera fliegt langsam über die Karte. „Neues Spiel“
+Beim Laden erscheint das Hauptmenü; die Kamera fliegt langsam über die Karte, auf der im Hintergrund eine
+KI-gegen-KI-Schlacht läuft – lautlos wie ein Hintergrundvideo (nur die Menümusik spielt, keine Meldungen), sie beginnt
+nach einem Sieg von vorn. Die Wahl eines Modus setzt das Schlachtfeld auf die Ausgangslage zurück. „Neues Spiel“
 öffnet die Modusauswahl mit drei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau), **Gefecht** und
 **Commandos** –, deren
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht

@@ -1,6 +1,6 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
-import { COMMANDOS, MAP_HALF, type GameMode } from "./config";
+import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type GameMode } from "./config";
 import { AudioSystem } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
@@ -93,7 +93,21 @@ hud.locate = (o) => {
   return { x: r.left + Math.min(Math.max(p.x, 0), r.width), y: r.top + Math.min(Math.max(p.y, 0), r.height) };
 };
 renderPortraits(engine).then((images) => hud.setPortraits(images), (e) => console.warn("portraits failed", e));
-const ai = new EnemyAI(game);
+let ai = new EnemyAI(game);
+
+// ------------------------------------------------------------------ background battle
+// Behind the main menu both sides are run by the AI, silently, like a background video. It
+// restarts when one side has won; choosing a mode resets the battlefield to the opening position.
+let menuAis = [new EnemyAI(game, PLAYER, 25), new EnemyAI(game, ENEMY, 25)];
+let menuRestartT = 0;
+const startBackgroundBattle = () => {
+  game.reset();
+  game.credits[PLAYER] = game.credits[ENEMY] = 2500; // more troops, livelier fighting
+  menuAis = [new EnemyAI(game, PLAYER, 25), new EnemyAI(game, ENEMY, 25)];
+};
+audio.quiet = true;
+// the fog of war only exists for the player; in the menu both sides see everything
+game.canSee = null;
 
 // ------------------------------------------------------------------ main menu
 // While the menu is open the battle is paused and the camera drifts slowly over the map.
@@ -160,6 +174,11 @@ input.onTargetingChange = () => {
 
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
+  // clear away the background battle: every mode starts from the opening position
+  game.reset();
+  ai = new EnemyAI(game);
+  game.canSee = (x, z) => fog.isVisible(x, z);
+  audio.quiet = false;
   audio.setTheme(mode === "base" ? "conquest" : mode);
   if (mode === "skirmish") {
     game.setupSkirmish();
@@ -212,7 +231,10 @@ document.getElementById("mode-skirmish")!.addEventListener("click", () => startG
 document.getElementById("mode-commandos")!.addEventListener("click", () => startGame("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
-renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => (renderingArt = false)).then(
+renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => {
+  renderingArt = false;
+  startBackgroundBattle();
+}).then(
   (art) => {
     (document.getElementById("mode-img-conquest") as HTMLImageElement).src = art.conquest;
     (document.getElementById("mode-img-skirmish") as HTMLImageElement).src = art.skirmish;
@@ -229,7 +251,18 @@ scene.onBeforeRenderObservable.add(() => {
     menuT += dt;
     cam.jumpTo(Math.sin(menuT * 0.035) * 60 - 10, Math.cos(menuT * 0.024) * 55 - 5);
     cam.update(dt);
-    if (!renderingArt) env.followFocus(cam.focus);
+    if (!renderingArt) {
+      env.followFocus(cam.focus);
+      game.update(dt);
+      for (const a of menuAis) a.update(dt);
+      if (game.result) {
+        menuRestartT += dt;
+        if (menuRestartT > 6) {
+          menuRestartT = 0;
+          startBackgroundBattle();
+        }
+      }
+    }
     return;
   }
   input.update(dt);

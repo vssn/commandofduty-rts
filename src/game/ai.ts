@@ -1,4 +1,4 @@
-import { ARTILLERY, BUILD, ENEMY, UNITS } from "../config";
+import { ARTILLERY, BUILD, ENEMY, PLAYER, UNITS, type Team } from "../config";
 import type { Game } from "./game";
 import type { Unit } from "./unit";
 
@@ -6,41 +6,49 @@ import type { Unit } from "./unit";
  * Small opponent: keeps its barracks busy (riflemen with some grenadiers), takes outposts with
  * two-man squads, builds and mans jeeps once it holds a workshop, trains a few medics once it holds
  * the field hospital (they tag along with the attack waves), fortifies its front outposts with MG
- * nests once it has spare credits, and attacks in growing waves.
+ * nests once it has spare credits, and attacks in growing waves. Normally it plays the enemy; the
+ * main menu's background battle runs one for each side.
  */
 export class EnemyAI {
-  private waveTimer = 150;
+  private waveTimer: number;
   private captureTimer = 5;
   private waveSize = 5;
   private artilleryTimer = 20;
   private buildTimer = 90;
 
-  constructor(private readonly game: Game) {}
+  /** `firstWave`: seconds before the first attack wave may leave. */
+  constructor(private readonly game: Game, private readonly team: Team = ENEMY, firstWave = 150) {
+    this.waveTimer = firstWave;
+  }
+
+  private get foe(): Team {
+    return this.team === PLAYER ? ENEMY : PLAYER;
+  }
 
   update(dt: number) {
     const g = this.game;
-    const b = g.enemyBarracks;
+    const b = this.team === ENEMY ? g.enemyBarracks : g.playerBarracks;
     if (!b.alive || g.result) return;
 
-    const all = g.units.filter((u) => u.alive && u.team === ENEMY && !u.vehicle);
+    const all = g.units.filter((u) => u.alive && u.team === this.team && !u.vehicle);
     const mine = all.filter((u) => !u.isStructure);
     const guns = all.filter((u) => u.hasMg && u.buildT <= 0);
     const soldiers = mine.filter((u) => !u.isVehicle);
     const jeeps = mine.filter((u) => u.type === "jeep");
 
-    if (b.production.queue.length === 0 && soldiers.length < 16) g.queueUnit(Math.random() < 0.3 ? "grenadier" : "rifleman", ENEMY);
-    const workshop = g.workshopOf(ENEMY);
-    if (workshop && workshop.production!.queue.length === 0 && jeeps.length < 2 && g.credits[ENEMY] >= UNITS.jeep.cost + 150) {
-      g.queueUnit("jeep", ENEMY);
+    if (b.production.queue.length === 0 && soldiers.length < 16) g.queueUnit(Math.random() < 0.3 ? "grenadier" : "rifleman", this.team);
+    const workshop = g.workshopOf(this.team);
+    if (workshop && workshop.production!.queue.length === 0 && jeeps.length < 2 && g.credits[this.team] >= UNITS.jeep.cost + 150) {
+      g.queueUnit("jeep", this.team);
     }
-    const hospital = g.hospitalOf(ENEMY);
+    const hospital = g.hospitalOf(this.team);
     const medics = mine.filter((u) => u.type === "medic");
-    if (hospital && hospital.production!.queue.length === 0 && medics.length < 3 && g.credits[ENEMY] >= UNITS.medic.cost + 100) {
-      g.queueUnit("medic", ENEMY);
+    if (hospital && hospital.production!.queue.length === 0 && medics.length < 3 && g.credits[this.team] >= UNITS.medic.cost + 100) {
+      g.queueUnit("medic", this.team);
     }
 
     // soldiers standing in an outpost that is not ours yet are busy taking it
-    const capturing = (u: Unit) => g.outposts.some((o) => o.owner !== ENEMY && Math.hypot(u.x - o.x, u.z - o.z) <= o.radius);
+    const capturing = (u: Unit) => g.outposts.some((o) => o.owner !== this.team && Math.hypot(u.x - o.x, u.z - o.z) <= o.radius);
     const available = mine.filter((u) => u.armed && u.path.length === 0 && !u.target && !u.boarding && !capturing(u));
 
     // man empty jeeps and MG nests with the nearest idle soldier
@@ -59,7 +67,7 @@ export class EnemyAI {
       const claimed = (o: (typeof g.outposts)[number]) =>
         mine.some((u) => Math.hypot((u.dest ?? u).x - o.x, (u.dest ?? u).z - o.z) <= o.radius);
       const targets = g.outposts
-        .filter((o) => o.owner !== ENEMY && !claimed(o))
+        .filter((o) => o.owner !== this.team && !claimed(o))
         .sort((a, c) => Math.hypot(a.x - b.x, a.z - b.z) - Math.hypot(c.x - b.x, c.z - b.z));
       const squad = available.filter((u) => !u.isVehicle).slice(0, 2);
       if (targets.length && squad.length === 2) {
@@ -75,7 +83,7 @@ export class EnemyAI {
     const idle = available.filter((u) => u.armed && u.path.length === 0);
     const waveReady = g.mode === "skirmish" ? idle.length >= 6 : idle.length >= this.waveSize;
     if (this.waveTimer <= 0 && waveReady) {
-      const t = g.playerBarracks;
+      const t = this.foe === PLAYER ? g.playerBarracks : g.enemyBarracks;
       g.commandMove(idle, { x: t.x, z: t.z }, true, false);
       // idle medics follow the wave a little behind it and patch up the wounded on the way
       const followers = medics.filter((m) => !m.patient && m.path.length === 0).slice(0, 2);
@@ -94,10 +102,10 @@ export class EnemyAI {
     this.buildTimer -= dt;
     if (this.buildTimer > 0) return;
     this.buildTimer = 20;
-    if (all.filter((u) => u.type === "mgnest").length >= 2 || g.credits[ENEMY] < UNITS.mgnest.cost + 500) return;
-    const foe = g.playerBarracks;
+    if (all.filter((u) => u.type === "mgnest").length >= 2 || g.credits[this.team] < UNITS.mgnest.cost + 500) return;
+    const foe = this.foe === PLAYER ? g.playerBarracks : g.enemyBarracks;
     const posts = g.outposts
-      .filter((o) => o.owner === ENEMY && !all.some((u) => u.type === "mgnest" && u.anchor === o))
+      .filter((o) => o.owner === this.team && !all.some((u) => u.type === "mgnest" && u.anchor === o))
       .sort((a, b) => Math.hypot(a.x - foe.x, a.z - foe.z) - Math.hypot(b.x - foe.x, b.z - foe.z));
     const o = posts[0];
     if (!o) return;
@@ -105,7 +113,7 @@ export class EnemyAI {
     for (let i = 0; i < 8; i++) {
       const a = toward + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.35;
       const r = o.radius + BUILD.outpostReach * 0.5;
-      if (g.placeStructure("mgnest", ENEMY, o.x + Math.sin(a) * r, o.z + Math.cos(a) * r)) return;
+      if (g.placeStructure("mgnest", this.team, o.x + Math.sin(a) * r, o.z + Math.cos(a) * r)) return;
     }
   }
 
@@ -116,9 +124,9 @@ export class EnemyAI {
   private useArtillery(dt: number, mine: Unit[]) {
     const g = this.game;
     this.artilleryTimer -= dt;
-    if (this.artilleryTimer > 0 || !g.artillery.canOrder(ENEMY)) return;
+    if (this.artilleryTimer > 0 || !g.artillery.canOrder(this.team)) return;
     this.artilleryTimer = 4;
-    const foes = g.units.filter((u) => u.alive && u.team !== ENEMY && !u.vehicle);
+    const foes = g.units.filter((u) => u.alive && u.team !== this.team && !u.vehicle);
     let best: Unit | null = null, bestCount = 2;
     for (const f of foes) {
       if (!mine.some((m) => Math.hypot(m.x - f.x, m.z - f.z) < 20)) continue;
@@ -127,7 +135,7 @@ export class EnemyAI {
     }
     if (!best) return;
     if (mine.some((m) => Math.hypot(m.x - best!.x, m.z - best!.z) < ARTILLERY.spread + ARTILLERY.blastRadius + 2)) return;
-    g.orderArtillery(ENEMY, best.x, best.z);
+    g.orderArtillery(this.team, best.x, best.z);
     this.artilleryTimer = 8;
   }
 }
