@@ -127,8 +127,11 @@ angegriffen, nur auf Befehl. Die KI errichtet mit genug Credits bis zu zwei MG-N
 
 ## Fog of War
 
-Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; alles jenseits der Spielfläche liegt in
-dauerhaftem Nebel (weicher Übergang an der Kartengrenze); gegnerische Einheiten sind nur im aktuellen
+Unerforschtes Gebiet ist fast schwarz, bereits gesehenes grau abgedunkelt; jenseits der Spielfläche übernimmt
+das Gelände die Sicht des angrenzenden Kartenrands (leicht abgedunkelt). Nach Süden, Westen und Osten bricht das Land
+in einen tiefen Graben ab (zerklüftete Kante mit Buchten, Ausläufern und Absätzen, dunstiger Grund), dessen Gegenseite
+wieder als hohe Felswand zu einem bewaldeten Plateau ansteigt – so sieht man nie über das Gelände hinaus; im Norden
+steigt eine Bergwand mit Schneefeldern auf; gegnerische Einheiten sind nur im aktuellen
 Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 Einheiten weit, der Geländewagen 21.
 Die Sicht ist höhenabhängig: Jeder Sichtstrahl merkt sich den steilsten „Horizont“ (Hügelkamm, Baumkrone, Dachfirst)
 und nur was darüber hinausragt ist sichtbar. Wer oben steht, blickt über Wälder und Dörfer ins Tal, ein Hügelkamm

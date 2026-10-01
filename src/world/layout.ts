@@ -195,8 +195,8 @@ export class MapLayout {
       [{ x: w.x, z: w.z }, { x: -44, z: 50 }, { x: -14, z: 70 }, { x: 20, z: 84 }],
       [{ x: -38, z: -28 }, { x: -4, z: -32 }, { x: 30, z: -26 }, { x: e.x, z: e.z }],
       [{ x: e.x, z: e.z }, { x: 74, z: 14 }, { x: 52, z: 52 }, { x: 20, z: 84 }],
-      [{ x: e.x, z: e.z }, { x: 125, z: -36 }],
-      [{ x: w.x, z: w.z }, { x: -125, z: 30 }],
+      [{ x: e.x, z: e.z }, { x: 121, z: -35 }], // tracks end at the cliff edge
+      [{ x: w.x, z: w.z }, { x: -121, z: 30 }],
     ];
     for (const pl of polylines) {
       for (let i = 0; i < pl.length - 1; i++) this.roads.push({ a: pl[i], b: pl[i + 1], w: 3.6, kind: "dirt" });

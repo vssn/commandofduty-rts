@@ -1,4 +1,4 @@
-import { FreeCamera, Tools, Vector3, type Engine, type Scene } from "@babylonjs/core";
+import { Color3, Color4, FreeCamera, Tools, Vector3, type Engine, type Scene } from "@babylonjs/core";
 import { ENEMY, PLAYER, type UnitType } from "../config";
 import type { Game } from "../game/game";
 import type { Unit } from "../game/unit";
@@ -31,6 +31,11 @@ export async function renderModeArt(
     return Tools.CreateScreenshotUsingRenderTargetAsync(engine, cam, SIZE, "image/jpeg", 4);
   };
   const y = (x: number, z: number) => game.terrain.heightAt(x, z);
+  // the daytime artworks look at the horizon: a light autumn sky there instead of the dark backdrop
+  const backdrop = { clear: scene.clearColor.clone(), fog: scene.fogColor.clone() };
+  const sky = new Color3(0.76, 0.79, 0.82);
+  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
+  scene.fogColor = sky;
 
   // --- Eroberung: the fortified barracks from the front-left, garrison in front of the gate
   const b = game.playerBarracks;
@@ -90,6 +95,9 @@ export async function renderModeArt(
     new Vector3(at.x + 1, y(at.x, at.z + 8), at.z + 11),
     0.78,
   );
+
+  scene.clearColor = backdrop.clear.clone();
+  scene.fogColor = backdrop.fog.clone();
 
   // --- Commandos (at night): over the agent's shoulder towards a guarded watchtower, a searchlight
   // beam sweeping the ground just past him

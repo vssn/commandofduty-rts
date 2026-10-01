@@ -4,6 +4,11 @@ import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
 import type { MapLayout, RGB } from "./layout";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
+/** Cliff faces and the mountain wall. */
+const ROCK_DARK: RGB = [0.36, 0.33, 0.29];
+/** Colour the bottom of the abyss fades into (cool haze). */
+const DEPTH_HAZE: RGB = [0.24, 0.27, 0.31];
+const SNOW: RGB = [0.9, 0.91, 0.93];
 const GRASS_B: RGB = [0.68, 0.57, 0.28];
 const GRASS_LOW: RGB = [0.43, 0.5, 0.23];
 const ROCK: RGB = [0.5, 0.44, 0.34];
@@ -122,9 +127,55 @@ export class Terrain {
   private baseHeight(x: number, z: number): number {
     let h = fbm(x * 0.0105 + 5.3, z * 0.0105 - 2.1, 4, 3) * 15;
     h += Math.sin(x * 0.021 + 0.6) * Math.cos(z * 0.018 - 0.4) * 2.5;
-    const e = Math.max(Math.abs(x), Math.abs(z));
-    h += smoothstep(MAP_HALF - 6, MAP_HALF + 45, e) * 16;
+    return h + this.border(x, z);
+  }
+
+  /**
+   * Beyond the playable area: to the south, west and east the ground breaks off into a deep gorge
+   * (ragged cliff, spurs and ledges, a hazy floor) whose far side rises again as a high wall, so the
+   * view never runs past the terrain; to the north a mountain wall rises, wrapping around the corners.
+   */
+  private border(x: number, z: number): number {
+    const wobble = valueNoise(x * 0.06, z * 0.06, 31) * 3.5 + valueNoise(x * 0.2, z * 0.2, 32) * 1.2;
+    // the rim swings in and out in broad bays and headlands, never closer than ~2 m to the playable area
+    const bays = valueNoise(x * 0.022 + 3.1, z * 0.022 - 1.7, 37) * 9 + valueNoise(x * 0.07, z * 0.07, 38) * 3;
+    // distance outside the playable square (south, west, east and the corners)
+    const out = Math.max(-z - MAP_HALF, Math.abs(x) - MAP_HALF, z - MAP_HALF);
+    // 0 in the south, 1 at the north edge: the gorge turns into the mountain wall around the corners
+    const north = smoothstep(MAP_HALF - 30, MAP_HALF + 4, z);
+    const gorge = north < 1 ? this.gorge(x, z, Math.max(-z - MAP_HALF, Math.abs(x) - MAP_HALF), Math.max(2, 9 + bays + wobble * 0.6)) : 0;
+    const mountain = north > 0 ? this.mountain(x, z, out, Math.max(2, 6.5 + wobble + bays * 0.5)) : 0;
+    return lerp(gorge, mountain, north);
+  }
+
+  /**
+   * Gorge profile at `side` metres outside the playable area: the ground breaks away in steps (a
+   * sheer face, then spurs and ledges running on downwards), a hazy floor far below, and the far
+   * side rising again as a high wall to a wooded plateau.
+   */
+  private gorge(x: number, z: number, side: number, edge: number): number {
+    if (side <= edge - 1) return 0;
+    const spur = Math.max(0, valueNoise(x * 0.045 - 4, z * 0.045 + 2, 39)) * 16 + 4;
+    const ledge = 20 + valueNoise(x * 0.06, z * 0.06, 40) * 10;
+    const first = smoothstep(edge, edge + 5, side);
+    const slope = smoothstep(edge + 4, edge + spur, side); // the spur's sloping back
+    const last = smoothstep(edge + spur, edge + spur + 7, side);
+    let h = -(first * ledge + slope * 8 + last * (44 + valueNoise(x * 0.05, z * 0.05, 33) * 8));
+    // rubble and jagged faces
+    h += first * valueNoise(x * 0.25, z * 0.25, 34) * 3 + slope * valueNoise(x * 0.12, z * 0.12, 41) * 4;
+    // the far side: a broken slope, then the high wall
+    const far = 48 + valueNoise(x * 0.03 + 9, z * 0.03, 42) * 6;
+    h += smoothstep(far - 10, far, side) * 24 + smoothstep(far, far + 14, side) * (124 + valueNoise(x * 0.04, z * 0.04, 43) * 12);
+    h += smoothstep(far - 10, far + 12, side) * valueNoise(x * 0.18, z * 0.18, 44) * 5;
     return h;
+  }
+
+  /** Mountain wall profile at `d` metres outside the map: a steep wall, then higher jagged peaks. */
+  private mountain(x: number, z: number, d: number, foot: number): number {
+    if (d <= foot - 2) return 0;
+    const k = d - foot;
+    const ridge = Math.abs(fbm(x * 0.03 + 7, z * 0.03, 4, 35));
+    return smoothstep(0, 9, k) * 26 + smoothstep(6, 45, k) * (24 + ridge * 40) + smoothstep(0, 20, k) * valueNoise(x * 0.2, z * 0.2, 36) * 4;
   }
 
   private heightFn(x: number, z: number): number {
@@ -161,6 +212,11 @@ export class Terrain {
     out[0] *= k; out[1] *= k; out[2] *= k;
     const rock = smoothstep(0.18, 0.45, slope);
     if (rock > 0) mix(out, out, ROCK, rock);
+    // cliffs and mountain faces: dark rock; snow on the high ground; haze deep in the abyss
+    const cliff = smoothstep(0.7, 1.6, slope);
+    if (cliff > 0) mix(out, out, ROCK_DARK, cliff * (0.85 + nz * 0.15));
+    if (h > 30 && z > MAP_HALF - 10) mix(out, out, SNOW, smoothstep(34, 52, h + nz * 6) * (1 - cliff * 0.6));
+    if (h < -6) mix(out, out, DEPTH_HAZE, smoothstep(-6, -55, h) * 0.85);
 
     for (const s of L.suburbs) {
       const d = Math.hypot(x - s.x, z - s.z);

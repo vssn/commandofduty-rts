@@ -189,14 +189,17 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     }
   }
 
-  // dense woodland around the playable area frames the map
+  // beyond the map: firs on the lower mountain slopes and scattered deep down in the abyss
+  // (they show how far it goes down); nothing on the sheer faces
   for (let k = 0; k < 2600; k++) {
     const x = (r() * 2 - 1) * (TERRAIN_HALF - 3), z = (r() * 2 - 1) * (TERRAIN_HALF - 3);
     const e = Math.max(Math.abs(x), Math.abs(z));
     if (e < MAP_HALF + 3) continue;
-    if (valueNoise(x * 0.04, z * 0.04, 21) < -0.15) continue;
-    if (layout.nearestRoad(x, z).d < 2) continue;
-    place(x, z, r() < 0.4);
+    const h = terrain.heightAt(x, z);
+    const slope = Math.hypot(terrain.heightAt(x + 1, z) - terrain.heightAt(x - 1, z), terrain.heightAt(x, z + 1) - terrain.heightAt(x, z - 1)) / 2;
+    if (slope > 0.55 || (h > 34 && z > MAP_HALF)) continue; // not on the snowy mountain tops
+    if (valueNoise(x * 0.04, z * 0.04, 21) < (h < -30 ? 0.2 : -0.15)) continue;
+    place(x, z, true);
   }
 
   trunks.finish(shadows);

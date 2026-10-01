@@ -1,6 +1,7 @@
 import { Color3, Color4, DirectionalLight, HemisphericLight, Scene, ShadowGenerator, Vector3 } from "@babylonjs/core";
 
-const HAZE = new Color3(0.76, 0.79, 0.82);
+/** Backdrop behind and below the terrain (beyond the cliffs): dark, so no bright gaps show. */
+const HAZE = new Color3(0.16, 0.18, 0.21);
 const SUN_DIR = new Vector3(0.74, -0.5, 0.36).normalize();
 
 /** Autumn afternoon lighting: warm low sun from the south-west, cool sky fill, light haze. */
@@ -8,8 +9,8 @@ export function createEnvironment(scene: Scene) {
   scene.clearColor = new Color4(HAZE.r, HAZE.g, HAZE.b, 1);
   scene.fogMode = Scene.FOGMODE_LINEAR;
   scene.fogColor = HAZE;
-  scene.fogStart = 150;
-  scene.fogEnd = 340;
+  scene.fogStart = 175;
+  scene.fogEnd = 380;
 
   const hemi = new HemisphericLight("sky", new Vector3(0, 1, 0), scene);
   hemi.intensity = 0.62;

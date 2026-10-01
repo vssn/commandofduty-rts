@@ -1,9 +1,9 @@
 /** Half size of the playable area (world units). The map spans -MAP_HALF..MAP_HALF on x and z. */
 export const MAP_HALF = 120;
 /** Half size of the rendered terrain, larger than the playable area so the camera never sees the void. */
-export const TERRAIN_HALF = 185;
+export const TERRAIN_HALF = 205;
 /** Terrain grid cells per side. */
-export const TERRAIN_RES = 280;
+export const TERRAIN_RES = 310;
 
 export type Team = 0 | 1;
 export const PLAYER: Team = 0;
