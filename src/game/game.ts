@@ -138,6 +138,11 @@ export class Game {
     for (const o of layout.outposts) {
       if (o.kind === "tower" || o.kind === "bunker") nav.blockRect(o.x, o.z, 2, 2, o.rot, 0.5);
       if (o.kind === "workshop") nav.blockRect(o.x, o.z, 3.5, 3, o.rot, 0.6);
+      if (o.kind === "radar") {
+        nav.blockCircle(o.x, o.z, 2.6); // the dome overhangs its drum
+        const hut = toWorld(o.x, o.z, o.rot, -2.6, 2.2);
+        nav.blockRect(hut.x, hut.z, 1.2, 0.9, o.rot, 0.2);
+      }
       if (o.kind === "hospital") {
         // the ward tent is solid; cots and crates around it are not
         const c = toWorld(o.x, o.z, o.rot, HOSPITAL_TENT.x, HOSPITAL_TENT.z);
@@ -282,6 +287,12 @@ export class Game {
     }
     this.units.length = 0;
     this.clearSelection();
+    // each side starts with the radar tower behind its base
+    for (const o of this.outposts) {
+      if (o.kind !== "radar") continue;
+      const near = this.buildings.reduce((a, b) => (Math.hypot(b.x - o.x, b.z - o.z) < Math.hypot(a.x - o.x, a.z - o.z) ? b : a));
+      o.seize(near.team);
+    }
     for (const b of this.buildings) {
       this.credits[b.team] = SKIRMISH.credits;
       // rows in front of the gate: medics closest to the base, then riflemen, grenadiers and the
@@ -358,6 +369,15 @@ export class Game {
   /** Workshop owned by `team` (builds jeeps), if any. */
   workshopOf(team: Team): Outpost | null {
     return this.facilityOf("workshop", team);
+  }
+
+  /**
+   * Whether `team` has the minimap: by holding a radar tower (conquest, skirmish); the commandos
+   * agent always has it.
+   */
+  hasRadar(team: Team): boolean {
+    if (this.mode === "commandos") return true;
+    return this.outposts.some((o) => o.kind === "radar" && o.owner === team && !o.destroyed);
   }
 
   /** Field hospital owned by `team` (trains medics), if any. */

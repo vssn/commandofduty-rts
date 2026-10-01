@@ -45,12 +45,35 @@ function save(key: string, on: boolean) {
   }
 }
 
+/** Music volume steps of the menu slider: 0 = off … 4 = full. */
+export const MUSIC_LEVELS = [
+  { name: "Aus", gain: 0 },
+  { name: "Leise", gain: 0.14 },
+  { name: "Mittel", gain: 0.27 },
+  { name: "Laut", gain: 0.45 },
+  { name: "Voll", gain: 0.65 },
+];
+const DEFAULT_MUSIC_LEVEL = 3;
+
+function loadLevel(): number {
+  try {
+    const v = localStorage.getItem("cod.musicLevel");
+    if (v !== null) return Math.min(MUSIC_LEVELS.length - 1, Math.max(0, Number(v) | 0));
+  } catch {
+    /* storage unavailable */
+  }
+  return load("cod.music", true) ? DEFAULT_MUSIC_LEVEL : 0;
+}
+
 /**
  * All sound: generated music, quiet positional gunfire and spoken event announcements.
  * The AudioContext is created on the first user gesture (browser autoplay policy).
  */
 export class AudioSystem {
-  musicOn = load("cod.music", true);
+  /** Music volume step (see MUSIC_LEVELS); 0 = music off. */
+  musicLevel = loadLevel();
+  /** Last audible step, restored when the music is switched back on (sidebar button, M key). */
+  private lastMusicLevel = this.musicLevel || DEFAULT_MUSIC_LEVEL;
   sfxOn = load("cod.sfx", true);
   /** True while the main menu's background battle runs: the game makes no sound, only music plays. */
   quiet = false;
@@ -69,7 +92,7 @@ export class AudioSystem {
   /** False when no known female voice is installed; the fallback voice is then pitched up. */
   private femaleVoice = false;
 
-  constructor(game: Game, private readonly listener: Vector3) {
+  constructor(private readonly game: Game, private readonly listener: Vector3) {
     const unlock = () => this.unlock();
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
@@ -86,11 +109,11 @@ export class AudioSystem {
       if (ev === "selected") this.grunt("select");
       else if (ev === "commanded") this.grunt("command");
       else if (ev === "captured" && data) {
-        if (team === PLAYER) this.announce("Stellung eingenommen");
+        if (team === PLAYER) this.announce(data.outpost.kind === "radar" ? "Radar online" : "Stellung eingenommen");
       } else if (ev === "outpostThreatened" && data) {
         if (team === PLAYER) this.announce(`Achtung! Der Feind nimmt die Stellung ${data.outpost.name} ein`, true);
       } else if (ev === "outpostLost") {
-        if (team === PLAYER) this.announce("Stellung verloren");
+        if (team === PLAYER) this.announce(data?.outpost.kind === "radar" ? "Radar ausgefallen" : "Stellung verloren");
       } else if (team === PLAYER && ANNOUNCE[ev]) {
         this.announce(ANNOUNCE[ev]!, ev === "win" || ev === "lose");
       }
@@ -119,7 +142,7 @@ export class AudioSystem {
     comp.ratio.value = 4;
     comp.connect(ctx.destination);
     this.musicGain = ctx.createGain();
-    this.musicGain.gain.value = this.musicOn ? 0.45 : 0;
+    this.musicGain.gain.value = MUSIC_LEVELS[this.musicLevel].gain;
     this.musicGain.connect(comp);
     this.sfxGain = ctx.createGain();
     this.sfxGain.gain.value = this.sfxOn ? 1 : 0;
@@ -139,12 +162,28 @@ export class AudioSystem {
     this.music?.setTheme(theme);
   }
 
+  get musicOn(): boolean {
+    return this.musicLevel > 0;
+  }
+
+  /** On/off switch (sidebar, M key): off, or back to the last chosen volume. */
   setMusic(on: boolean) {
-    this.musicOn = on;
-    save("cod.music", on);
+    this.setMusicLevel(on ? this.lastMusicLevel : 0);
+  }
+
+  /** Music volume step from the menu slider (0 = off). */
+  setMusicLevel(level: number) {
+    level = Math.min(MUSIC_LEVELS.length - 1, Math.max(0, Math.round(level)));
+    this.musicLevel = level;
+    if (level > 0) this.lastMusicLevel = level;
+    try {
+      localStorage.setItem("cod.musicLevel", String(level));
+    } catch {
+      /* storage unavailable */
+    }
     if (!this.ctx) return;
-    this.musicGain.gain.setTargetAtTime(on ? 0.45 : 0, this.ctx.currentTime, 0.3);
-    if (on) this.music?.start();
+    this.musicGain.gain.setTargetAtTime(MUSIC_LEVELS[level].gain, this.ctx.currentTime, 0.15);
+    if (level > 0) this.music?.start();
     else window.setTimeout(() => !this.musicOn && this.music?.stop(), 1500);
   }
 
@@ -337,12 +376,15 @@ export class AudioSystem {
     const now = ctx.currentTime;
     if (now - this.lastGrunt < 0.25) return;
     this.lastGrunt = now;
-    const base = 105 + Math.random() * 30; // a different soldier each time
+    // the commandos agent answers slower and a little deeper: calm, in command
+    const agent = [...this.game.selection].some((u) => u.type === "agent");
+    const slow = agent ? 1.3 : 1;
+    const base = agent ? 94 + Math.random() * 8 : 105 + Math.random() * 30; // a different soldier each time
     const out = ctx.createGain();
     out.gain.value = 0.9;
     out.connect(this.sfxGain);
 
-    const syllable = (t: number, dur: number, f0: number, f1: number, level: number, breath: number, vowel: "m" | "a" = "m") => {
+    const voiced = (t: number, dur: number, f0: number, f1: number, level: number, breath: number, vowel: "m" | "a" = "m") => {
       const src = ctx.createOscillator();
       src.type = "sawtooth";
       src.frequency.setValueAtTime(f0, t);
@@ -389,7 +431,7 @@ export class AudioSystem {
     };
 
     /** Voiceless breath puff ("h") between syllables. */
-    const puff = (t: number, dur: number, level: number) => {
+    const breathPuff = (t: number, dur: number, level: number) => {
       const n = ctx.createBufferSource();
       n.buffer = this.noise;
       const bp = ctx.createBiquadFilter();
@@ -406,6 +448,10 @@ export class AudioSystem {
     };
 
     const t = now + 0.02;
+    // timing stretched by `slow` (offsets from the start and every duration)
+    const syllable = (at: number, dur: number, f0: number, f1: number, level: number, breath: number, vowel: "m" | "a" = "m") =>
+      voiced(t + (at - t) * slow, dur * slow, f0, f1, level, breath, vowel);
+    const puff = (at: number, dur: number, level: number) => breathPuff(t + (at - t) * slow, dur * slow, level);
     if (kind === "select") {
       syllable(t, 0.13, base, base * 0.97, 0.06, 0);
       syllable(t + 0.2, 0.2, base * 1.02, base * 1.45, 0.07, 0.012);

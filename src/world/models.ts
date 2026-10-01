@@ -555,6 +555,9 @@ export function createRing(scene: Scene, name: string, diameter: number, thickne
 /** Ward tent of the field hospital (local offset and half size); it blocks movement. */
 export const HOSPITAL_TENT = { x: -0.8, z: -0.8, hw: 2.3, hd: 2.1 };
 
+/** Radome dimensions shared by the model and its warning light. */
+export const RADAR_DIM = { drumH: 2.4, drumR: 2.2, domeR: 2.9, domeY: 4.5 };
+
 export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
@@ -650,6 +653,24 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     for (let i = -3; i <= 3; i++) box(0.12, 1.0, 0.12, i * 2.6, 0.5, 3.2 + (i % 2) * 0.3, darkWood);
     box(16, 0.05, 0.05, 0, 0.8, 3.3, [0.5, 0.5, 0.5]);
     box(16, 0.05, 0.05, 0, 0.45, 3.3, [0.5, 0.5, 0.5]);
+  } else if (kind === "radar") {
+    // radome station: white geodesic ball on a concrete drum, operators' hut, generator, aerial mast
+    const R = RADAR_DIM;
+    box(7, 0.3, 7, 0, 0.1, 0, [0.55, 0.53, 0.48]);
+    cyl(R.drumH, R.drumR * 2, 0, 0.2 + R.drumH / 2, 0, [0.6, 0.59, 0.55]);
+    cyl(0.25, R.drumR * 2 + 0.25, 0, 0.2 + R.drumH, 0, [0.42, 0.42, 0.4]); // ring beam under the dome
+    box(0.9, 1.6, 0.06, 0, 1.0, R.drumR - 0.02, [0.24, 0.24, 0.24]); // door
+    const dome = MeshBuilder.CreateIcoSphere("radome", { radius: R.domeR, subdivisions: 2, flat: true }, scene);
+    dome.position.y = R.domeY;
+    dome.material = mat(scene, [0.92, 0.92, 0.88]);
+    parts.push(dome);
+    // hut with a flat roof and a window
+    box(2.2, 1.8, 1.6, -2.6, 1.15, 2.2, [0.44, 0.47, 0.36]);
+    box(2.4, 0.15, 1.8, -2.6, 2.1, 2.2, [0.3, 0.3, 0.28]);
+    box(0.5, 0.35, 0.05, -2.2, 1.45, 3.02, [0.55, 0.7, 0.75]);
+    box(1.2, 0.8, 0.8, 2.6, 0.65, -2.4, [0.32, 0.38, 0.24]); // generator
+    box(0.08, 4.5, 0.08, 2.9, 2.45, 2.6, [0.3, 0.3, 0.3]); // aerial mast
+    box(0.9, 0.05, 0.05, 2.9, 4.5, 2.6, [0.3, 0.3, 0.3]);
   } else if (kind === "workshop") {
     // vehicle workshop: open-fronted hall with a corrugated roof, crane, barrels and spare parts
     const wall: RGB = [0.56, 0.54, 0.46];

@@ -9,6 +9,10 @@ const HEURISTIC_WEIGHT = 1.2;
 export type NavLayer = 0 | 1;
 /** How far each layer keeps unit centres away from obstacles. */
 const CLEARANCE: Record<NavLayer, number> = { 0: 0.45, 1: 1.9 };
+/** Extra room a shortcut must leave on both sides, so paths don't graze corners. */
+const MARGIN: Record<NavLayer, number> = { 0: 0.5, 1: 0.8 };
+/** Extra path cost for a cell right next to an obstacle: A* prefers a little elbow room. */
+const NEAR_COST = 0.6;
 
 /**
  * Uniform 1-unit grid over the playable area with A* path finding. Obstacles (buildings, tree
@@ -24,6 +28,9 @@ export class NavGrid {
   private readonly base: [Uint8Array, Uint8Array];
   /** Number of player-built structures covering each cell. */
   private readonly dyn: [Uint16Array, Uint16Array];
+  /** 1 where a free cell touches a blocked one (rebuilt lazily after obstacles change). */
+  private readonly near: [Uint8Array, Uint8Array];
+  private nearDirty = true;
   private readonly g: Float32Array;
   private readonly f: Float32Array;
   private readonly from: Int32Array;
@@ -36,6 +43,7 @@ export class NavGrid {
     this.blocked = [new Uint8Array(size), new Uint8Array(size)];
     this.base = [new Uint8Array(size), new Uint8Array(size)];
     this.dyn = [new Uint16Array(size), new Uint16Array(size)];
+    this.near = [new Uint8Array(size), new Uint8Array(size)];
     this.g = new Float32Array(size);
     this.f = new Float32Array(size);
     this.from = new Int32Array(size);
@@ -45,6 +53,7 @@ export class NavGrid {
 
   /** Blocks a rotated rectangle (e.g. a building) plus `pad`, on both layers. */
   blockRect(cx: number, cz: number, hw: number, hd: number, rot: number, pad = 0.25) {
+    this.nearDirty = true;
     for (const layer of [0, 1] as NavLayer[]) {
       const p = pad + CLEARANCE[layer];
       this.eachCell(cx, cz, Math.hypot(hw, hd) + p, (x, z, k) => {
@@ -56,6 +65,7 @@ export class NavGrid {
 
   /** Frees a rotated rectangle again on both layers (e.g. a building removed for a game mode). */
   clearRect(cx: number, cz: number, hw: number, hd: number, rot: number) {
+    this.nearDirty = true;
     for (const layer of [0, 1] as NavLayer[]) {
       this.eachCell(cx, cz, Math.hypot(hw, hd), (x, z, k) => {
         const l = toLocal(cx, cz, rot, x, z);
@@ -72,6 +82,7 @@ export class NavGrid {
    * Structures are counted per cell, so removing one never frees a tree or another structure.
    */
   structure(cx: number, cz: number, hw: number, hd: number, rot: number, layers: readonly NavLayer[], delta: 1 | -1) {
+    this.nearDirty = true;
     for (const layer of layers) {
       const p = CLEARANCE[layer];
       this.eachCell(cx, cz, Math.hypot(hw, hd) + p, (x, z, k) => {
@@ -95,6 +106,7 @@ export class NavGrid {
 
   /** Blocks a round obstacle such as a tree trunk, on both layers. */
   blockCircle(cx: number, cz: number, r: number) {
+    this.nearDirty = true;
     for (const layer of [0, 1] as NavLayer[]) {
       const rr = r + CLEARANCE[layer];
       this.eachCell(cx, cz, rr, (x, z, k) => {
@@ -126,6 +138,42 @@ export class NavGrid {
   isBlocked(x: number, z: number, layer: NavLayer = 0): boolean {
     const [i, j] = this.cellCoords(x, z);
     return this.blocked[layer][i + j * this.n] === 1;
+  }
+
+  /** Marks the free cells bordering an obstacle (8-neighbourhood) on both layers. */
+  private rebuildNear() {
+    const n = this.n;
+    for (const layer of [0, 1] as NavLayer[]) {
+      const b = this.blocked[layer], near = this.near[layer];
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const k = i + j * n;
+          let v = 0;
+          if (!b[k]) {
+            for (let dj = -1; dj <= 1 && !v; dj++) {
+              for (let di = -1; di <= 1; di++) {
+                const ii = i + di, jj = j + dj;
+                if (ii >= 0 && jj >= 0 && ii < n && jj < n && b[ii + jj * n]) { v = 1; break; }
+              }
+            }
+          }
+          near[k] = v;
+        }
+      }
+    }
+    this.nearDirty = false;
+  }
+
+  /**
+   * Like lineClear, but the corridor is checked with some room on both sides: the centre line and
+   * two parallel lines `MARGIN` to the left and right.
+   */
+  wideClear(ax: number, az: number, bx: number, bz: number, layer: NavLayer = 0): boolean {
+    if (!this.lineClear(ax, az, bx, bz, layer)) return false;
+    const d = Math.hypot(bx - ax, bz - az);
+    if (d < 1e-3) return true;
+    const m = MARGIN[layer], ox = (-(bz - az) / d) * m, oz = ((bx - ax) / d) * m;
+    return this.lineClear(ax + ox, az + oz, bx + ox, bz + oz, layer) && this.lineClear(ax - ox, az - oz, bx - ox, bz - oz, layer);
   }
 
   lineClear(ax: number, az: number, bx: number, bz: number, layer: NavLayer = 0): boolean {
@@ -175,7 +223,9 @@ export class NavGrid {
     tx = Math.min(Math.max(tx, -lim), lim);
     tz = Math.min(Math.max(tz, -lim), lim);
     if (this.isBlocked(tx, tz, layer)) ({ x: tx, z: tz } = this.freePoint(tx, tz, layer));
-    if (this.lineClear(sx, sz, tx, tz, layer)) return [{ x: tx, z: tz }];
+    if (this.wideClear(sx, sz, tx, tz, layer)) return [{ x: tx, z: tz }];
+    if (this.nearDirty) this.rebuildNear();
+    const near = this.near[layer];
 
     const n = this.n;
     const [si, sj] = this.cellCoords(sx, sz);
@@ -243,7 +293,7 @@ export class NavGrid {
           const k = ni + nj * n;
           if (blocked[k] || this.closed[k] === sid) continue;
           if (di && dj && (blocked[ci + di + cj * n] || blocked[ci + (cj + dj) * n])) continue;
-          const g = this.g[cur] + (di && dj ? SQRT2 : 1);
+          const g = this.g[cur] + (di && dj ? SQRT2 : 1) + (near[k] ? NEAR_COST : 0);
           if (this.stamp[k] !== sid || g < this.g[k]) {
             this.stamp[k] = sid;
             this.g[k] = g;
@@ -267,11 +317,11 @@ export class NavGrid {
     cells.reverse();
     const pts: V2[] = [{ x: sx, z: sz }, ...cells.slice(0, -1), { x: tx, z: tz }];
 
-    // string pulling: keep only the waypoints needed to stay clear of obstacles
+    // string pulling: keep only the waypoints needed to stay clear of obstacles (with some room)
     const out: V2[] = [];
     let anchor = 0;
     for (let k = 1; k < pts.length; k++) {
-      if (k === pts.length - 1 || !this.lineClear(pts[anchor].x, pts[anchor].z, pts[k + 1].x, pts[k + 1].z, layer)) {
+      if (k === pts.length - 1 || !this.wideClear(pts[anchor].x, pts[anchor].z, pts[k + 1].x, pts[k + 1].z, layer)) {
         out.push(pts[k]);
         anchor = k;
       }

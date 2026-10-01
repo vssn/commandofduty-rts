@@ -215,7 +215,7 @@ export const COMBAT = {
 export const BARRACKS_HP = 1500;
 export const START_CREDITS = 1000;
 
-export type OutpostKind = "hospital" | "bunker" | "trench" | "tower" | "workshop";
+export type OutpostKind = "hospital" | "bunker" | "trench" | "tower" | "workshop" | "radar";
 
 /** Capturable map objects. Income is credits per second while owned. */
 export const OUTPOSTS: Record<OutpostKind, { name: string; income: number; radius: number }> = {
@@ -226,6 +226,8 @@ export const OUTPOSTS: Record<OutpostKind, { name: string; income: number; radiu
   tower: { name: "Wachturm", income: 2, radius: 6.5 },
   /** Near each base; the owner can build jeeps here. */
   workshop: { name: "Werkstatt", income: 1, radius: 9 },
+  /** Near each base; whoever holds it has the minimap (conquest). */
+  radar: { name: "Radarturm", income: 1, radius: 7 },
 };
 /** One-time reward for the first team that takes an outpost. */
 export const CAPTURE_BONUS = 200;

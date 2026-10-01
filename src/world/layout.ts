@@ -113,6 +113,9 @@ export class MapLayout {
     { kind: "bunker", x: 94, z: 104, rot: 0.8 + Math.PI },
     { kind: "workshop", x: 14, z: -84, rot: 0 },
     { kind: "workshop", x: -14, z: 84, rot: Math.PI },
+    // radar towers behind each base: holding one gives the minimap
+    { kind: "radar", x: -48, z: -104, rot: 0.2 },
+    { kind: "radar", x: 48, z: 104, rot: 0.2 + Math.PI },
   ];
 
   readonly roads: Road[] = [];

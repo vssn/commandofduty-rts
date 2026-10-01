@@ -52,6 +52,10 @@ export class Hud {
   private readonly captureTiles = new Map<Outpost, CaptureTile>();
   /** Screen position (client pixels) of an outpost, clamped to the view; set by main. */
   locate: ((o: Outpost) => { x: number; y: number } | null) | null = null;
+  /** Refreshes the sidebar's music / effects buttons (after a change elsewhere, e.g. the pause menu). */
+  readonly syncAudio: () => void;
+  /** Called whenever music or effects were switched from the sidebar or the M key. */
+  onAudioChange: (() => void) | null = null;
   /** False while the main menu is shown (build hotkeys are ignored). */
   enabled = false;
   private last = { credits: -1, info: "", income: -1 };
@@ -64,7 +68,9 @@ export class Hud {
     const sync = () => {
       musicBtn.classList.toggle("on", audio.musicOn);
       sfxBtn.classList.toggle("on", audio.sfxOn);
+      this.onAudioChange?.();
     };
+    this.syncAudio = sync;
     musicBtn.addEventListener("click", () => { audio.setMusic(!audio.musicOn); sync(); });
     sfxBtn.addEventListener("click", () => { audio.setSfx(!audio.sfxOn); sync(); });
     window.addEventListener("keydown", (e) => {
@@ -91,7 +97,9 @@ export class Hud {
     game.on((ev, team, data) => {
       if ((ev === "captured" || ev === "outpostLost") && data && team === PLAYER) this.finishCapture(data.outpost, ev === "captured");
       if (ev === "captured" && data) {
-        if (team === PLAYER) {
+        if (team === PLAYER && data.outpost.kind === "radar") {
+          this.toast("Radarturm eingenommen – Minimap online");
+        } else if (team === PLAYER) {
           const n = data.structures ?? 0;
           this.toast(`${data.outpost.name} eingenommen${data.bonus ? ` · +${data.bonus} Credits` : ""}${n ? ` · ${n} ${n === 1 ? "Befestigung" : "Befestigungen"} übernommen` : ""}`);
         }
@@ -102,11 +110,13 @@ export class Hud {
         return;
       }
       if (ev === "outpostLost" && data) {
-        if (team === PLAYER) this.toast(`${data.outpost.name} verloren`);
+        if (team === PLAYER) this.toast(data.outpost.kind === "radar" ? "Radarturm verloren – Minimap ausgefallen" : `${data.outpost.name} verloren`);
         return;
       }
       if (team !== PLAYER) return;
-      if (ev === "win" || ev === "lose") this.showBanner(ev);
+      // after a defeat the battlefield stays in view for a moment before the dialog appears
+      if (ev === "win") this.showBanner(ev);
+      else if (ev === "lose") window.setTimeout(() => this.showBanner("lose"), 2000);
       else if (MESSAGES[ev]) this.toast(MESSAGES[ev]!);
     });
     // a fresh page load builds a new map state and opens the main menu again

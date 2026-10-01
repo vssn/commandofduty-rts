@@ -19,7 +19,7 @@ nach einem Sieg von vorn. Die Wahl eines Modus setzt das Schlachtfeld auf die Au
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht
 mit Jeeps, Schützenlinie und Artilleriesalve in verschiedenen Phasen, und – bei Nacht – der Agent über die Schulter
 gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt die Tastenbelegung,
-„Ton“ schaltet Musik und Effekte. Nach Sieg oder Niederlage
+Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), die Effekte schaltet man im Spiel in der Seitenleiste. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
 ## Spielmodus „Gefecht“
@@ -72,6 +72,11 @@ Eine Stellung wird eingenommen, indem mindestens ein eigener Soldat 20 Sekunden 
 feindlicher Soldat im Bereich ist (sonst pausiert der Fortschritt). Die erste Einnahme einer Stellung bringt einmalig
 +200 Credits, danach liefert sie laufendes Einkommen (1,5–3 Credits/s). Eigene Soldaten in einer eigenen,
 nicht umkämpften Stellung heilen langsam (1 HP/s, im Feldlazarett 3 HP/s). Werte stehen in `src/config.ts`.
+
+**Radarturm:** Hinter jeder Basis steht ein Radarturm (Stahlgittermast mit drehender Antenne, Funkerhütte). Die
+**Minimap** gibt es nur, solange man einen Radarturm hält – sonst zeigt sie Rauschen und „Kein Radar“, und Klicks darauf
+wirken nicht. In der Eroberung muss man den eigenen Turm erst einnehmen; im Gefecht startet jede Seite mit ihrem Turm
+(geht er verloren, fällt die Minimap aus); im Commandos-Modus ist die Minimap immer da.
 
 Einnahme und Verlust werden oben mittig angezeigt (in Eroberung und Gefecht): für jede Stellung, die man gerade einnimmt, ein Quadrat, das sich im
 Uhrzeigersinn in Spielerfarbe füllt (über der Farbe des bisherigen Besitzers), mit Name und Prozent – es fliegt von
@@ -136,7 +141,10 @@ Die Darstellung ist ein Post-Processing-Effekt, der die Weltposition jedes Pixel
 
 Gebäude, Bäume, Hecken und die Aufbauten der Stellungen sind massiv. Die Wegfindung (A* auf einem 1-Einheiten-Raster,
 `src/game/nav.ts`) plant mit zwei Ebenen: Infanterie passt durch Lücken zwischen Bäumen und Hecken, der breitere
-Geländewagen fährt um Wälder herum. Heckenlücken und Feldseiten ohne Hecke sind natürliche Durchgänge.
+Geländewagen fährt um Wälder herum. Heckenlücken und Feldseiten ohne Hecke sind natürliche Durchgänge. Wege halten
+etwas Abstand zu Ecken (Abkürzungen werden mit Einheitenbreite geprüft, Felder direkt an Hindernissen kosten mehr).
+Bleibt eine Einheit trotzdem hängen, plant sie höchstens zweimal pro Befehl neu – Fahrzeuge setzen dafür erst ein Stück
+zurück – und bleibt danach stehen. Vor engen Kurven bremsen Fahrzeuge ab.
 
 ## Kampf
 
@@ -194,13 +202,15 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 | Links ziehen | Gruppe per Rahmen auswählen |
 | Doppelklick auf Soldat | alle sichtbaren eigenen Soldaten auswählen |
 | Rechtsklick | Bewegen, auf Gegner: Angreifen, mit Sanitätern auf verwundeten Soldaten: behandeln, mit ausgewählter Kaserne: Sammelpunkt setzen |
-| Bildschirmrand / Pfeiltasten | Karte scrollen |
+| Bildschirmrand / Pfeiltasten / Steuerkreuz unten links | Karte scrollen (das Steuerkreuz gibt es jetzt auch mit Maus) |
+| F / Button oben rechts | Vollbild an/aus |
 | Mausrad | Zoom |
 | Minimap | Links: Kamera springen, Rechts: Einheiten dorthin schicken |
 | Q (Shift+Q: 5×) | Soldat ausbilden, Rechtsklick auf den Button bricht ab |
 | Strg+1–9 / 1–9 | Gruppe speichern / abrufen (zweimal drücken zentriert die Kamera) |
 | N · B | MG-Nest · Poller errichten (Shift: mehrere) |
-| S · H · Esc | Stopp · zur Basis · abwählen |
+| S · H | Stopp · zur Basis |
+| Esc / Button „Menü“ oben links | Pause: Musik-Lautstärke, Effekte & Funk an/aus, Weiter, zurück zum Hauptmenü (mit Rückfrage); Esc bricht zuerst eine laufende Zielauswahl ab |
 
 ## Aufbau
 
@@ -225,7 +235,7 @@ src/
   game/
     game.ts           Spielzustand, Auswahl, Befehle, Kampf, Separation
     unit.ts           Soldaten-Logik (Bewegen, Zielerfassung, Feuern, Sterben)
-    barracks.ts       Kaserne mit Produktionsschleife und Sammelpunkt
+    barracks.ts       Kaserne mit Produktionsschleife und Sammelpunkt; zerstört fliegt sie in einer Explosionskette in die Luft
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)

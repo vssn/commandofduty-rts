@@ -1,7 +1,7 @@
 import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
-import { createOutpostMesh, createRing, mat, TEAM_COLOR } from "../world/models";
+import { createOutpostMesh, createRing, mat, RADAR_DIM, TEAM_COLOR } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import type { Game } from "./game";
 import { Production } from "./production";
@@ -43,6 +43,8 @@ export class Outpost {
   /** 0 = banners lowered, 1 = fully hoisted. */
   private hoist = 0;
   private readonly model: Mesh;
+  /** Radar only: red warning light on top of the dome, blinking while the station is manned. */
+  private readonly beacon: Mesh | null = null;
   /** Blown up (commandos): no owner, no income, cannot be taken any more. */
   destroyed = false;
   private flagT = Math.random() * 10;
@@ -69,6 +71,13 @@ export class Outpost {
     mesh.rotation.y = spec.rot;
     mesh.freezeWorldMatrix();
     shadows.addShadowCaster(mesh);
+    if (spec.kind === "radar") {
+      this.beacon = MeshBuilder.CreateSphere("radarBeacon", { diameter: 0.32, segments: 6 }, scene);
+      this.beacon.position.set(spec.x, this.y + RADAR_DIM.domeY + RADAR_DIM.domeR + 0.08, spec.z);
+      this.beacon.material = mat(scene, [1, 0.12, 0.08], { emissive: true });
+      this.beacon.isPickable = false;
+      this.beacon.setEnabled(false);
+    }
 
     this.ring = createRing(scene, `outpostRing-${spec.kind}`, this.radius * 2, 0.18, NEUTRAL);
     this.ring.position.set(spec.x, this.y + 0.3, spec.z);
@@ -161,6 +170,8 @@ export class Outpost {
     this.warnCooldown -= dt;
     if (this.production && this.owner !== null) this.production.update(dt, g, this.owner, this.spawn, this.rally);
     this.flag.rotation.y = Math.sin(this.flagT * 2.1) * 0.25;
+    // the radar is in use: its warning light blinks
+    this.beacon?.setEnabled(this.owner !== null && this.flagT % 1.4 < 0.7);
     this.hoist = this.owner === null ? 0 : Math.min(1, this.hoist + dt / 2.5);
     const up = this.hoist * this.hoist * (3 - 2 * this.hoist);
     this.banners.forEach((b, i) => {

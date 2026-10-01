@@ -121,8 +121,8 @@ export class InputController {
     if (!this.enabled) return;
     const g = this.game;
     this.keys.add(e.key);
+    // Escape cancels a targeting mode; otherwise it opens the pause menu (handled in main)
     if (e.key === "Escape" && this.targeting) this.setTargeting(null);
-    else if (e.key === "Escape") g.clearSelection();
     else if ((e.key === "a" || e.key === "A") && !e.ctrlKey && !e.metaKey && g.mode === "skirmish") {
       this.setTargeting(this.targeting ? null : "artillery");
     } else if (g.mode === "commandos" && !e.ctrlKey && !e.metaKey && (e.key === "x" || e.key === "X")) {

@@ -17,6 +17,7 @@ export class Minimap {
   /** Player's fog of war, drawn over the radar once assigned. */
   fog: FogOfWar | null = null;
   private fogCanvas: HTMLCanvasElement | null = null;
+  private noise: HTMLCanvasElement | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -32,6 +33,7 @@ export class Minimap {
     this.bg = this.renderBackground(terrain, layout, trees);
 
     canvas.addEventListener("pointerdown", (e) => {
+      if (!this.online) return; // no radar, no map
       const p = this.toWorld(e);
       if (e.button === 0) {
         this.dragging = true;
@@ -107,8 +109,56 @@ export class Minimap {
     return c;
   }
 
+  /** False while the player holds no radar tower: the map shows static instead. */
+  private get online(): boolean {
+    return this.game.hasRadar(PLAYER);
+  }
+
+  /** Radar off: grey static with a hint where to get the map back. */
+  private drawOffline() {
+    const ctx = this.ctx, S = this.canvas.width;
+    // coarse static, rendered small and scaled up
+    if (!this.noise) {
+      this.noise = document.createElement("canvas");
+      this.noise.width = this.noise.height = 110;
+    }
+    const nctx = this.noise.getContext("2d")!;
+    const img = nctx.createImageData(110, 110);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 18 + Math.random() * 34;
+      img.data[i] = v;
+      img.data[i + 1] = v * 1.05;
+      img.data[i + 2] = v * 0.9;
+      img.data[i + 3] = 255;
+    }
+    nctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.noise, 0, 0, S, S);
+    // a slowly rolling scan bar
+    const y = ((performance.now() / 12) % (S + 60)) - 30;
+    const grad = ctx.createLinearGradient(0, y - 30, 0, y + 30);
+    grad.addColorStop(0, "rgba(255,255,255,0)");
+    grad.addColorStop(0.5, "rgba(255,255,255,0.08)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, y - 30, S, 60);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(10, 11, 8, 0.75)";
+    ctx.fillRect(0, S / 2 - 46, S, 92);
+    ctx.fillStyle = "#e9b53c";
+    ctx.font = `bold ${Math.round(S * 0.075)}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+    ctx.fillText("KEIN RADAR", S / 2, S / 2 - 6);
+    ctx.fillStyle = "#cfcab3";
+    ctx.font = `${Math.round(S * 0.05)}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+    ctx.fillText("Radarturm einnehmen", S / 2, S / 2 + 28);
+  }
+
   draw() {
     const ctx = this.ctx, S = this.canvas.width;
+    if (!this.online) {
+      this.drawOffline();
+      return;
+    }
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.bg, 0, 0, S, S);
     // fog of war: unexplored areas black, explored ones dimmed (drawn from a small grey-scale image)

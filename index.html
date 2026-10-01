@@ -16,6 +16,28 @@
         <canvas id="game"></canvas>
         <canvas id="overlay"></canvas>
         <div id="toast"></div>
+        <button id="btn-pause" title="Menü (Esc)" aria-label="Menü">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          <span>Menü</span>
+        </button>
+        <div id="pause" hidden>
+          <div class="pause-box">
+            <div class="menu-kicker">Spiel unterbrochen</div>
+            <h2 class="pause-title">Pause</h2>
+            <label class="menu-btn menu-slider" for="pause-music">
+              <span class="slider-label">Musik</span>
+              <input id="pause-music" type="range" min="0" max="4" step="1" />
+              <span class="slider-value" data-music-value></span>
+            </label>
+            <button id="pause-sfx" class="menu-btn">Effekte &amp; Funk: an</button>
+            <button id="pause-resume" class="menu-btn primary">Weiter</button>
+            <button id="pause-quit" class="menu-btn">Zum Hauptmenü</button>
+          </div>
+        </div>
+        <button id="btn-fullscreen" title="Vollbild (F)" aria-label="Vollbild">
+          <svg class="fs-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" /></svg>
+          <svg class="fs-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6" /></svg>
+        </button>
         <div id="capture-hud"></div>
         <div id="banner">
           <div class="banner-box">
@@ -59,7 +81,11 @@
               <nav class="menu-nav">
                 <button id="menu-new" class="menu-btn primary">Neues Spiel</button>
                 <button id="menu-controls" class="menu-btn">Steuerung</button>
-                <button id="menu-sound" class="menu-btn">Ton: an</button>
+                <label class="menu-btn menu-slider" for="menu-music">
+                  <span class="slider-label">Musik</span>
+                  <input id="menu-music" type="range" min="0" max="4" step="1" />
+                  <span id="menu-music-value" class="slider-value" data-music-value></span>
+                </label>
               </nav>
             </div>
             <div id="menu-modes" hidden>
@@ -99,7 +125,7 @@
               <dt>N · B</dt><dd>MG-Nest · Poller errichten (Shift: mehrere)</dd>
               <dt>Bildschirmrand, Pfeile</dt><dd>Karte scrollen, Mausrad zoomt</dd>
               <dt>Strg + 1–9</dt><dd>Gruppe speichern, 1–9 abrufen</dd>
-              <dt>S · H · M · Esc</dt><dd>Stopp · Basis · Musik · Abwählen</dd>
+              <dt>S · H · M · Esc</dt><dd>Stopp · Basis · Musik · Pause</dd>
               <dt>A (Gefecht)</dt><dd>Artillerieschlag: Ziel mit Linksklick wählen</dd>
               <dt>X · C (Commandos)</dt><dd>Tarnen · Sprengladung; Rechtsklick auf Gegner = Scharfschuss</dd>
             </dl>
@@ -299,7 +325,7 @@
             <dt>Soldat → Jeep</dt><dd>Rechtsklick auf eigenen Jeep: wird MG-Schütze</dd>
             <dt>Stellungen</dt><dd>20 s halten, heilt eigene Soldaten</dd>
             <dt>M</dt><dd>Musik an / aus</dd>
-            <dt>S · H · Esc</dt><dd>Stopp · Basis · Abwählen</dd>
+            <dt>S · H · Esc</dt><dd>Stopp · Basis · Pause</dd>
           </dl>
         </section>
       </aside>

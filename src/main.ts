@@ -1,7 +1,7 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type GameMode } from "./config";
-import { AudioSystem } from "./audio/audio";
+import { AudioSystem, MUSIC_LEVELS } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
@@ -70,6 +70,7 @@ for (const h of layout.houses) {
 }
 for (const b of game.buildings) fog.blockRect(b.x, b.z, 6, 4, b.rot, 7);
 for (const o of layout.outposts) if (o.kind === "workshop") fog.blockRect(o.x, o.z, 3.5, 3, o.rot, 5.3);
+for (const o of layout.outposts) if (o.kind === "radar") fog.blockCircle(o.x, o.z, 2.6, 7.4); // the radome
 game.sightBonusOf = (u) => fog.sightBonus(u);
 game.canSee = (x, z) => fog.isVisible(x, z);
 
@@ -113,15 +114,32 @@ game.canSee = null;
 // While the menu is open the battle is paused and the camera drifts slowly over the map.
 let inMenu = true;
 let menuT = 0;
-const menuSound = document.getElementById("menu-sound")!;
-const syncMenuSound = () => (menuSound.textContent = `Ton: ${audio.musicOn || audio.sfxOn ? "an" : "aus"}`);
-syncMenuSound();
-menuSound.addEventListener("click", () => {
-  const on = !(audio.musicOn || audio.sfxOn);
-  audio.setMusic(on);
-  audio.setSfx(on);
-  syncMenuSound();
+// music volume sliders (main menu and pause menu) and the effects switch of the pause menu
+const musicSliders = ["menu-music", "pause-music"].map((id) => document.getElementById(id) as HTMLInputElement);
+const pauseSfx = document.getElementById("pause-sfx")!;
+const syncAudioUi = () => {
+  for (const sl of musicSliders) {
+    sl.value = String(audio.musicLevel);
+    sl.style.setProperty("--fill", `${(audio.musicLevel / (MUSIC_LEVELS.length - 1)) * 100}%`);
+  }
+  for (const el of document.querySelectorAll<HTMLElement>("[data-music-value]")) el.textContent = MUSIC_LEVELS[audio.musicLevel].name;
+  pauseSfx.textContent = `Effekte & Funk: ${audio.sfxOn ? "an" : "aus"}`;
+};
+syncAudioUi();
+for (const sl of musicSliders) {
+  sl.addEventListener("input", () => {
+    audio.setMusicLevel(Number(sl.value));
+    syncAudioUi();
+    hud.syncAudio();
+  });
+}
+pauseSfx.addEventListener("click", () => {
+  audio.setSfx(!audio.sfxOn);
+  syncAudioUi();
+  hud.syncAudio();
 });
+// sidebar buttons and the M key keep the sliders in step
+hud.onAudioChange = syncAudioUi;
 document.getElementById("menu-controls")!.addEventListener("click", () => {
   const help = document.getElementById("menu-help")!;
   help.hidden = !help.hidden;
@@ -129,6 +147,49 @@ document.getElementById("menu-controls")!.addEventListener("click", () => {
 hud.bindArtillery(input);
 hud.bindBuild(input);
 hud.bindCommandos(input);
+
+// ------------------------------------------------------------------ no browser zoom on phones
+// Double taps and pinches must never zoom or shift the page (iOS ignores user-scalable=no).
+document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  // a second tap within 300 ms would be a double-tap zoom: swallow the browser default (the
+  // game still gets its pointer events, so double-tap selection keeps working). Buttons are left
+  // alone so quick repeated taps (e.g. training two soldiers) still click.
+  const now = performance.now();
+  const onButton = (e.target as Element | null)?.closest?.("button, a, input, select");
+  if (!onButton && now - lastTouchEnd < 300 && e.cancelable) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+// if the page got scrolled anyway (e.g. by the on-screen keyboard), snap it back
+window.addEventListener("scroll", () => window.scrollTo(0, 0));
+
+// ------------------------------------------------------------------ fullscreen
+// (iPhones have no Fullscreen API for pages: the button is hidden there)
+type FsDoc = Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void>; webkitFullscreenEnabled?: boolean };
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+const fsDoc = document as FsDoc;
+const isFullscreen = () => !!(fsDoc.fullscreenElement ?? fsDoc.webkitFullscreenElement);
+if (!(fsDoc.fullscreenEnabled || fsDoc.webkitFullscreenEnabled)) document.body.classList.add("no-fullscreen");
+const toggleFullscreen = () => {
+  const root = document.documentElement as FsEl;
+  const done = isFullscreen()
+    ? (fsDoc.exitFullscreen?.() ?? fsDoc.webkitExitFullscreen?.())
+    : (root.requestFullscreen?.() ?? root.webkitRequestFullscreen?.());
+  Promise.resolve(done).catch(() => {});
+};
+const syncFullscreen = () => {
+  document.body.classList.toggle("fullscreen", isFullscreen());
+  engine.resize();
+  overlay.resize();
+};
+document.addEventListener("fullscreenchange", syncFullscreen);
+document.addEventListener("webkitfullscreenchange", syncFullscreen);
+document.getElementById("btn-fullscreen")!.addEventListener("click", toggleFullscreen);
+window.addEventListener("keydown", (e) => {
+  if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
+});
 
 // ------------------------------------------------------------------ touch controls
 // Phones have no right mouse button and no hover: taps become commands (see InputController.tap),
@@ -171,6 +232,42 @@ input.onTargetingChange = () => {
   prevTargeting?.();
   cancelBtn.hidden = !input.targeting;
 };
+
+// ------------------------------------------------------------------ pause menu
+// Esc or the "Menü" button stops the game: audio settings, continue, or back to the main menu.
+let paused = false;
+const pauseEl = document.getElementById("pause")!;
+const quitBtn = document.getElementById("pause-quit")!;
+const setPaused = (on: boolean) => {
+  if (inMenu || (on && game.result)) on = false;
+  paused = on;
+  pauseEl.hidden = !on;
+  document.body.classList.toggle("paused", on);
+  input.enabled = hud.enabled = !on && !inMenu;
+  input.setPad(0, 0);
+  quitBtn.textContent = "Zum Hauptmenü";
+  delete quitBtn.dataset.confirm;
+  if (on) syncAudioUi();
+};
+document.getElementById("btn-pause")!.addEventListener("click", () => setPaused(!paused));
+document.getElementById("pause-resume")!.addEventListener("click", () => setPaused(false));
+quitBtn.addEventListener("click", () => {
+  // the battle is lost when leaving: ask once more
+  if (!quitBtn.dataset.confirm) {
+    quitBtn.dataset.confirm = "1";
+    quitBtn.textContent = "Wirklich beenden? Erneut klicken";
+    return;
+  }
+  location.reload(); // a fresh page load opens the main menu
+});
+// capture phase: runs before the game's own key handling; a pending targeting mode is cancelled
+// there first, otherwise Escape opens / closes the pause menu
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || inMenu) return;
+  if (!paused && input.targeting) return;
+  e.stopPropagation();
+  setPaused(!paused);
+}, { capture: true });
 
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
@@ -226,15 +323,24 @@ const showModes = (on: boolean) => {
 };
 document.getElementById("menu-new")!.addEventListener("click", () => showModes(true));
 document.getElementById("menu-back")!.addEventListener("click", () => showModes(false));
-document.getElementById("mode-conquest")!.addEventListener("click", () => startGame("base"));
-document.getElementById("mode-skirmish")!.addEventListener("click", () => startGame("skirmish"));
-document.getElementById("mode-commandos")!.addEventListener("click", () => startGame("commandos"));
+// The artwork is rendered from the live battlefield (temporary units, lights): a game may only start
+// once it is done, otherwise its clean-up would hit the running game.
+let starting = false;
+const requestStart = (mode: GameMode) => {
+  if (starting) return;
+  starting = true;
+  void artDone.catch(() => undefined).then(() => startGame(mode)); // also if the artwork failed
+};
+document.getElementById("mode-conquest")!.addEventListener("click", () => requestStart("base"));
+document.getElementById("mode-skirmish")!.addEventListener("click", () => requestStart("skirmish"));
+document.getElementById("mode-commandos")!.addEventListener("click", () => requestStart("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
-renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => {
+const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => {
   renderingArt = false;
-  startBackgroundBattle();
-}).then(
+  if (inMenu && !starting) startBackgroundBattle();
+});
+artDone.then(
   (art) => {
     (document.getElementById("mode-img-conquest") as HTMLImageElement).src = art.conquest;
     (document.getElementById("mode-img-skirmish") as HTMLImageElement).src = art.skirmish;
@@ -263,6 +369,11 @@ scene.onBeforeRenderObservable.add(() => {
         }
       }
     }
+    return;
+  }
+  if (paused) {
+    // frozen: the picture stays, nothing moves
+    cam.update(0);
     return;
   }
   input.update(dt);

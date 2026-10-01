@@ -104,6 +104,10 @@ export class Unit implements Target {
   private scanT = 0;
   private repathT = 0;
   private stuckT = 0;
+  /** How often the unit already planned a new route because it got stuck (per order, max 2). */
+  private replans = 0;
+  /** Vehicles: seconds left backing up out of a corner before trying a new route. */
+  private reverseT = 0;
   private stanceT = 0;
   private calmT = 0;
   private deathT = 0;
@@ -165,6 +169,8 @@ export class Unit implements Target {
   orderMove(p: V2, attackMove: boolean, g: Game) {
     this.target = null;
     this.patient = null;
+    this.replans = 0;
+    this.reverseT = 0;
     this.explicitTarget = false;
     this.boarding = null;
     this.attackMove = attackMove;
@@ -175,6 +181,7 @@ export class Unit implements Target {
 
   orderAttack(t: Target) {
     if (!this.armed) return;
+    this.replans = 0;
     this.target = t;
     this.explicitTarget = true;
     this.attackMove = false;
@@ -195,6 +202,8 @@ export class Unit implements Target {
   stop() {
     this.target = null;
     this.patient = null;
+    this.replans = 0;
+    this.reverseT = 0;
     this.explicitTarget = false;
     this.attackMove = false;
     this.boarding = null;
@@ -349,11 +358,34 @@ export class Unit implements Target {
       if (!this.path.length && !this.target) { this.attackMove = false; this.dest = null; }
       return;
     }
+    if (this.isVehicle && this.reverseT > 0) {
+      // backing out of a corner: straight back, wheels turned away from where it wants to go
+      this.reverseT -= dt;
+      const want = Math.atan2(wp.x - this.x, wp.z - this.z);
+      let diff = want - this.heading;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      this.heading -= Math.sign(diff) * Math.min(Math.abs(diff), this.stats.turn * 0.5 * dt);
+      const step = this.stats.speed * 0.35 * dt;
+      this.x -= Math.sin(this.heading) * step;
+      this.z -= Math.cos(this.heading) * step;
+      if (this.reverseT <= 0) this.replan(g); // then a fresh route from here
+      return;
+    }
     if (this.isVehicle) {
       // cars drive forward along their heading and slow down in tight turns
       const off = this.faceTowards(wp.x, wp.z, dt);
       const slope = this.slopeFactor(Math.sin(this.heading), Math.cos(this.heading), g);
-      const speed = this.stats.speed * slope * Math.max(0.3, Math.cos(Math.min(off, Math.PI / 2)));
+      // and brake ahead of a sharp bend at the coming waypoint
+      let brake = 1;
+      const next = this.path[1];
+      if (next && dist < 8) {
+        const a1 = Math.atan2(dx, dz), a2 = Math.atan2(next.x - wp.x, next.z - wp.z);
+        let bend = Math.abs(a2 - a1);
+        if (bend > Math.PI) bend = Math.PI * 2 - bend;
+        brake = 1 - Math.min(0.65, (bend / Math.PI) * 1.3) * (1 - dist / 8);
+      }
+      const speed = this.stats.speed * slope * brake * Math.max(0.3, Math.cos(Math.min(off, Math.PI / 2)));
       const step = Math.min(dist, speed * dt);
       this.x += Math.sin(this.heading) * step;
       this.z += Math.cos(this.heading) * step;
@@ -412,6 +444,16 @@ export class Unit implements Target {
     }
   }
 
+  /** New route from the current position to the end of the current one (after getting stuck). */
+  private replan(g: Game) {
+    const goal = this.path[this.path.length - 1] ?? this.dest;
+    if (!goal) return;
+    const from = g.nav.freePoint(this.x, this.z, this.navLayer);
+    this.path = g.nav.findPath(from.x, from.z, goal.x, goal.z, this.navLayer);
+    // step onto free ground first if the unit stands in an obstacle's margin
+    if (Math.hypot(from.x - this.x, from.z - this.z) > 0.05) this.path.unshift(from);
+  }
+
   private updateBoarding(dt: number, g: Game) {
     const jeep = this.boarding!;
     if (!jeep.alive || jeep.gunner) {
@@ -464,11 +506,18 @@ export class Unit implements Target {
   postMove(dt: number, g: Game) {
     if (this.vehicle) return;
     const moved = Math.hypot(this.x - this.px, this.z - this.pz);
-    if (this.moving && this.path.length && moved < this.stats.speed * dt * 0.15) {
+    if (this.moving && this.path.length && moved < this.stats.speed * dt * 0.15 && this.reverseT <= 0) {
       this.stuckT += dt;
       if (this.stuckT > 1.5) {
-        this.path = [];
         this.stuckT = 0;
+        if (this.replans >= 2) {
+          this.path = []; // tried twice already: give up instead of looping
+        } else {
+          this.replans++;
+          // vehicles first back up a little, soldiers plan a new route straight away
+          if (this.isVehicle) this.reverseT = 1.3;
+          else this.replan(g);
+        }
       }
     } else {
       this.stuckT = 0;
