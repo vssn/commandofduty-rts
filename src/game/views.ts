@@ -230,17 +230,74 @@ export class SoldierView implements UnitView {
     this.shadow.mesh.dispose();
   }
 
+  /** Pose at the moment of death, captured on the first death frame. */
+  private death: {
+    prone: boolean; y: number; px: number; pz: number; rx: number;
+    armsX: number; headX: number; legL: number; legR: number; shinL: number; shinR: number;
+  } | null = null;
+
+  /**
+   * Death: lying soldiers stay down, slump and let the weapon slide off to the side; standing or
+   * kneeling ones sag onto both knees, sway, then topple forward onto their face.
+   */
   animateDeath(u: Unit, t: number) {
-    const fall = Math.min(1, t / 0.45);
-    this.root.rotation.set(-fall * fall * (Math.PI / 2), u.heading, 0);
-    this.legL.rotation.x = this.legR.rotation.x = 0;
-    this.shinL.rotation.x = this.shinR.rotation.x = 0;
-    this.arms.rotation.set(0.5, -0.3, 0);
-    this.throwArm?.rotation.set(0.5, 0, 0);
-    this.head.rotation.set(0, 0, 0);
-    const lie = fall * fall;
-    this.shadow.place(u.x - Math.sin(u.heading) * lie * 1.2, u.y, u.z - Math.cos(u.heading) * lie * 1.2, u.heading, 0.95, 0.95 + lie * 0.9);
-    if (t > 3) this.root.position.y = u.y - (t - 3) * 0.6;
+    const ease = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
+    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+    if (!this.death) {
+      this.death = {
+        prone: u.stance === "prone" || this.proneW > 0.5,
+        y: this.root.position.y, px: this.root.position.x, pz: this.root.position.z, rx: this.root.rotation.x,
+        armsX: this.arms.rotation.x, headX: this.head.rotation.x,
+        legL: this.legL.rotation.x, legR: this.legR.rotation.x, shinL: this.shinL.rotation.x, shinR: this.shinR.rotation.x,
+      };
+    }
+    const d = this.death;
+    const sh = Math.sin(u.heading), ch = Math.cos(u.heading);
+    let lie: number;
+
+    if (d.prone) {
+      // already down: a last twitch, the body settles, head drops, the rifle slides off to the side
+      const k = ease(t / 0.7);
+      const twitch = t < 0.25 ? Math.sin(t * 40) * 0.03 * (1 - t / 0.25) : 0;
+      this.root.position.set(d.px, d.y - k * 0.08, d.pz);
+      this.root.rotation.set(d.rx + twitch, u.heading, k * 0.12);
+      this.arms.rotation.set(lerp(d.armsX, -0.1, k), -0.35 * k, 0.55 * k);
+      this.throwArm?.rotation.set(lerp(d.armsX, 0.2, k), 0, 0.4 * k);
+      this.head.rotation.set(lerp(d.headX, 0.3, k), 0.35 * k, 0.25 * k);
+      this.legL.rotation.x = lerp(d.legL, 0.05, k);
+      this.legR.rotation.x = lerp(d.legR, -0.08, k);
+      this.shinL.rotation.x = lerp(d.shinL, 0.15, k);
+      this.shinR.rotation.x = lerp(d.shinR, 0.3, k);
+      lie = 1;
+    } else {
+      // 1) the legs give way: down onto both knees, head bowed, the rifle sags
+      const kneel = ease(t / 0.32);
+      // 2) a moment's sway, then he topples forward (accelerating) onto his face
+      const fall = Math.min(1, Math.max(0, (t - 0.42) / 0.45));
+      const f = fall * fall;
+      const drop = (HIP_Y - KNEE_HIP) * kneel;
+      const sway = t > 0.3 && t < 0.42 ? Math.sin((t - 0.3) * 26) * 0.04 : 0;
+      const tip = f * (Math.PI / 2 - 0.1);
+      this.root.position.set(
+        d.px + sh * f * 0.25,
+        lerp(d.y, u.y - drop, kneel) * (1 - f) + (u.y + 0.26) * f,
+        d.pz + ch * f * 0.25,
+      );
+      this.root.rotation.set(lerp(d.rx, 0.12, kneel) + sway + tip, u.heading, f * 0.1);
+      // thighs stay upright while kneeling and stretch out behind as he falls; shins fold back flat
+      this.legL.rotation.x = lerp(d.legL, 0, kneel) * (1 - f) - tip * (1 - f) * 0.9;
+      this.legR.rotation.x = lerp(d.legR, 0, kneel) * (1 - f) - tip * (1 - f) * 0.9;
+      this.shinL.rotation.x = lerp(lerp(d.shinL, 1.5, kneel), 0.25, f);
+      this.shinR.rotation.x = lerp(lerp(d.shinR, 1.5, kneel), 0.4, f);
+      // arms: the rifle sags while kneeling, then the arms fling forward as he goes down
+      this.arms.rotation.set(lerp(lerp(d.armsX, 0.7, kneel), -1.0, f), -0.2 * f, 0.3 * f);
+      this.throwArm?.rotation.set(lerp(0.7 * kneel, -0.8, f), 0, 0.2 * f);
+      this.head.rotation.set(lerp(lerp(d.headX, 0.35, kneel), -0.3, f), 0.5 * f, 0);
+      lie = f;
+    }
+    this.shadow.place(u.x + sh * lie * 0.9, u.y, u.z + ch * lie * 0.9, u.heading, 0.95, 0.95 + lie * 0.9);
+    if (d.prone) this.shadow.place(this.root.position.x, u.y, this.root.position.z, u.heading, 0.95, 1.85);
+    if (t > 3) this.root.position.y -= (t - 3) * 0.6;
   }
 }
 

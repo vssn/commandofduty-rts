@@ -19,7 +19,7 @@ nach einem Sieg von vorn. Die Wahl eines Modus setzt das Schlachtfeld auf die Au
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht
 mit Jeeps, Schützenlinie und Artilleriesalve in verschiedenen Phasen, und – bei Nacht – der Agent über die Schulter
 gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt die Tastenbelegung,
-Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), die Effekte schaltet man im Spiel in der Seitenleiste. Nach Sieg oder Niederlage
+Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), im Spiel stellt man Musik und Effekte im Pausenmenü (Esc) ein. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
 ## Spielmodus „Gefecht“

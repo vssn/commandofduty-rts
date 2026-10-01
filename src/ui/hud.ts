@@ -52,9 +52,9 @@ export class Hud {
   private readonly captureTiles = new Map<Outpost, CaptureTile>();
   /** Screen position (client pixels) of an outpost, clamped to the view; set by main. */
   locate: ((o: Outpost) => { x: number; y: number } | null) | null = null;
-  /** Refreshes the sidebar's music / effects buttons (after a change elsewhere, e.g. the pause menu). */
-  readonly syncAudio: () => void;
-  /** Called whenever music or effects were switched from the sidebar or the M key. */
+  /** True once the victory / defeat dialog is shown: the game stands still behind it. */
+  bannerShown = false;
+  /** Called whenever the music was switched with the M key (the menus' sliders follow). */
   onAudioChange: (() => void) | null = null;
   /** False while the main menu is shown (build hotkeys are ignored). */
   enabled = false;
@@ -64,19 +64,13 @@ export class Hud {
 
   constructor(private readonly game: Game, private readonly audio: AudioSystem) {
     this.shownCredits = game.credits[PLAYER];
-    const musicBtn = $("btn-music"), sfxBtn = $("btn-sfx");
-    const sync = () => {
-      musicBtn.classList.toggle("on", audio.musicOn);
-      sfxBtn.classList.toggle("on", audio.sfxOn);
-      this.onAudioChange?.();
-    };
-    this.syncAudio = sync;
-    musicBtn.addEventListener("click", () => { audio.setMusic(!audio.musicOn); sync(); });
-    sfxBtn.addEventListener("click", () => { audio.setSfx(!audio.sfxOn); sync(); });
+    // audio settings live in the pause menu; the M key still switches the music on and off
     window.addEventListener("keydown", (e) => {
-      if (e.key === "m" || e.key === "M") { audio.setMusic(!audio.musicOn); sync(); }
+      if (e.key === "m" || e.key === "M") {
+        audio.setMusic(!audio.musicOn);
+        this.onAudioChange?.();
+      }
     });
-    sync();
 
     // build buttons: left click queues (shift: 5x), right click cancels; hotkeys Q / W / E
     this.buttons = [...document.querySelectorAll<HTMLButtonElement>(".build-btn[data-unit]")].map((btn) => {
@@ -250,6 +244,7 @@ export class Hud {
 
   private showBanner(result: "win" | "lose") {
     if (!this.enabled) return; // the background battle behind the menu just restarts
+    this.bannerShown = true;
     $("banner-title").textContent = result === "win" ? "Sieg" : "Niederlage";
     const mode = this.game.mode;
     const texts = {

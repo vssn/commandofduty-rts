@@ -170,7 +170,7 @@ export class Overlay {
       const blink = o.contested && Math.floor(performance.now() / 250) % 2 === 0;
       ctx.fillStyle = o.capturer === PLAYER ? (blink ? "#9fc2ff" : "#4d8dff") : blink ? "#ff9d90" : "#ef4a3c";
       ctx.fillRect(x, y, w * o.progress, h);
-      ctx.font = `${11 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+      ctx.font = `${13 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.fillText(o.guarded ? `${o.name} – MG-Nest verhindert Einnahme` : o.contested ? `${o.name} – umkämpft` : o.name, p.x, y - 4 * s);
@@ -238,7 +238,7 @@ export class Overlay {
       const left = ARTILLERY.delay - st.t;
       const p = this.project(st.x, game.terrain.heightAt(st.x, st.z) + 2.5, st.z);
       if (!p) continue;
-      ctx.font = `bold ${13 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+      ctx.font = `bold ${15 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
       ctx.textAlign = "center";
       ctx.lineWidth = 3 * s;
       ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
@@ -257,7 +257,7 @@ export class Overlay {
         this.groundCircle(game, c.x, c.z, 2.2, "255, 210, 90", false);
         const p = this.projectDev(c.x, game.terrain.heightAt(c.x, c.z) + 2.2, c.z);
         if (!p) continue;
-        ctx.font = `bold ${11 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.font = `bold ${13 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
         ctx.textAlign = "center";
         ctx.lineWidth = 3 * s;
         ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
@@ -266,7 +266,7 @@ export class Overlay {
         ctx.fillText("Sprengstoff", p.x, p.y);
       }
       const label = (text: string, x: number, y: number, color: string) => {
-        ctx.font = `bold ${12 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.font = `bold ${14 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
         ctx.textAlign = "center";
         ctx.lineWidth = 3 * s;
         ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";

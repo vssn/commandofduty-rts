@@ -130,15 +130,13 @@ for (const sl of musicSliders) {
   sl.addEventListener("input", () => {
     audio.setMusicLevel(Number(sl.value));
     syncAudioUi();
-    hud.syncAudio();
   });
 }
 pauseSfx.addEventListener("click", () => {
   audio.setSfx(!audio.sfxOn);
   syncAudioUi();
-  hud.syncAudio();
 });
-// sidebar buttons and the M key keep the sliders in step
+// the M key keeps the sliders in step
 hud.onAudioChange = syncAudioUi;
 document.getElementById("menu-controls")!.addEventListener("click", () => {
   const help = document.getElementById("menu-help")!;
@@ -371,8 +369,9 @@ scene.onBeforeRenderObservable.add(() => {
     }
     return;
   }
-  if (paused) {
-    // frozen: the picture stays, nothing moves
+  if (paused || hud.bannerShown) {
+    // frozen (pause menu or victory / defeat dialog): the picture stays, nothing moves
+    if (hud.bannerShown) input.enabled = false;
     cam.update(0);
     return;
   }
