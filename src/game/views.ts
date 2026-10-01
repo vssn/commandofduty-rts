@@ -1,6 +1,7 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
 import { HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
+import { smoothstep } from "../util/noise";
 import type { Unit } from "./unit";
 
 export type { SoldierTemplates };
@@ -120,6 +121,8 @@ export class SoldierView implements UnitView {
   /** Medic: 1 while treating a patient (hands reach forward). */
   private healW = 0;
   private treatT = 0;
+  /** Medic idling: 1 while kneeling to check his kit. */
+  private gearW = 0;
   private readonly shadow: BlobShadow;
 
   constructor(scene: Scene, tpl: SoldierTemplates, name: string, blob: Mesh) {
@@ -145,7 +148,14 @@ export class SoldierView implements UnitView {
 
     // postures: kneel = lunge with lowered hips, prone = body flat, head and weapon raised forward
     const blend = Math.min(1, dt * 5);
-    this.kneelW += ((u.stance === "kneel" ? 1 : 0) - this.kneelW) * blend;
+    // medic idling: every ~17 s he kneels down for a few seconds and goes through his satchel
+    let gear = 0;
+    if (u.type === "medic" && this.idleW > 0.9) {
+      const gc = (this.idleT + this.seed * 5) % 17;
+      gear = smoothstep(9, 9.8, gc) * (1 - smoothstep(13.2, 14, gc));
+    }
+    this.gearW += (gear - this.gearW) * Math.min(1, dt * 4);
+    this.kneelW += (Math.max(u.stance === "kneel" ? 1 : 0, gear) - this.kneelW) * blend;
     this.proneW += ((u.stance === "prone" ? 1 : 0) - this.proneW) * blend;
     const k = this.kneelW, p = this.proneW;
     // walk: the knee flexes while the leg swings forward and straightens as the foot plants
@@ -193,10 +203,12 @@ export class SoldierView implements UnitView {
     const cycle = (it + this.seed * 3) % 12;
     const check = iw * Math.max(0, Math.sin(Math.min(1, cycle / 1.6) * Math.PI));
     // grenadiers and medics carry no rifle: only a slight relaxed swing instead of the diagonal rifle carry
-    const carry = (1 - this.aimW) * (u.type === "grenadier" || u.type === "medic" ? 0.3 : 1) * (1 - this.healW);
+    const carry = (1 - this.aimW) * (u.type === "grenadier" || u.type === "medic" ? 0.3 : 1) * (1 - this.healW) * (1 - this.gearW);
     const breath = Math.sin(it * 1.9) * 0.012 * iw;
     // treating: both hands reach down and forward to the patient, working in a slow rhythm
-    const treat = this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12);
+    const treat = this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12)
+      // checking his kit: hands down at the satchel, rummaging
+      + this.gearW * (0.85 + Math.sin(it * 5 + this.seed) * 0.12);
     this.arms.rotation.set(
       -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat,
       carry * (-0.28 - iw * 0.12) + check * 0.2,
@@ -214,7 +226,11 @@ export class SoldierView implements UnitView {
     }
     // head: looks around while idle (slow sweep with the occasional quick glance), otherwise ahead
     const look = cycle > 4 && cycle < 8.5 ? Math.sin((cycle - 4) / 4.5 * Math.PI * 2) * 0.6 : Math.sin(it * 0.3 + this.seed) * 0.12;
-    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath, look * iw, 0);
+    // the medic looks around more widely and turns his shoulders with it; head down while checking his kit
+    const medic = u.type === "medic";
+    const scan = medic ? look * 1.35 : look;
+    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5, scan * iw * (1 - this.gearW), 0);
+    if (medic) this.root.rotation.y += look * 0.3 * iw * (1 - this.gearW);
     this.head.position.y = SHOULDER_Y + breath;
     // round shadow; stretched along the body when lying down, a bit wider when kneeling
     this.shadow.place(u.x, u.y, u.z, u.heading, 0.95 + k * 0.1, 0.95 + k * 0.15 + p * 0.9);
@@ -313,6 +329,12 @@ export class JeepView implements UnitView {
   private lastHeading = 0;
   private gunnerShown = 0;
   private readonly shadow: BlobShadow;
+  private readonly driverHead: InstancedMesh;
+  private readonly gunnerHead: InstancedMesh;
+  /** 1 while the jeep stands still with nothing to shoot at (crew looking around). */
+  private idleW = 0;
+  private idleT = Math.random() * 30;
+  private readonly seed = Math.random() * 10;
 
   constructor(scene: Scene, tpl: JeepTemplates, name: string, blob: Mesh) {
     const D = JEEP_DIM;
@@ -331,6 +353,7 @@ export class JeepView implements UnitView {
 
     // driver, seated (legs hidden in the footwell)
     const driver = this.crew(scene, tpl.crew, false);
+    this.driverHead = driver.head;
     driver.parent = this.root;
     driver.position.set(D.driver.x, D.bedY + 0.42 - HIP_Y, D.driver.z);
 
@@ -342,18 +365,22 @@ export class JeepView implements UnitView {
     this.gun.isPickable = false;
 
     // gunner stands in the bed behind the gun, only visible once a soldier has climbed aboard
-    this.gunner = this.crew(scene, tpl.crew, true);
+    const gunner = this.crew(scene, tpl.crew, true);
+    this.gunnerHead = gunner.head;
+    this.gunner = gunner;
     this.gunner.parent = this.turret;
     this.gunner.position.set(0, D.bedY - D.turret.y, -0.75);
     this.gunner.setEnabled(false);
   }
 
-  private crew(scene: Scene, tpl: SoldierTemplates, legs: boolean): TransformNode {
-    const node = new TransformNode("crew", scene);
+  private crew(scene: Scene, tpl: SoldierTemplates, legs: boolean): TransformNode & { head: InstancedMesh } {
+    const node = new TransformNode("crew", scene) as TransformNode & { head: InstancedMesh };
     const body = tpl.body.createInstance("crewBody");
     body.parent = node;
     body.isPickable = false;
-    buildUpper(tpl, node).arms.rotation.x = 0.25;
+    const upper = buildUpper(tpl, node);
+    upper.arms.rotation.x = 0.25;
+    node.head = upper.head;
     if (legs) {
       buildLeg(tpl, node, -HIP_X);
       buildLeg(tpl, node, HIP_X);
@@ -386,7 +413,20 @@ export class JeepView implements UnitView {
       w.rotation.y = i < 2 ? this.steer : 0;
     });
 
-    this.turret.rotation.y = u.turret - u.heading;
+    // standing still with nothing to shoot at: the crew looks around - the driver turns his head,
+    // the gunner sweeps the MG slowly from side to side
+    const idle = moved < 0.001 && !u.firing && !(u.target && u.target.alive);
+    this.idleW += ((idle ? 1 : 0) - this.idleW) * Math.min(1, dt * 1.5);
+    if (idle) this.idleT += dt;
+    const it = this.idleT + this.seed * 4, iw = this.idleW;
+    // driver: slow look left and right, now and then a glance back over the shoulder
+    const glance = (it % 11) > 8.6 && (it % 11) < 10 ? Math.sin(((it % 11) - 8.6) / 1.4 * Math.PI) * 1.1 : 0;
+    this.driverHead.rotation.y = (Math.sin(it * 0.45) * 0.6 + glance * Math.sign(Math.sin(it * 0.07) || 1)) * iw;
+    this.driverHead.rotation.x = Math.sin(it * 0.31 + 1) * 0.08 * iw;
+    // gunner: the gun swings through a wide arc with short pauses, his head leads a little
+    const sweep = Math.sin(it * 0.32) * 0.95 + Math.sin(it * 0.11 + 2) * 0.3;
+    this.turret.rotation.y = u.turret - u.heading + sweep * iw * (u.gunner ? 1 : 0);
+    this.gunnerHead.rotation.y = Math.cos(it * 0.32) * 0.25 * iw;
     this.gun.position.z = -u.recoil * 0.12;
 
     const manned = !!u.gunner;
