@@ -108,9 +108,9 @@ export function createGable(name: string, scene: Scene): Mesh {
 
 export const TEAM_COLOR: Record<Team, RGB> = { 0: [0.22, 0.44, 0.95], 1: [0.9, 0.16, 0.12] };
 
-type PartFn = (w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, rx?: number, ry?: number) => Mesh;
+export type PartFn = (w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, rx?: number, ry?: number) => Mesh;
 
-function partBuilder(scene: Scene, parts: Mesh[]): PartFn {
+export function partBuilder(scene: Scene, parts: Mesh[]): PartFn {
   return (w, h, d, x, y, z, c, rx = 0, ry = 0) => {
     const m = MeshBuilder.CreateBox("part", { width: w, height: h, depth: d }, scene);
     m.position.set(x, y, z);
@@ -121,7 +121,7 @@ function partBuilder(scene: Scene, parts: Mesh[]): PartFn {
   };
 }
 
-function merge(name: string, parts: Mesh[]): Mesh {
+export function merge(name: string, parts: Mesh[]): Mesh {
   const m = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
   m.name = name;
   return m;

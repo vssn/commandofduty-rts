@@ -198,7 +198,18 @@ export class MapLayout {
       [{ x: e.x, z: e.z }, { x: 121, z: -35 }], // tracks end at the cliff edge
       [{ x: w.x, z: w.z }, { x: -121, z: 30 }],
     ];
+    // tracks don't run through the villages: they start at the end of a village street, the one
+    // nearest to where the track is heading
+    const streetEnds = (sb: Suburb): V2[] =>
+      [[-36, 0], [36, 0], [-10, -25], [-10, 25], [14, -25], [14, 25]].map(([lx, lz]) => toWorld(sb.x, sb.z, sb.rot, lx, lz));
+    const atVillage = (p: V2, toward: V2): V2 => {
+      const sb = this.suburbs.find((v) => Math.hypot(v.x - p.x, v.z - p.z) < 1);
+      if (!sb) return p;
+      return streetEnds(sb).reduce((best, q) => (Math.hypot(q.x - toward.x, q.z - toward.z) < Math.hypot(best.x - toward.x, best.z - toward.z) ? q : best));
+    };
     for (const pl of polylines) {
+      pl[0] = atVillage(pl[0], pl[1]);
+      pl[pl.length - 1] = atVillage(pl[pl.length - 1], pl[pl.length - 2]);
       for (let i = 0; i < pl.length - 1; i++) this.roads.push({ a: pl[i], b: pl[i + 1], w: 3.6, kind: "dirt" });
     }
   }

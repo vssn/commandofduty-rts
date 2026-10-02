@@ -22,6 +22,9 @@ import { createHedges } from "./world/hedges";
 import { createEnvironment } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
 import { createStreetLights } from "./world/lighting";
+import { createProps } from "./world/props";
+import { Birds } from "./world/birds";
+import { createDirtTracks } from "./world/dirtTracks";
 import { FogRenderer } from "./world/fogRender";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
@@ -47,13 +50,24 @@ const streetLights = createStreetLights(scene, layout, terrain, env.shadows, nav
 // canopy, so soldiers don't poke their heads through the foliage; jeeps can't enter the woods at all.
 for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF) nav.blockCircle(t.x, t.z, 0.9);
 for (const h of hedges) nav.blockRect(h.x, h.z, h.hw, h.hd, h.rot, 0);
+// containers, cabins, cars, garages, fences and farm machinery (placed on ground that is still free;
+// the solid ones block movement)
+const props = createProps(scene, layout, terrain, env.shadows, nav);
+const birds = new Birds(scene, terrain, trees);
+// farm tracks with ruts, a grassy middle strip and puddles
+const tracks = createDirtTracks(scene, layout, terrain, nav);
 const game = new Game(scene, terrain, nav, layout, env.shadows);
 game.cover = new CoverMap(
   layout,
   trees,
   hedges,
   // the sandbag walls of the barracks compound give cover on both sides
-  [...game.buildings.map((b) => ({ x: b.x, z: b.z, hw: COMPOUND.hw, hd: COMPOUND.hd, rot: b.rot })), ...layout.outposts.map((o) => ({ x: o.x, z: o.z, hw: 2.5, hd: 2.5, rot: o.rot }))],
+  [
+    ...game.buildings.map((b) => ({ x: b.x, z: b.z, hw: COMPOUND.hw, hd: COMPOUND.hd, rot: b.rot })),
+    ...layout.outposts.map((o) => ({ x: o.x, z: o.z, hw: 2.5, hd: 2.5, rot: o.rot })),
+    // containers, cabins, vehicles and machinery give cover too
+    ...props.filter((p) => p.height >= 1.4),
+  ],
 );
 
 // ------------------------------------------------------------------ fog of war
@@ -71,6 +85,7 @@ for (const h of layout.houses) {
 for (const b of game.buildings) fog.blockRect(b.x, b.z, 6, 4, b.rot, 7);
 for (const o of layout.outposts) if (o.kind === "workshop") fog.blockRect(o.x, o.z, 3.5, 3, o.rot, 5.3);
 for (const o of layout.outposts) if (o.kind === "radar") fog.blockCircle(o.x, o.z, 2.6, 7.4); // the radome
+for (const p of props) if (p.height >= 2.4) fog.blockRect(p.x, p.z, p.hw, p.hd, p.rot, p.height); // containers, garages
 game.sightBonusOf = (u) => fog.sightBonus(u);
 game.canSee = (x, z) => fog.isVisible(x, z);
 
@@ -78,7 +93,7 @@ const cam = new RtsCamera(scene, terrain);
 scene.activeCamera = cam.camera;
 cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
 
-const fogRender = new FogRenderer(scene, cam.camera, fog);
+const fogRender = new FogRenderer(scene, cam.camera, fog, () => env.haze, env.sun.direction, () => cam.distance);
 fogRender.strength = 0; // no fog over the menu fly-over
 const overlay = new Overlay(document.getElementById("overlay") as HTMLCanvasElement, engine, cam.camera);
 const input = new InputController(canvas, scene, game, cam, overlay);
@@ -256,7 +271,7 @@ quitBtn.addEventListener("click", () => {
     quitBtn.textContent = "Wirklich beenden? Erneut klicken";
     return;
   }
-  location.reload(); // a fresh page load opens the main menu
+  returnToMenu();
 });
 // capture phase: runs before the game's own key handling; a pending targeting mode is cancelled
 // there first, otherwise Escape opens / closes the pause menu
@@ -266,6 +281,45 @@ window.addEventListener("keydown", (e) => {
   e.stopPropagation();
   setPaused(!paused);
 }, { capture: true });
+
+/**
+ * Ends the current game and goes back to the main menu without reloading the page (fullscreen,
+ * audio and settings stay): the mission is cleared away, night and fog reset, and the silent
+ * background battle starts again.
+ */
+function returnToMenu() {
+  paused = false;
+  pauseEl.hidden = true;
+  document.body.classList.remove("paused", "mode-skirmish", "mode-commandos");
+  if (game.commandos) {
+    game.commandos.dispose();
+    env.setNight(false);
+    streetLights.setOn(false);
+    birds.setEnabled(true);
+    tracks.setNight(false);
+    // the commandos mode had cleared the player's compound out of the fog's blockers
+    const b = game.playerBarracks;
+    fog.blockRect(b.x, b.z, 6, 4, b.rot, 7);
+  }
+  hud.resetForMenu();
+  input.reset();
+  input.enabled = hud.enabled = false;
+  fog.reset();
+  fogRender.strength = 0;
+  game.canSee = null; // in the menu both sides see everything
+  audio.quiet = true;
+  audio.setTheme("menu");
+  inMenu = true;
+  starting = false;
+  menuRestartT = 0;
+  document.body.classList.add("in-menu");
+  showModes(false);
+  // the sidebar is gone again: the 3D view is wider
+  engine.resize();
+  overlay.resize();
+  startBackgroundBattle();
+}
+hud.onRestart = returnToMenu;
 
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
@@ -284,6 +338,8 @@ function startGame(mode: GameMode) {
     // the mission plays at night: moonlight, street lamps on, searchlights at the outposts
     env.setNight();
     streetLights.setOn(true);
+    birds.setEnabled(false); // no birds at night
+    tracks.setNight(true);
     mission.streetPools = streetLights.pools;
     game.commandos = mission;
     const b = game.playerBarracks; // removed in this mode: nothing blocks the view there any more
@@ -350,6 +406,10 @@ artDone.then(
 let dt = 0;
 scene.onBeforeRenderObservable.add(() => {
   dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+  if (!paused && !hud.bannerShown) {
+    birds.update(dt);
+    tracks.update(dt);
+  }
   if (inMenu) {
     // cinematic fly-over along a slow loop across the battlefield
     menuT += dt;
@@ -400,4 +460,4 @@ window.addEventListener("resize", () => {
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
-Object.assign(window, { game, scene, cam, audio, ai, fog });
+Object.assign(window, { game, scene, cam, audio, ai, fog, startGame, returnToMenu });

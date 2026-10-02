@@ -144,7 +144,7 @@ export class CommandosMission {
       const base = Math.random() * Math.PI * 2;
       const p = g.nav.freePoint(o.x + Math.sin(base) * (o.radius + 1.2), o.z + Math.cos(base) * (o.radius + 1.2));
       const light = new Searchlight(g.scene, g.terrain, g.shadows, p.x, p.z, COMMANDOS.searchlight.poolRadius);
-      g.nav.blockCircle(p.x, p.z, 0.4);
+      g.nav.structure(p.x, p.z, 0.4, 0.4, 0, [0, 1], 1); // removable again in dispose()
       this.beams.push({ light, post: o, base, phase: Math.random() * 10, lockT: 0, alarmT: 0 });
     }
 
@@ -237,6 +237,25 @@ export class CommandosMission {
     merged.rotation.y = Math.random() * Math.PI;
     g.shadows.addShadowCaster(merged);
     return merged;
+  }
+
+  /** Removes everything the mission added to the scene (back to the main menu). */
+  dispose() {
+    const g = this.game;
+    for (const b of this.beams) {
+      b.light.dispose();
+      g.nav.structure(b.light.x, b.light.z, 0.4, 0.4, 0, [0, 1], -1);
+    }
+    this.beams.length = 0;
+    for (const c of this.caches) if (!c.taken) c.mesh.dispose();
+    this.caches.length = 0;
+    for (const c of this.planted) c.mesh.dispose();
+    this.planted.length = 0;
+    this.chargeTpl?.dispose();
+    // the agent's templates keep their own materials; leave them fully opaque
+    for (const m of this.agentMaterials) m.alpha = 1;
+    g.spotRange = null;
+    g.onKilled = null;
   }
 
   // ---------------------------------------------------------------- searching & tracking

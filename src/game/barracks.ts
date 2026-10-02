@@ -66,6 +66,7 @@ export class Barracks implements Target {
     this.rally = this.startRally;
     this.blasts = 0;
     this.mesh.setEnabled(true);
+    this.ring.setEnabled(true);
     this.mesh.position.y = this.y;
     this.mesh.rotation.set(0, this.rot, 0);
     this.mesh.scaling.setAll(1);

@@ -116,8 +116,17 @@ export class Outpost {
     this.applyOwnerColors();
   }
 
-  /** Back to the start of a game: neutral, capture bonus unpaid. */
+  /** Back to the start of a game: neutral, capture bonus unpaid, rebuilt if it was blown up. */
   reset() {
+    if (this.destroyed) {
+      this.destroyed = false;
+      this.model.scaling.setAll(1);
+      this.model.rotation.z = 0;
+      this.model.position.y = this.y;
+      this.model.freezeWorldMatrix();
+      this.flag.setEnabled(true);
+      this.ring.setEnabled(true);
+    }
     this.owner = null;
     this.capturer = null;
     this.progress = 0;

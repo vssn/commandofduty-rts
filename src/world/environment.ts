@@ -4,10 +4,30 @@ import { Color3, Color4, DirectionalLight, HemisphericLight, Scene, ShadowGenera
 const HAZE = new Color3(0.16, 0.18, 0.21);
 const SUN_DIR = new Vector3(0.74, -0.5, 0.36).normalize();
 
+/**
+ * Distance haze, drawn by the screen-space pass in fogRender.ts: far ground fades into `color`,
+ * warmer (`sunColor`) when looking towards the sun; deep ground (the gorge) fills up with it too.
+ */
+export interface Haze {
+  color: [number, number, number];
+  sunColor: [number, number, number];
+  /** Haze begins at this multiple of the camera distance (so it shows at every zoom level). */
+  start: number;
+  /** Thickening per metre beyond the start. */
+  density: number;
+  /** Strongest haze (0..1). */
+  max: number;
+  /** Thickening per metre below 8 m under the plain (the gorge). */
+  depth: number;
+}
+const HAZE_DAY: Haze = { color: [0.74, 0.77, 0.81], sunColor: [1.0, 0.86, 0.66], start: 0.85, density: 0.006, max: 0.6, depth: 0.03 };
+const HAZE_NIGHT: Haze = { color: [0.07, 0.09, 0.15], sunColor: [0.2, 0.25, 0.37], start: 0.85, density: 0.007, max: 0.55, depth: 0.03 };
+
 /** Autumn afternoon lighting: warm low sun from the south-west, cool sky fill, light haze. */
 export function createEnvironment(scene: Scene) {
   scene.clearColor = new Color4(HAZE.r, HAZE.g, HAZE.b, 1);
-  scene.fogMode = Scene.FOGMODE_LINEAR;
+  // distance haze is a screen-space effect (fogRender.ts); the classic scene fog stays off
+  scene.fogMode = Scene.FOGMODE_NONE;
   scene.fogColor = HAZE;
   scene.fogStart = 175;
   scene.fogEnd = 380;
@@ -53,8 +73,12 @@ export function createEnvironment(scene: Scene) {
     darkness: shadows.getDarkness(), exposure: ip.exposure, contrast: ip.contrast, vignette: [ip.vignetteWeight, ip.vignetteColor.clone()] as const,
   };
 
+  /** Current distance haze (day or night). */
+  const env = { haze: { ...HAZE_DAY } };
+
   /** Moonlit night (commandos): dim blue moon light, dark sky, stronger vignette. `false` restores the day. */
   const setNight = (on = true) => {
+    env.haze = { ...(on ? HAZE_NIGHT : HAZE_DAY) };
     if (!on) {
       scene.clearColor = day.clear.clone();
       scene.fogColor = day.fog.clone();
@@ -85,5 +109,5 @@ export function createEnvironment(scene: Scene) {
     ip.vignetteColor = new Color4(0.01, 0.02, 0.05, 0);
   };
 
-  return { sun, shadows, followFocus, setNight };
+  return { sun, shadows, followFocus, setNight, get haze() { return env.haze; } };
 }

@@ -52,6 +52,20 @@ export class Hud {
   private readonly captureTiles = new Map<Outpost, CaptureTile>();
   /** Screen position (client pixels) of an outpost, clamped to the view; set by main. */
   locate: ((o: Outpost) => { x: number; y: number } | null) | null = null;
+  /** Called by the dialog's button after a game: return to the main menu. */
+  onRestart: (() => void) | null = null;
+
+  /** Clears everything left over from a game (dialog, messages, capture tiles). */
+  resetForMenu() {
+    this.bannerShown = false;
+    this.banner.classList.remove("show", "win", "lose");
+    this.toastEl.classList.remove("show");
+    this.toastTimer = 0;
+    for (const t of this.captureTiles.values()) t.el.remove();
+    this.captureTiles.clear();
+    this.lastMission = "";
+  }
+
   /** True once the victory / defeat dialog is shown: the game stands still behind it. */
   bannerShown = false;
   /** Called whenever the music was switched with the M key (the menus' sliders follow). */
@@ -113,8 +127,8 @@ export class Hud {
       else if (ev === "lose") window.setTimeout(() => this.showBanner("lose"), 2000);
       else if (MESSAGES[ev]) this.toast(MESSAGES[ev]!);
     });
-    // a fresh page load builds a new map state and opens the main menu again
-    $("restart").addEventListener("click", () => location.reload());
+    // back to the main menu (in place, no page reload: fullscreen and audio stay on)
+    $("restart").addEventListener("click", () => this.onRestart?.());
   }
 
   private train(type: UnitType, count: number) {

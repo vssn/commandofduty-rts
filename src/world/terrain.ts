@@ -1,7 +1,7 @@
 import { Color3, DynamicTexture, Mesh, Scene, StandardMaterial, Texture, VertexData } from "@babylonjs/core";
-import { MAP_HALF, TERRAIN_HALF, TERRAIN_RES } from "../config";
+import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
-import type { MapLayout, RGB } from "./layout";
+import { toLocal, type MapLayout, type RGB } from "./layout";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
 /** Cliff faces and the mountain wall. */
@@ -23,7 +23,7 @@ const DIRT_CENTRE: RGB = [0.52, 0.45, 0.27];
 const VERGE_DIRT: RGB = [0.54, 0.47, 0.28];
 const VERGE_TOWN: RGB = [0.5, 0.5, 0.36];
 const HEADLAND: RGB = [0.52, 0.48, 0.28];
-const TRAMPLED: RGB = [0.52, 0.45, 0.3];
+const TRAMPLED: RGB = [0.47, 0.36, 0.23];
 /** Width of the worn strip beside roads, where the surface fades into the grass. */
 const VERGE = 1.8;
 /** Subdivision (per side) of grid cells that contain surface edges. */
@@ -274,10 +274,16 @@ export class Terrain {
     }
 
     for (const o of L.outposts) {
-      const d = Math.hypot(x - o.x, z - o.z);
-      if (d < 7) {
-        set(out, TRAMPLED, 1 + nz * 0.08);
-        return smoothstep(7, 2.5, d + nz * 1.5) * 0.7;
+      // trodden earth over most of the outpost, reaching further out in front of the entrance (+z)
+      const R = OUTPOSTS[o.kind].radius;
+      if (Math.abs(x - o.x) > R * 1.3 || Math.abs(z - o.z) > R * 1.3) continue;
+      const l = toLocal(o.x, o.z, o.rot, x, z);
+      const d = Math.hypot(l.x / (R * 0.8), (l.z - R * 0.2) / (R * 0.95)) + nz * 0.18;
+      if (d < 1.1) {
+        // patches of flattened grass survive in the trodden ground
+        const tufts = valueNoise(x * 0.9, z * 0.9, 63) > 0.35 ? 0.55 : 1;
+        set(out, TRAMPLED, 1 + nz * 0.1);
+        return smoothstep(1.1, 0.7, d) * 0.92 * tufts;
       }
     }
     return 0;

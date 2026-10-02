@@ -292,6 +292,17 @@ export class InputController {
   }
 
   /** Carries out the pending targeted action at the cursor; true if it was issued. */
+  /** Forgets control groups and clicks of the last game (its units are gone). */
+  reset() {
+    this.setTargeting(null);
+    this.groups.clear();
+    this.lastClick = { t: 0, unit: null };
+    this.dragStart = null;
+    this.dragging = false;
+    this.overlay.dragRect = null;
+    this.setPad(0, 0);
+  }
+
   /** Starts (or ends) choosing a spot for a structure. */
   toggleBuild(type: "mgnest" | "bollard") {
     if (this.targeting === type) return this.setTargeting(null);

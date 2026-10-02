@@ -52,6 +52,14 @@ export class FogOfWar {
     }
   }
 
+  /** Forgets everything seen (new game). */
+  reset() {
+    this.values.fill(0);
+    this.visible.fill(0);
+    this.explored.fill(0);
+    this.recalcT = 0;
+  }
+
   // ---------------------------------------------------------------- blockers
 
   /** Round blocker (tree) of the given height above the ground. */

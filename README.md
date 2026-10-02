@@ -228,8 +228,14 @@ src/
                       feine, kachelbare Körnungstextur über den Vertex-Farben
     crops.ts          Bewuchs der Felder (kleine, unterschiedlich hohe Büschel in Reihen)
     fortification.ts  Sandsack-Befestigung der Kaserne (Mauer, Eckbastionen, Tor, verbarrikadierte Fenster)
+    props.ts          Umgebungsdetails: Militärcontainer an Stellungen, Wohncontainer-Lager, Garagen, Gartenzäune und parkende
+                      Autos in den Dörfern, Ladewagen, Pflüge und Traktoren an Feldern (massiv, Deckung, Sichtblocker)
+    dirtTracks.ts     Feldwege als durchgehende texturierte Bänder (Fahrrinnen mit Reifenprofil, grüner Mittelstreifen,
+                      ausfransende Ränder; an Kreuzungen laufen einmündende Wege spitz zu, über Asphalt ausgespart),
+                      Trampelpfade von jeder Stellung zum nächsten Weg und Pfützen mit angedeuteter Himmelsspiegelung
+    birds.ts          Vogelschwärme, die hoch über der Karte kreisen, und einzelne Vögel, die von Baum zu Baum fliegen
     lighting.ts       Straßenlaternen, Lichtkegel/-flecken (additiv, ohne echte Lichtquellen), Standscheinwerfer
-    fogRender.ts      Fog-of-War-Shader (Tiefenpuffer → Weltposition → Nebeltextur)
+    fogRender.ts      Distanz-Dunst (Luftperspektive, zur Sonne hin wärmer, Graben im Dunst; Tag/Nacht) + Fog-of-War-Shader (Tiefenpuffer → Weltposition → Nebeltextur)
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)

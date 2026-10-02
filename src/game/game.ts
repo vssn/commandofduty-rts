@@ -186,24 +186,11 @@ export class Game {
     const bags = createSandbags(this.scene, `sandbags${team}`);
     bags.parent = mesh;
     this.shadows.addShadowCaster(bags);
-    for (const s of COMPOUND_WALLS) {
-      const a = toWorld(p.x, p.z, rot, s.ax, s.az), b = toWorld(p.x, p.z, rot, s.bx, s.bz);
-      const len = Math.hypot(b.x - a.x, b.z - a.z);
-      this.nav.blockRect((a.x + b.x) / 2, (a.z + b.z) / 2, len / 2, 0.5, rot + (s.ax === s.bx ? Math.PI / 2 : 0), 0.1);
-    }
-    for (const bs of COMPOUND_BASTIONS) {
-      const c = toWorld(p.x, p.z, rot, bs.x, bs.z);
-      this.nav.blockCircle(c.x, c.z, bs.r + 0.3);
-    }
-    for (const x of [-COMPOUND.gate - 0.3, COMPOUND.gate + 0.3]) {
-      const c = toWorld(p.x, p.z, rot, x, COMPOUND.hd);
-      this.nav.blockCircle(c.x, c.z, 0.7);
-    }
     const ring = createRing(this.scene, `bRing${team}`, 21, 0.3, [0.4, 1, 0.45]);
     const b = new Barracks(team, p.x, p.z, rot, mesh, ring, this.terrain.heightAt(p.x, p.z));
     mesh.metadata = { building: b };
     this.shadows.addShadowCaster(mesh);
-    this.nav.blockRect(p.x, p.z, 6.5, 4.5, rot, 0.8);
+    this.blockBarracks(b);
     this.buildings.push(b);
     return b;
   }
@@ -228,15 +215,41 @@ export class Game {
     this.markers.length = this.tracers.length = this.orderLines.length = 0;
     this.clearSelection();
     this.result = null;
+    this.mode = "base";
+    this.commandos = null;
+    this.onKilled = null;
+    this.spotRange = null;
     this.credits[0] = this.credits[1] = START_CREDITS;
     this.time = 0;
     this.sinceUnitsHit = Infinity;
     this.baseAlertCooldown = 0;
-    for (const b of this.buildings) b.reset();
+    for (const b of this.buildings) {
+      b.reset();
+      this.blockBarracks(b); // the commandos mode removes the player's compound
+    }
     for (const o of this.outposts) o.reset();
     this.effects.clear();
     this.artillery.clear();
     this.spawnStartingUnits();
+  }
+
+  /** The barracks and its sandbagged compound are solid; only the gate is open. */
+  private blockBarracks(b: Barracks) {
+    const { x, z, rot } = b;
+    for (const s of COMPOUND_WALLS) {
+      const a = toWorld(x, z, rot, s.ax, s.az), c = toWorld(x, z, rot, s.bx, s.bz);
+      const len = Math.hypot(c.x - a.x, c.z - a.z);
+      this.nav.blockRect((a.x + c.x) / 2, (a.z + c.z) / 2, len / 2, 0.5, rot + (s.ax === s.bx ? Math.PI / 2 : 0), 0.1);
+    }
+    for (const bs of COMPOUND_BASTIONS) {
+      const c = toWorld(x, z, rot, bs.x, bs.z);
+      this.nav.blockCircle(c.x, c.z, bs.r + 0.3);
+    }
+    for (const gx of [-COMPOUND.gate - 0.3, COMPOUND.gate + 0.3]) {
+      const c = toWorld(x, z, rot, gx, COMPOUND.hd);
+      this.nav.blockCircle(c.x, c.z, 0.7);
+    }
+    this.nav.blockRect(x, z, 6.5, 4.5, rot, 0.8);
   }
 
   on(fn: Listener) {
