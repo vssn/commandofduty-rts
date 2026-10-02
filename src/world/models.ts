@@ -153,13 +153,14 @@ export const THROW_SHOULDER = { x: 0.26 * SOLDIER_SCALE, y: 1.4 * SOLDIER_SCALE 
 /** Knee joint relative to the hip joint (scaled), where the shin hangs from the thigh. */
 export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 
-export type SoldierVariant = "rifleman" | "grenadier" | "agent" | "medic";
+export type SoldierVariant = "rifleman" | "grenadier" | "agent" | "medic" | "pilot";
 
 export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
   const kind: SoldierVariant = variant === true ? "grenadier" : variant === false ? "rifleman" : variant;
   const grenadier = kind === "grenadier";
   const agent = kind === "agent";
   const medic = kind === "medic";
+  const pilot = kind === "pilot";
   const player = team === PLAYER;
   const white: RGB = [0.94, 0.93, 0.88];
   const red: RGB = [0.8, 0.1, 0.08];
@@ -331,7 +332,21 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     box(0.05, 0.56, 0.02, x, 1.15, 0.145, webbing).rotation.x = 0.1;
     box(0.05, 0.56, 0.02, x, 1.15, -0.145, webbing).rotation.x = -0.1;
   }
-  if (!grenadier && !medic) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
+  if (!grenadier && !medic && !pilot) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
+  if (pilot) {
+    // laptop on the ground in front of his knees (he kneels: the body sits 0.35 m lower), screen glowing
+    const lx = 0, ly = 0.3, lz = 0.62;
+    box(0.42, 0.03, 0.3, lx, ly, lz, [0.16, 0.16, 0.17]);
+    const lid = box(0.42, 0.3, 0.025, lx, ly + 0.14, lz + 0.16, [0.16, 0.16, 0.17]);
+    lid.rotation.x = -0.25;
+    const screen = MeshBuilder.CreateBox("screen", { width: 0.37, height: 0.24, depth: 0.01 }, scene);
+    screen.position.set(lx, ly + 0.14, lz + 0.145);
+    screen.rotation.x = -0.25;
+    screen.material = mat(scene, [0.55, 0.85, 1], { emissive: true });
+    parts.push(screen);
+    box(0.32, 0.02, 0.14, lx, ly + 0.022, lz - 0.05, [0.3, 0.3, 0.32]); // keyboard
+    box(0.25, 0.12, 0.18, 0.32, 0.3, 0.5, [0.26, 0.3, 0.2]); // controller case
+  }
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
   box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.38, 0.31, 0.2]);
   box(0.28, 0.12, 0.03, 0, 1.3, -0.3, helmet); // pack flap in team colour
@@ -356,8 +371,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   if (grenadier) {
     // no rifle: the left arm hangs loosely here; the right arm with the grenade is a separate part
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.14]);
-  } else if (medic) {
-    // unarmed: both arms hang loosely (the view swings them forward to treat a patient)
+  } else if (medic || pilot) {
+    // unarmed: both arms hang loosely (the view swings them forward to treat a patient / type)
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.12]);
     arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
   } else {
@@ -370,7 +385,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
     arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
   }
-  const suffix = grenadier ? "g" : medic ? "m" : "";
+  const suffix = grenadier ? "g" : medic ? "m" : pilot ? "p" : "";
   const arms = shoulderPart(`soldierArms${team}${suffix}`);
   let throwArm: Mesh | undefined;
   if (grenadier) {
@@ -387,13 +402,32 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin); // neck
   ball(0.135, 0, 1.69, 0.01, skin, 1.15); // head
   box(0.05, 0.07, 0.04, 0, 1.66, 0.14, [0.8, 0.62, 0.5]); // nose
-  const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.36, segments: 8, slice: 0.5 }, scene);
-  helm.position.y = 1.73;
-  helm.material = mat(scene, helmet, { twoSided: true });
-  const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.43, height: 0.025, tessellation: 14 }, scene);
-  brim.position.y = 1.73;
-  brim.material = mat(scene, helmet);
-  parts.push(helm, brim);
+  if (pilot) {
+    // no helmet: short hair, a headset with ear cups, a boom microphone and a glowing status LED
+    ball(0.14, 0, 1.73, -0.01, [0.2, 0.15, 0.1], 0.85); // hair
+    const band = MeshBuilder.CreateTorus("headband", { diameter: 0.31, thickness: 0.035, tessellation: 16 }, scene);
+    band.rotation.z = Math.PI / 2;
+    band.position.set(0, 1.71, 0);
+    band.material = mat(scene, [0.12, 0.12, 0.12]);
+    parts.push(band);
+    for (const x of [-0.155, 0.155]) {
+      const cup = tube(x - Math.sign(x) * 0.01, 1.68, 0.01, x + Math.sign(x) * 0.05, 1.68, 0.01, 0.065, 0.06, [0.14, 0.14, 0.14]);
+      cup.rotation.z = Math.PI / 2;
+    }
+    tube(0.19, 1.66, 0.03, 0.1, 1.6, 0.15, 0.012, 0.012, [0.12, 0.12, 0.12]); // mic boom
+    const led = MeshBuilder.CreateSphere("led", { diameter: 0.035, segments: 4 }, scene);
+    led.position.set(0.21, 1.69, 0.03);
+    led.material = mat(scene, [0.3, 1, 0.5], { emissive: true });
+    parts.push(led);
+  } else {
+    const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.36, segments: 8, slice: 0.5 }, scene);
+    helm.position.y = 1.73;
+    helm.material = mat(scene, helmet, { twoSided: true });
+    const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.43, height: 0.025, tessellation: 14 }, scene);
+    brim.position.y = 1.73;
+    brim.material = mat(scene, helmet);
+    parts.push(helm, brim);
+  }
   if (grenadier) {
     // light band around the helmet makes grenadiers easy to tell apart
     const band = MeshBuilder.CreateCylinder("band", { height: 0.06, diameter: 0.37, tessellation: 12 }, scene);
@@ -844,6 +878,57 @@ export function createJeepGun(scene: Scene): Mesh {
   box(0.06, 0.2, 0.06, 0.12, -0.12, -0.3, metal);
   box(0.5, 0.35, 0.05, 0, 0.12, 0.55, [0.3, 0.33, 0.25]); // gun shield
   const m = merge("jeepGun", parts);
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+// ------------------------------------------------------------------ drone
+
+/** FPV drone size (~half a soldier): arm length from the centre to a motor. */
+export const DRONE_DIM = { arm: 0.55, rotorY: 0.12 };
+
+/** Drone body (hidden template): X frame, motor pods, battery, camera and navigation lights. */
+export function createDroneBody(scene: Scene): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const carbon: RGB = [0.13, 0.13, 0.14];
+  for (const a of [Math.PI / 4, -Math.PI / 4]) box(DRONE_DIM.arm * 2.1, 0.04, 0.08, 0, 0, 0, carbon, 0, a);
+  box(0.26, 0.08, 0.34, 0, 0.03, 0, [0.2, 0.2, 0.22]); // body plate
+  box(0.16, 0.08, 0.24, 0, 0.1, -0.02, [0.55, 0.45, 0.15]); // battery
+  box(0.1, 0.09, 0.08, 0, 0.0, 0.2, [0.1, 0.1, 0.1]); // camera
+  for (const [i, a] of [Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4].entries()) {
+    const x = Math.sin(a) * DRONE_DIM.arm, z = Math.cos(a) * DRONE_DIM.arm;
+    const motor = MeshBuilder.CreateCylinder("motor", { height: 0.1, diameter: 0.1, tessellation: 8 }, scene);
+    motor.position.set(x, 0.05, z);
+    motor.material = mat(scene, [0.3, 0.3, 0.32]);
+    parts.push(motor);
+    // navigation lights: red at the back left, green at the front right style
+    const led = MeshBuilder.CreateSphere("navLed", { diameter: 0.05, segments: 4 }, scene);
+    led.position.set(x, -0.02, z);
+    led.material = mat(scene, i < 2 ? [0.2, 1, 0.3] : [1, 0.15, 0.1], { emissive: true });
+    parts.push(led);
+  }
+  const m = merge("droneBody", parts);
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+/** One propeller disc (hidden template), spun by the view. */
+export function createDroneRotor(scene: Scene): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  box(0.42, 0.01, 0.04, 0, 0, 0, [0.15, 0.15, 0.16]);
+  const blur = MeshBuilder.CreateDisc("blur", { radius: 0.21, tessellation: 16 }, scene);
+  blur.rotation.x = Math.PI / 2;
+  const bm = new StandardMaterial("rotorBlur", scene);
+  bm.diffuseColor = new Color3(0.3, 0.3, 0.32);
+  bm.alpha = 0.25;
+  bm.backFaceCulling = false;
+  blur.material = bm;
+  parts.push(blur);
+  const m = merge("droneRotor", parts);
   m.isPickable = false;
   m.isVisible = false;
   return m;

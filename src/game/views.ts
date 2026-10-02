@@ -1,5 +1,5 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import { HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
+import { DRONE_DIM, HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import { smoothstep } from "../util/noise";
 import type { Unit } from "./unit";
@@ -206,7 +206,9 @@ export class SoldierView implements UnitView {
     const carry = (1 - this.aimW) * (u.type === "grenadier" || u.type === "medic" ? 0.3 : 1) * (1 - this.healW) * (1 - this.gearW);
     const breath = Math.sin(it * 1.9) * 0.012 * iw;
     // treating: both hands reach down and forward to the patient, working in a slow rhythm
-    const treat = this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12)
+    // drone pilot: hands on the laptop keyboard, fingers busy
+    const typing = u.type === "pilot" ? 0.95 + Math.sin(this.phase + performance.now() * 0.012) * 0.04 : 0;
+    const treat = typing + this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12)
       // checking his kit: hands down at the satchel, rummaging
       + this.gearW * (0.85 + Math.sin(it * 5 + this.seed) * 0.12);
     this.arms.rotation.set(
@@ -229,7 +231,8 @@ export class SoldierView implements UnitView {
     // the medic looks around more widely and turns his shoulders with it; head down while checking his kit
     const medic = u.type === "medic";
     const scan = medic ? look * 1.35 : look;
-    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5, scan * iw * (1 - this.gearW), 0);
+    const screenLook = u.type === "pilot" ? 0.4 : 0; // eyes on his screen
+    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5 + screenLook, scan * iw * (1 - this.gearW) * (screenLook ? 0.2 : 1), 0);
     if (medic) this.root.rotation.y += look * 0.3 * iw * (1 - this.gearW);
     this.head.position.y = SHOULDER_Y + breath;
     // round shadow; stretched along the body when lying down, a bit wider when kneeling
@@ -563,5 +566,71 @@ export class BollardView implements UnitView {
     const f = Math.min(1, t / 0.4);
     this.root.rotation.set(f * 0.5, u.heading, f * 0.25);
     this.root.position.y = u.y - f * 0.3 - (t > 3 ? (t - 3) * 0.5 : 0);
+  }
+}
+
+export interface DroneTemplates { body: Mesh; rotor: Mesh }
+
+/** FPV drone: hovers with a gentle bob, rotors spin, tilts into its direction of flight, crashes when shot down. */
+export class DroneView implements UnitView {
+  readonly root: TransformNode;
+  private readonly rotors: InstancedMesh[] = [];
+  private readonly shadow: BlobShadow;
+  private spin = 0;
+  private lastX = NaN;
+  private lastZ = NaN;
+  private tilt = 0;
+  private readonly seed = Math.random() * 10;
+
+  constructor(scene: Scene, tpl: DroneTemplates, name: string, blob: Mesh) {
+    this.root = new TransformNode(name, scene);
+    this.shadow = new BlobShadow(blob);
+    const body = tpl.body.createInstance("droneBody");
+    body.parent = this.root;
+    body.isPickable = false;
+    for (const a of [Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4]) {
+      const r = tpl.rotor.createInstance("rotor");
+      r.parent = this.root;
+      r.position.set(Math.sin(a) * DRONE_DIM.arm, DRONE_DIM.rotorY, Math.cos(a) * DRONE_DIM.arm);
+      r.isPickable = false;
+      this.rotors.push(r);
+    }
+  }
+
+  sync(u: Unit, dt: number) {
+    const t = performance.now() / 1000;
+    const vx = Number.isNaN(this.lastX) ? 0 : (u.x - this.lastX) / Math.max(dt, 1e-3);
+    const vz = Number.isNaN(this.lastZ) ? 0 : (u.z - this.lastZ) / Math.max(dt, 1e-3);
+    this.lastX = u.x;
+    this.lastZ = u.z;
+    const speed = Math.min(10, Math.hypot(vx, vz));
+    this.tilt += (speed * 0.035 - this.tilt) * Math.min(1, dt * 4);
+    this.root.position.set(u.x, u.y + u.altitude + Math.sin(t * 2.3 + this.seed) * 0.12, u.z);
+    // nose down into the direction of flight, a slight wobble
+    this.root.rotation.set(this.tilt + Math.sin(t * 3.1 + this.seed) * 0.03, u.heading, Math.cos(t * 2.7 + this.seed) * 0.03);
+    this.spin += dt * 60;
+    this.rotors.forEach((r, i) => (r.rotation.y = this.spin * (i % 2 ? 1 : -1)));
+    // a small, faint shadow far below
+    this.shadow.place(u.x, u.y, u.z, u.heading, 0.55, 0.55);
+  }
+
+  setEnabled(on: boolean) {
+    this.root.setEnabled(on);
+    this.shadow.mesh.setEnabled(on);
+  }
+
+  dispose() {
+    this.root.dispose();
+    this.shadow.mesh.dispose();
+  }
+
+  animateDeath(u: Unit, t: number) {
+    // shot down / link lost: tumbles out of the sky and lies in the grass
+    const fall = Math.min(1, (t * t) / 1.4);
+    this.root.position.set(u.x, u.y + u.altitude * (1 - fall) + 0.1, u.z);
+    this.root.rotation.set(fall * 2.4, u.heading + t * (1 - fall) * 9, fall * 1.1);
+    this.spin += (1 - fall) * 0.6;
+    this.rotors.forEach((r, i) => (r.rotation.y = this.spin * (i % 2 ? 1 : -1)));
+    this.shadow.place(u.x, u.y, u.z, u.heading, 0.55, 0.55);
   }
 }

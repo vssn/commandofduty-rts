@@ -4,7 +4,7 @@ import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../
 import { toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
   createAuraTemplate, createBarracksMesh, createBollardMesh, createMgNestMesh, createPennant, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun,
-  createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM, NEST_DIM,
+  createDroneBody, createDroneRotor, createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM, NEST_DIM,
 } from "../world/models";
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
@@ -17,7 +17,7 @@ import type { NavGrid } from "./nav";
 import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
-import { BollardView, JeepView, NestView, SoldierView, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
+import { BollardView, DroneView, JeepView, NestView, SoldierView, type DroneTemplates, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
 
 export type WeaponKind = "rifle" | "mg" | "sniper";
 export interface Tracer { ax: number; ay: number; az: number; bx: number; by: number; bz: number; t: number; hit: boolean; kind: WeaponKind }
@@ -29,7 +29,7 @@ export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
   | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
-  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning";
+  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning" | "dronesLaunched" | "droneDown";
 export interface GameEventData { outpost: Outpost; bonus: number; structures?: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -58,7 +58,8 @@ export class Game {
   /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
   mode: GameMode = "base";
 
-  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent" | "medic", SoldierTemplates>>;
+  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent" | "medic" | "pilot", SoldierTemplates>>;
+  private readonly droneTpl: DroneTemplates;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
   private readonly nestTpl: Record<Team, NestTemplates>;
   private readonly bollardTpl: Mesh;
@@ -105,6 +106,7 @@ export class Game {
       grenadier: createSoldierTemplates(scene, team, true),
       agent: createSoldierTemplates(scene, team, "agent"),
       medic: createSoldierTemplates(scene, team, "medic"),
+      pilot: createSoldierTemplates(scene, team, "pilot"),
     });
     this.soldierTpl = { 0: soldiers(PLAYER), 1: soldiers(ENEMY) };
     const wheel = createJeepWheel(scene);
@@ -124,6 +126,8 @@ export class Game {
       1: { body: nest, gun, crew: this.soldierTpl[ENEMY].rifleman, pennants },
     };
     this.bollardTpl = createBollardMesh(scene);
+    this.droneTpl = { body: createDroneBody(scene), rotor: createDroneRotor(scene) };
+    shadows.addShadowCaster(this.droneTpl.body);
     for (const m of [nest, this.bollardTpl, ...pennants]) shadows.addShadowCaster(m);
 
     this.effects = new Effects(scene, shadows, this);
@@ -273,7 +277,9 @@ export class Game {
         ? new NestView(this.scene, this.nestTpl[team], name)
         : type === "bollard"
           ? new BollardView(this.scene, this.bollardTpl, name)
-          : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
+          : type === "drone"
+            ? new DroneView(this.scene, this.droneTpl, name, this.blobTpl)
+            : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
     const ring = this.ringTpl.createInstance("ring");
     ring.isPickable = false;
     if (type === "jeep") ring.scaling.set(2.6, 1, 2.6);
@@ -905,8 +911,8 @@ export class Game {
     if (this.mode === "skirmish" && !this.result) this.checkSkirmishEnd();
 
     // soft separation; heavier and moving units push lighter / idle ones aside
-    const active = this.units.filter((u) => u.alive && !u.vehicle && !u.isStructure);
-    for (const u of this.units) if (u.alive && u.isStructure) u.postMove(dt, this);
+    const active = this.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && !u.stats.flying);
+    for (const u of this.units) if (u.alive && (u.isStructure || u.stats.flying)) u.postMove(dt, this);
     for (let i = 0; i < active.length; i++) {
       const a = active[i];
       for (let j = i + 1; j < active.length; j++) {

@@ -9,7 +9,7 @@ export type Team = 0 | 1;
 export const PLAYER: Team = 0;
 export const ENEMY: Team = 1;
 
-export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic" | StructureType;
+export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic" | "drone" | "pilot" | StructureType;
 /** Buildable defences (conquest): they share the unit machinery (targeting, damage, MG, gunner) but never move. */
 export type StructureType = "mgnest" | "bollard";
 
@@ -32,6 +32,8 @@ export interface UnitStats {
   mass: number;
   /** Built structure: stationary, placed near own outposts or the base. */
   structure?: boolean;
+  /** Flies (drone): not pushed around by ground units, ignores obstacles. */
+  flying?: boolean;
 }
 
 export const UNITS: Record<UnitType, UnitStats> = {
@@ -61,6 +63,16 @@ export const UNITS: Record<UnitType, UnitStats> = {
   bollard: {
     name: "Poller", plural: "Poller", cost: 50, buildTime: 2, hp: 260, speed: 0, turn: 0,
     range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 1.6, vehicle: true, mass: 1000, structure: true,
+  },
+  /** Commandos only: small FPV recon drone with a searchlight; cannot shoot. */
+  drone: {
+    name: "Drohne", plural: "Drohnen", cost: 0, buildTime: 0, hp: 20, speed: 7, turn: 4,
+    range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 0.6, vehicle: true, mass: 1, flying: true,
+  },
+  /** Commandos only: drone pilot, kneeling at his laptop at an outpost; his drone falls when he does. */
+  pilot: {
+    name: "Drohnenpilot", plural: "Drohnenpiloten", cost: 0, buildTime: 0, hp: 70, speed: 0, turn: 6,
+    range: 0, acquire: 0, damage: 0, cooldown: 1, radius: 0.55, vehicle: false, mass: 2,
   },
   /** Commandos only: special agent in coat and cap. Fragile but fast; only fires when ordered. */
   agent: {
@@ -132,6 +144,18 @@ export const COMMANDOS = {
    * when he stands in the light of a street lamp; a searchlight beam gives him away at once.
    */
   night: { dark: 0.55, lit: 1.25 },
+  /**
+   * Once more than `after` outposts are blown up the enemy turns aggressive: it notices the agent
+   * sooner in the dark (`dark`), alarms reach further (`alertScale`) and drones take off.
+   */
+  escalation: { after: 1, dark: 0.75, alertScale: 1.5 },
+  /**
+   * Recon drones: fly at `altitude` above the ground and notice the (uncloaked) agent only when their
+   * light catches him or he is right below them (`sight`); they keep him in their light while within
+   * `trackSight` and lose him after `lose` seconds out of view.
+   * The agent's rifle hits one only with `hitChance`, but a shot always draws its attention.
+   */
+  drones: { count: 2, altitude: 10.5, speed: 6.5, chase: 8.5, sight: 3.5, trackSight: 26, lose: 4, hitChance: 0.33, poolRadius: 3 },
   /** Searchlight beams sweep around each outpost (never farther than a soldier sees); the lit spot has this radius. */
   searchlight: { poolRadius: 3.4, near: 9, far: 17, lock: 4 },
   /** Enemy forces: guards per outpost, foot patrols (3 men each) and patrolling jeeps. */
@@ -166,7 +190,7 @@ export const ARTILLERY = {
 };
 
 /** How far units and structures of the player can see (fog of war). */
-export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, mgnest: 19, bollard: 3, barracks: 20, outpost: 13 };
+export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, mgnest: 19, bollard: 3, drone: 15, pilot: 10, barracks: 20, outpost: 13 };
 
 /** Grenades: area damage that also hurts friendly units (and the thrower) inside the blast. */
 export const GRENADE = {

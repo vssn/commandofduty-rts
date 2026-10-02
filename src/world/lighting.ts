@@ -71,6 +71,14 @@ function drape(m: Mesh, base: Float32Array | number[], terrain: Terrain, x: numb
   m.refreshBoundingInfo(); // otherwise it is culled at its old place
 }
 
+/** A soft glow on the ground at (x, z) (e.g. the screen light around a drone pilot). */
+export function createGlowSpot(scene: Scene, terrain: Terrain, x: number, z: number, r: number, color: RGB, alpha: number): Mesh {
+  const m = patch(scene, "glowSpot", r);
+  drape(m, m.getVerticesData("position")!, terrain, x, z);
+  m.material = glowMaterial(scene, "glowSpotMat", color, alpha);
+  return m;
+}
+
 export interface StreetLights {
   /** Lit spots on the ground (the agent is easy to see in them). */
   readonly pools: { x: number; z: number; r: number }[];
@@ -158,9 +166,10 @@ export function createStreetLights(scene: Scene, layout: MapLayout, terrain: Ter
  * spot follows the ground there.
  */
 export class Searchlight {
-  readonly x: number;
-  readonly z: number;
-  readonly y: number;
+  /** Ground position of the lamp (a drone's light moves along, see moveTo). */
+  x: number;
+  z: number;
+  y: number;
   /** Ground point the beam currently falls on. */
   tx = 0;
   tz = 0;
@@ -172,7 +181,20 @@ export class Searchlight {
   private readonly target = new Vector3();
   private static readonly HEAD = 2.3;
 
-  constructor(scene: Scene, private readonly terrain: Terrain, shadows: ShadowGenerator, x: number, z: number, readonly radius: number) {
+  /**
+   * `mounted`: no tripod and no housing (the light hangs under a drone, which brings its own lamp).
+   * `tint`: colours and strengths of beam and lit spot (default: a cold white searchlight).
+   */
+  constructor(
+    scene: Scene,
+    private readonly terrain: Terrain,
+    shadows: ShadowGenerator,
+    x: number,
+    z: number,
+    readonly radius: number,
+    mounted = false,
+    tint: { beam: RGB; beamAlpha: number; pool: RGB; poolAlpha: number } = { beam: [0.75, 0.82, 1], beamAlpha: 0.1, pool: [0.85, 0.9, 1], poolAlpha: 0.85 },
+  ) {
     this.x = x;
     this.z = z;
     this.y = terrain.heightAt(x, z);
@@ -180,7 +202,7 @@ export class Searchlight {
     const stand = new TransformNode("searchlight", scene);
     this.stand = stand;
     stand.position.set(x, this.y, z);
-    for (const a of [0, 2.1, -2.1]) {
+    for (const a of mounted ? [] : [0, 2.1, -2.1]) {
       const leg = MeshBuilder.CreateBox("slLeg", { width: 0.08, height: 2.3, depth: 0.08 }, scene);
       leg.position.set(Math.sin(a) * 0.45, 1.1, Math.cos(a) * 0.45);
       leg.rotation.set(-Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2);
@@ -195,6 +217,7 @@ export class Searchlight {
     housing.material = mat(scene, [0.3, 0.33, 0.28]);
     housing.parent = this.lamp;
     shadows.addShadowCaster(housing);
+    housing.setEnabled(!mounted);
     const glass = MeshBuilder.CreateDisc("slGlass", { radius: 0.35, tessellation: 14 }, scene);
     glass.position.z = 0.41;
     glass.rotation.y = Math.PI;
@@ -203,6 +226,7 @@ export class Searchlight {
     gm.disableLighting = true;
     glass.material = gm;
     glass.parent = this.lamp;
+    glass.setEnabled(!mounted);
 
     // beam: cone from the lamp (narrow end at the origin) along +z, length scaled per frame
     this.beam = MeshBuilder.CreateCylinder("slBeam", { height: 1, diameterTop: 0.6, diameterBottom: radius * 1.7, tessellation: 18, cap: Mesh.NO_CAP }, scene);
@@ -210,13 +234,13 @@ export class Searchlight {
     this.beam.bakeCurrentTransformIntoVertices();
     this.beam.rotation.x = -Math.PI / 2;
     this.beam.bakeCurrentTransformIntoVertices();
-    this.beam.material = glowMaterial(scene, "slBeamMat", [0.75, 0.82, 1], 0.1, false);
+    this.beam.material = glowMaterial(scene, "slBeamMat", tint.beam, tint.beamAlpha, false);
     this.beam.parent = this.lamp;
     this.beam.isPickable = false;
     for (const m of [housing, glass]) m.isPickable = false;
 
     this.pool = patch(scene, "slPool", radius * 1.3);
-    this.pool.material = glowMaterial(scene, "slPoolMat", [0.85, 0.9, 1], 0.85);
+    this.pool.material = glowMaterial(scene, "slPoolMat", tint.pool, tint.poolAlpha);
     this.poolBase = Float32Array.from(this.pool.getVerticesData("position")!);
   }
 
@@ -232,13 +256,22 @@ export class Searchlight {
     this.pool.setEnabled(on);
   }
 
+  /** Moves a mounted light's source (the lamp itself) to a point in the air. */
+  moveTo(x: number, y: number, z: number) {
+    this.x = x;
+    this.z = z;
+    this.y = y - Searchlight.HEAD;
+    this.lamp.position.set(x, y, z);
+  }
+
   aim(tx: number, tz: number) {
     this.tx = tx;
     this.tz = tz;
     const ty = this.terrain.heightAt(tx, tz);
     this.target.set(tx, ty, tz);
     this.lamp.lookAt(this.target);
-    const len = Math.hypot(tx - this.x, ty - (this.y + Searchlight.HEAD), tz - this.z);
+    const lp = this.lamp.position;
+    const len = Math.hypot(tx - lp.x, ty - lp.y, tz - lp.z);
     this.beam.scaling.set(1, 1, len);
     drape(this.pool, this.poolBase, this.terrain, tx, tz);
   }

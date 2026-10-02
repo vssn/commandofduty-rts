@@ -89,6 +89,9 @@ export class Unit implements Target {
   combatT = 99;
 
   // --- medic
+  /** Height above the ground (drones fly); used for drawing, aiming and picking. */
+  altitude = 0;
+
   // --- structure
   /** Seconds of construction left (structures); nothing works until it reaches 0. */
   buildT = 0;
@@ -149,7 +152,7 @@ export class Unit implements Target {
 
   /** Can currently shoot (a jeep needs a gunner, the medic never can). */
   get armed(): boolean {
-    if (this.type === "medic" || this.type === "bollard" || this.buildT > 0) return false;
+    if (this.type === "medic" || this.type === "bollard" || this.type === "drone" || this.type === "pilot" || this.buildT > 0) return false;
     return !this.hasMg || !!this.gunner;
   }
 
@@ -272,6 +275,13 @@ export class Unit implements Target {
     }
     if (this.type === "medic") {
       this.updateMedic(dt, g);
+      return;
+    }
+    // the drone is flown by the commandos mission; the pilot kneels at his laptop and stays put
+    if (this.type === "drone") return;
+    if (this.type === "pilot") {
+      this.stance = "kneel";
+      this.moving = false;
       return;
     }
 

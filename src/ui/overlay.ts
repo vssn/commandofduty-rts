@@ -67,7 +67,7 @@ export class Overlay {
   }
 
   unitScreenPos(u: Unit) {
-    return this.project(u.x, u.y + 1.2, u.z);
+    return this.project(u.x, u.y + u.altitude + 1.2, u.z);
   }
 
   draw(game: Game) {
@@ -188,7 +188,7 @@ export class Overlay {
     for (const u of game.units) {
       if (!u.alive || u.vehicle || u.fogHidden) continue;
       const jeep = u.isVehicle;
-      const p = this.projectDev(u.x, u.y + (jeep ? 3.9 : 3.1), u.z);
+      const p = this.projectDev(u.x, u.y + u.altitude + (u.stats.flying ? 1.2 : jeep ? 3.9 : 3.1), u.z);
       if (!p) continue;
       const w = (jeep ? 44 : 26) * s;
       this.bar(p.x, p.y, w, 4 * s, u.hp / u.maxHp, jeep ? 8 : 5, u.selected, u.team === PLAYER);

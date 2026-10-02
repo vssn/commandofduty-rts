@@ -47,6 +47,15 @@ leuchten aber nur in dieser Nacht. An jeder Stellung schwenkt ein **Standscheinw
 gerät der (ungetarnte) Agent hinein, folgt ihm der Kegel einige Sekunden, die Truppen in der Nähe eröffnen das Feuer
 bzw. rücken an. Drei zufällige Stellungen haben ein **besetztes MG-Nest** – getarnt kommt man daran vorbei.
 
+**Eskalation und Drohnen:** Sind zwei Stellungen gesprengt, ist der Feind alarmiert: er bemerkt den Agenten
+im Dunkeln früher, Alarm ruft Truppen aus 1,5-facher Entfernung, und zwei **Drohnen** (kleine FPV-Quadrokopter mit
+violettem Scheinwerfer, ~10 m Höhe) suchen das Gelände ab – bevorzugt nahe seiner frischen Spuren. Eine suchende Drohne
+entdeckt den ungetarnten Agenten nur, wenn ihr Lichtkegel ihn erfasst (oder er direkt unter ihr steht); dann hält sie ihn
+im Licht, er erscheint wie durch eine Wärmebildkamera (orange glühend), und sie ruft Truppen herbei, bis sie ihn einige
+Sekunden aus den Augen verliert. Drohnen schießen nicht. Ein Scharfschuss trifft sie mit 33 % – macht sie aber in jedem
+Fall auf ihn aufmerksam. Jede Drohne wird von einem **Drohnenpiloten** an einer zufälligen Stellung gesteuert (kniend, mit
+Headset und Laptop, schwach von seinem Bildschirm beleuchtet); fällt der Pilot, stürzt seine Drohne ab.
+
 **Sprengstoff:** Der Agent startet ohne Sprengsätze. Vier **Verstecke** mit je 3 Sprengsätzen liegen zufällig an
 Waldrändern (abseits der Stellungen); sie sind auf der Minimap und im Gelände gelb markiert und werden durch Betreten geleert.
 

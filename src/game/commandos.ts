@@ -2,7 +2,7 @@ import { Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh 
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
 import { toWorld, type V2 } from "../world/layout";
-import { Searchlight } from "../world/lighting";
+import { createGlowSpot, Searchlight } from "../world/lighting";
 import { createChargeMesh, mat } from "../world/models";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
@@ -26,6 +26,24 @@ interface Search { cx: number; cz: number; t0: number; until: number }
 /** Hidden explosives at the edge of a wood. */
 export interface Cache { x: number; z: number; taken: boolean; mesh: Mesh }
 interface Beam { light: Searchlight; post: Outpost; base: number; phase: number; lockT: number; alarmT: number }
+/** A recon drone, its pilot on the ground and its light. */
+interface Drone {
+  unit: Unit;
+  pilot: Unit;
+  light: Searchlight;
+  /** Screen glow around the pilot. */
+  glow: Mesh;
+  mode: "search" | "track";
+  /** Seconds the drone keeps following after losing sight of the agent. */
+  lockT: number;
+  wp: V2;
+  alarmT: number;
+  lastSeen: V2 | null;
+  down: boolean;
+}
+
+/** Units that walk about on orders (pilots stay at their laptop, drones are flown by the mission). */
+const grounded = (u: Unit) => u.type !== "drone" && u.type !== "pilot";
 
 /** Footprints stay readable this long (seconds). */
 const TRAIL_LIFE = 110;
@@ -62,6 +80,8 @@ export class CommandosMission {
   private spottedCooldown = 0;
   private chargeTpl!: Mesh;
   private agentMaterials: StandardMaterial[] = [];
+  /** Thermal-camera look on the agent while a drone has him (0..1). */
+  private thermal = 0;
   /** The agent's footprints, oldest first (none while cloaked). */
   readonly trail: Footprint[] = [];
   /** Mission clock in seconds. */
@@ -81,11 +101,16 @@ export class CommandosMission {
   streetPools: { x: number; z: number; r: number }[] = [];
   /** The mission failed because the clock ran out. */
   timeUp = false;
+  /** More than COMMANDOS.escalation.after outposts are gone: the enemy is on full alert, drones are up. */
+  aggressive = false;
+  readonly drones: Drone[] = [];
   private warnedTime = false;
 
   constructor(private readonly game: Game) {}
 
   get sniperCooldown() { return Math.max(0, this.sniperCd); }
+  /** Drones still in the air. */
+  get dronesActive() { return this.drones.filter((d) => !d.down).length; }
   /** Seconds left on the mission clock. */
   get timeLeft() { return Math.max(0, COMMANDOS.timeLimit - this.time); }
   get cloakCooldown() { return Math.max(0, this.cloakCd); }
@@ -187,7 +212,8 @@ export class CommandosMission {
     // night: in the dark the enemy notices the agent late, under a lamp early
     g.spotRange = (viewer, target, range) => {
       if (viewer.team !== ENEMY || target !== this.agent) return range;
-      return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : COMMANDOS.night.dark);
+      const dark = this.aggressive ? COMMANDOS.escalation.dark : COMMANDOS.night.dark;
+      return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : dark);
     };
     g.onKilled = (u) => {
       if (u.team === ENEMY) this.onEnemyKilled(u);
@@ -247,13 +273,21 @@ export class CommandosMission {
       g.nav.structure(b.light.x, b.light.z, 0.4, 0.4, 0, [0, 1], -1);
     }
     this.beams.length = 0;
+    for (const d of this.drones) {
+      d.light.dispose();
+      d.glow.dispose();
+    }
+    this.drones.length = 0;
     for (const c of this.caches) if (!c.taken) c.mesh.dispose();
     this.caches.length = 0;
     for (const c of this.planted) c.mesh.dispose();
     this.planted.length = 0;
     this.chargeTpl?.dispose();
     // the agent's templates keep their own materials; leave them fully opaque
-    for (const m of this.agentMaterials) m.alpha = 1;
+    for (const m of this.agentMaterials) {
+      m.alpha = 1;
+      m.emissiveColor.set(0, 0, 0);
+    }
     g.spotRange = null;
     g.onKilled = null;
   }
@@ -264,7 +298,7 @@ export class CommandosMission {
   private onEnemyKilled(u: Unit) {
     const death: Death = { x: u.x, z: u.z, t: this.time, found: false };
     this.deaths.push(death);
-    const heard = this.game.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && Math.hypot(o.x - u.x, o.z - u.z) < HEAR);
+    const heard = this.game.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && grounded(o) && Math.hypot(o.x - u.x, o.z - u.z) < HEAR);
     if (heard.length) this.discover(death, heard);
   }
 
@@ -272,7 +306,7 @@ export class CommandosMission {
     d.found = true;
     // everybody around the finders joins the search of the area around the body
     const team = this.game.units.filter(
-      (o) => o.alive && o.team === ENEMY && !o.vehicle && finders.some((f) => Math.hypot(f.x - o.x, f.z - o.z) < HEAR),
+      (o) => o.alive && o.team === ENEMY && !o.vehicle && grounded(o) && finders.some((f) => Math.hypot(f.x - o.x, f.z - o.z) < HEAR),
     );
     for (const o of team) this.startSearch(o, d.x, d.z);
     if (team.length && this.searchMsgCooldown <= 0) {
@@ -317,7 +351,7 @@ export class CommandosMission {
     const g = this.game;
     for (const d of this.deaths) {
       if (d.found || this.time - d.t > 90) continue;
-      const finders = g.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && Math.hypot(o.x - d.x, o.z - d.z) < FIND);
+      const finders = g.units.filter((o) => o.alive && o.team === ENEMY && !o.vehicle && grounded(o) && Math.hypot(o.x - d.x, o.z - d.z) < FIND);
       if (finders.length) this.discover(d, finders);
     }
   }
@@ -423,12 +457,28 @@ export class CommandosMission {
     a.stop();
     a.heading = Math.atan2(target.x - a.x, target.z - a.z);
     a.recoil = 1;
+    if (target.type === "drone") {
+      // a small, fast target: rarely hit - but the shot always draws the drone onto him
+      const hit = Math.random() < COMMANDOS.drones.hitChance;
+      g.addTracer(a, target, hit, "sniper");
+      const d = this.drones.find((dr) => dr.unit === target);
+      if (d) {
+        d.mode = "track";
+        d.lockT = COMMANDOS.drones.lose;
+        d.lastSeen = { x: a.x, z: a.z };
+      }
+      if (hit) {
+        g.damage(target, 9999, a);
+        g.emit("targetEliminated", PLAYER);
+      }
+      return true;
+    }
     g.addTracer(a, target, true, "sniper");
     g.damage(target, target.isVehicle ? COMMANDOS.sniper.vehicleDamage : 9999, a);
     if (!target.alive) g.emit("targetEliminated", PLAYER);
     // comrades near the victim hear the shot and go looking at the victim's position
     for (const u of g.units) {
-      if (u.alive && u.team === ENEMY && !u.vehicle && !u.target && Math.hypot(u.x - target.x, u.z - target.z) < 18) {
+      if (u.alive && u.team === ENEMY && !u.vehicle && grounded(u) && !u.target && Math.hypot(u.x - target.x, u.z - target.z) < 18) {
         u.orderMove(g.nav.freePoint(target.x + (Math.random() - 0.5) * 4, target.z + (Math.random() - 0.5) * 4, u.navLayer), true, g);
       }
     }
@@ -542,12 +592,15 @@ export class CommandosMission {
     // cloak: the agent fades out while invisible
     const alpha = a.cloaked ? 0.22 : 1;
     for (const m of this.agentMaterials) m.alpha += (alpha - m.alpha) * Math.min(1, dt * 8);
+    this.updateThermal(dt);
 
     this.updateHunt(dt);
     this.updatePlanting(dt);
     this.updateCharges(dt);
     this.updatePatrols(dt);
     this.updateBeams(dt);
+    if (!this.aggressive && this.destroyedOutposts > COMMANDOS.escalation.after) this.escalate();
+    this.updateDrones(dt);
     this.updateAlert(dt);
     this.updateCaches();
 
@@ -646,6 +699,7 @@ export class CommandosMission {
   /** Whether (x, z) lies in the light of a street lamp or a searchlight beam. */
   isLit(x: number, z: number): boolean {
     if (this.streetPools.some((p) => Math.hypot(p.x - x, p.z - z) < p.r)) return true;
+    if (this.drones.some((d) => !d.down && Math.hypot(d.light.tx - x, d.light.tz - z) < d.light.radius)) return true;
     return this.beams.some((b) => !b.post.destroyed && Math.hypot(b.light.tx - x, b.light.tz - z) < b.light.radius);
   }
 
@@ -706,14 +760,157 @@ export class CommandosMission {
       b.alarmT -= dt;
       if (b.lockT > 0 && a.alive && !a.cloaked && b.alarmT <= 0) {
         b.alarmT = 3;
-        for (const u of g.units) {
-          if (!u.alive || u.team !== ENEMY || u.vehicle || !u.armed) continue;
-          const d = Math.hypot(u.x - a.x, u.z - a.z);
-          if (d <= u.stats.acquire + 4) u.target = a; // in range: open fire
-          else if (!u.isStructure && Math.hypot(u.x - b.light.x, u.z - b.light.z) < 35) {
-            u.orderMove(g.nav.freePoint(a.x + (Math.random() - 0.5) * 6, a.z + (Math.random() - 0.5) * 6, u.navLayer), true, g);
-          }
+        this.rally(b.light.x, b.light.z, 35);
+      }
+    }
+  }
+
+  /**
+   * The agent was caught in a light: troops in range open fire, those within `radius` of the light
+   * close in on him.
+   */
+  private rally(x: number, z: number, radius: number) {
+    const g = this.game, a = this.agent;
+    for (const u of g.units) {
+      if (!u.alive || u.team !== ENEMY || u.vehicle || !u.armed) continue;
+      const d = Math.hypot(u.x - a.x, u.z - a.z);
+      if (d <= u.stats.acquire + 4) u.target = a; // in range: open fire
+      else if (!u.isStructure && grounded(u) && Math.hypot(u.x - x, u.z - z) < radius) {
+        u.orderMove(g.nav.freePoint(a.x + (Math.random() - 0.5) * 6, a.z + (Math.random() - 0.5) * 6, u.navLayer), true, g);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- drones
+
+  /** More than two outposts lost: the enemy goes on full alert and launches its recon drones. */
+  private escalate() {
+    const g = this.game, D = COMMANDOS.drones;
+    this.aggressive = true;
+    const posts = g.outposts.filter((o) => !o.destroyed).sort(() => Math.random() - 0.5);
+    if (!posts.length) return;
+    for (let i = 0; i < D.count; i++) {
+      // each drone's pilot kneels at his laptop at a random outpost
+      const o = posts[i % posts.length];
+      const ang = Math.random() * Math.PI * 2;
+      const p = g.nav.freePoint(o.x + Math.cos(ang) * o.radius * 0.5, o.z + Math.sin(ang) * o.radius * 0.5);
+      const pilot = g.spawnUnit("pilot", ENEMY, p.x, p.z);
+      pilot.heading = Math.random() * Math.PI * 2;
+      pilot.stance = "kneel";
+      // his screen and headset light up the ground around him a little
+      const glow = createGlowSpot(g.scene, g.terrain, p.x + Math.sin(pilot.heading) * 0.7, p.z + Math.cos(pilot.heading) * 0.7, 2.2, [0.45, 0.75, 1], 0.45);
+      const unit = g.spawnUnit("drone", ENEMY, p.x, p.z);
+      unit.altitude = D.altitude;
+      unit.aimY = D.altitude;
+      // a dimmer, violet light (infrared-ish)
+      const light = new Searchlight(g.scene, g.terrain, g.shadows, p.x, p.z, D.poolRadius, true, {
+        beam: [0.5, 0.28, 0.85], beamAlpha: 0.07, pool: [0.55, 0.3, 0.95], poolAlpha: 0.55,
+      });
+      this.drones.push({ unit, pilot, light, glow, mode: "search", lockT: 0, wp: this.droneWaypoint(), alarmT: 0, lastSeen: null, down: false });
+    }
+    g.emit("dronesLaunched", PLAYER);
+  }
+
+  /**
+   * While a drone has the agent in sight he is shown as through its thermal camera: his body glows
+   * orange-red, the warm skin almost white-yellow, with a slight flicker.
+   */
+  private updateThermal(dt: number) {
+    const a = this.agent;
+    const seen = a.alive && !a.cloaked && this.drones.some((d) => !d.down && d.mode === "track" && d.lockT >= COMMANDOS.drones.lose - 0.05);
+    this.thermal += ((seen ? 1 : 0) - this.thermal) * Math.min(1, dt * 5);
+    const k = this.thermal * (0.9 + Math.sin(this.time * 23) * 0.1);
+    for (const m of this.agentMaterials) {
+      const c = m.diffuseColor;
+      // warmer where the surface is lighter (skin) - a rough heat map
+      const heat = Math.min(1, (c.r * 0.5 + c.g * 0.3 + c.b * 0.2) * 1.6);
+      m.emissiveColor.set(k * (1.0), k * (0.35 + heat * 0.55), k * (0.08 + heat * 0.35));
+    }
+  }
+
+  /** Where a searching drone looks next: half the time near the agent's freshest tracks, else anywhere. */
+  private droneWaypoint(near?: V2): V2 {
+    const lim = MAP_HALF - 12;
+    const trail = this.trail[this.trail.length - 1];
+    const c = near ?? (trail && Math.random() < 0.5 ? trail : null);
+    if (c) return { x: Math.max(-lim, Math.min(lim, c.x + (Math.random() - 0.5) * 40)), z: Math.max(-lim, Math.min(lim, c.z + (Math.random() - 0.5) * 40)) };
+    return { x: (Math.random() * 2 - 1) * lim, z: (Math.random() * 2 - 1) * lim };
+  }
+
+  /**
+   * Drones sweep the map with their light. One that sees the (uncloaked) agent keeps him in its
+   * beam and calls in the troops; it loses him after a few seconds out of view. If its pilot dies
+   * the link is lost and the drone falls out of the sky.
+   */
+  private updateDrones(dt: number) {
+    const g = this.game, a = this.agent, D = COMMANDOS.drones;
+    for (const d of this.drones) {
+      const u = d.unit;
+      if (d.down) continue;
+      if (!d.pilot.alive && u.alive) g.damage(u, 9999, null); // link lost
+      if (!d.pilot.alive) d.glow.setEnabled(false);
+      if (!u.alive) {
+        d.down = true;
+        d.light.setEnabled(false);
+        g.emit("droneDown", PLAYER);
+        continue;
+      }
+      const dist = Math.hypot(a.x - u.x, a.z - u.z);
+      // searching, it only finds him in its light (or right below it); once on him it holds on longer
+      const inLight = Math.hypot(a.x - d.light.tx, a.z - d.light.tz) < d.light.radius;
+      const sees = a.alive && !a.cloaked && (d.mode === "track" ? dist < D.trackSight : inLight || dist < D.sight);
+      if (sees) {
+        d.mode = "track";
+        d.lockT = D.lose;
+        d.lastSeen = { x: a.x, z: a.z };
+      } else if (d.mode === "track") {
+        d.lockT -= dt;
+        if (d.lockT <= 0) {
+          d.mode = "search";
+          d.wp = this.droneWaypoint(d.lastSeen ?? undefined);
         }
+      }
+      // fly: hang back a few metres from the agent while tracking, otherwise towards the waypoint
+      let tx: number, tz: number, speed: number;
+      if (d.mode === "track" && d.lastSeen) {
+        const back = Math.hypot(u.x - d.lastSeen.x, u.z - d.lastSeen.z) || 1;
+        tx = d.lastSeen.x + ((u.x - d.lastSeen.x) / back) * 4;
+        tz = d.lastSeen.z + ((u.z - d.lastSeen.z) / back) * 4;
+        speed = D.chase;
+      } else {
+        if (Math.hypot(d.wp.x - u.x, d.wp.z - u.z) < 3) d.wp = this.droneWaypoint();
+        tx = d.wp.x;
+        tz = d.wp.z;
+        speed = D.speed;
+      }
+      const dx = tx - u.x, dz = tz - u.z, len = Math.hypot(dx, dz);
+      if (len > 0.05) {
+        const step = Math.min(len, speed * dt);
+        u.x += (dx / len) * step;
+        u.z += (dz / len) * step;
+        const want = Math.atan2(dx, dz);
+        let turn = want - u.heading;
+        while (turn > Math.PI) turn -= Math.PI * 2;
+        while (turn < -Math.PI) turn += Math.PI * 2;
+        u.heading += Math.max(-dt * 3, Math.min(dt * 3, turn));
+      }
+      // the light: on the agent while tracking, otherwise sweeping the ground ahead of the drone
+      const ground = g.terrain.heightAt(u.x, u.z);
+      d.light.moveTo(u.x, ground + D.altitude - 0.2, u.z);
+      if (d.mode === "track" && d.lastSeen) {
+        d.light.aim(sees ? a.x : d.lastSeen.x, sees ? a.z : d.lastSeen.z);
+      } else {
+        const t = this.time * 1.3 + u.id;
+        d.light.aim(u.x + Math.sin(u.heading) * 5 + Math.cos(t) * 2.5, u.z + Math.cos(u.heading) * 5 + Math.sin(t) * 2.5);
+      }
+      d.alarmT -= dt;
+      if (d.mode === "track" && sees && d.alarmT <= 0) {
+        d.alarmT = 3;
+        if (this.spottedCooldown <= 0) {
+          g.emit("spotted", PLAYER);
+          this.spottedCooldown = 12;
+        }
+        this.rally(u.x, u.z, 45);
       }
     }
   }
@@ -731,9 +928,11 @@ export class CommandosMission {
     }
     if (this.alertT > 12) return; // re-issue the hunt every few seconds while he is in sight
     this.alertT = 15;
+    // on full alert the call reaches further
+    const radius = COMMANDOS.alertRadius * (this.aggressive ? COMMANDOS.escalation.alertScale : 1);
     for (const u of g.units) {
-      if (!u.alive || u.team !== ENEMY || u.vehicle || u.target) continue;
-      if (Math.hypot(u.x - spotter.x, u.z - spotter.z) > COMMANDOS.alertRadius) continue;
+      if (!u.alive || u.team !== ENEMY || u.vehicle || u.target || !grounded(u)) continue;
+      if (Math.hypot(u.x - spotter.x, u.z - spotter.z) > radius) continue;
       u.orderMove(g.nav.freePoint(a.x + (Math.random() - 0.5) * 6, a.z + (Math.random() - 0.5) * 6, u.navLayer), true, g);
     }
   }

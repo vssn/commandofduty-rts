@@ -18,6 +18,8 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   tracked: "Man folgt unserer Spur",
   cacheFound: "Sprengstoff aufgenommen",
   timeWarning: "Noch eine Minute",
+  dronesLaunched: "Feindliche Drohnen gestartet",
+  droneDown: "Drohne ausgeschaltet",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",
