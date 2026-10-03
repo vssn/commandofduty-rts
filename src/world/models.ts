@@ -1,4 +1,4 @@
-import { Color3, DynamicTexture, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Texture, Vector3, VertexData } from "@babylonjs/core";
+import { Color3, DynamicTexture, Material, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Texture, Vector3, VertexData } from "@babylonjs/core";
 import { PLAYER, type OutpostKind, type Team } from "../config";
 import type { RGB } from "./layout";
 import { brickBox } from "./masonry";
@@ -6,9 +6,14 @@ import { brickBox } from "./masonry";
 const matCache = new Map<string, StandardMaterial>();
 
 /** Shared flat material (no textures, no specular). */
-export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean } = {}): StandardMaterial {
+/** Real-world material a part is made of: the realistic graphics mode gives it a matching texture. */
+export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth";
+/** Picks the surface kind of a part by its colour (undefined = plain). */
+export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
+
+export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind } = {}): StandardMaterial {
   // materials belong to a scene, so the cache is per scene (the build-menu portraits use their own)
-  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "");
+  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "");
   let m = matCache.get(key);
   if (!m) {
     m = new StandardMaterial("m" + key, scene);
@@ -19,6 +24,7 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
       m.disableLighting = true;
     }
     if (opts.twoSided) m.backFaceCulling = false;
+    if (opts.surface) m.metadata = { surface: opts.surface };
     matCache.set(key, m);
   }
   return m;
@@ -110,12 +116,12 @@ export const TEAM_COLOR: Record<Team, RGB> = { 0: [0.22, 0.44, 0.95], 1: [0.9, 0
 
 export type PartFn = (w: number, h: number, d: number, x: number, y: number, z: number, c: RGB, rx?: number, ry?: number) => Mesh;
 
-export function partBuilder(scene: Scene, parts: Mesh[]): PartFn {
+export function partBuilder(scene: Scene, parts: Mesh[], surfaceOf?: SurfaceOf): PartFn {
   return (w, h, d, x, y, z, c, rx = 0, ry = 0) => {
     const m = MeshBuilder.CreateBox("part", { width: w, height: h, depth: d }, scene);
     m.position.set(x, y, z);
     m.rotation.set(rx, ry, 0);
-    m.material = mat(scene, c);
+    m.material = mat(scene, c, { surface: surfaceOf?.(c) });
     parts.push(m);
     return m;
   };
@@ -592,9 +598,33 @@ export const HOSPITAL_TENT = { x: -0.8, z: -0.8, hw: 2.3, hd: 2.1 };
 /** Radome dimensions shared by the model and its warning light. */
 export const RADAR_DIM = { drumH: 2.4, drumR: 2.2, domeR: 2.9, domeY: 4.5 };
 
+/** What the outposts' parts are made of, by colour (for the textures of the realistic mode). */
+const OUTPOST_SURFACES = new Map<string, SurfaceKind>([
+  ["0.68,0.6,0.43", "fabric"], // sandbags
+  ["0.42,0.44,0.28", "fabric"], // stretcher canvas
+  ["0.45,0.32,0.2", "wood"],
+  ["0.32,0.23,0.15", "wood"],
+  ["0.5,0.37,0.22", "wood"], // crates
+  ["0.4,0.3,0.22", "wood"], // tower roof
+  ["0.58,0.56,0.5", "concrete"],
+  ["0.55,0.53,0.48", "concrete"],
+  ["0.6,0.59,0.55", "concrete"],
+  ["0.42,0.42,0.4", "concrete"],
+  ["0.46,0.48,0.5", "metal"], // workshop roof
+  ["0.44,0.47,0.36", "metal"], // radar hut
+  ["0.3,0.3,0.28", "metal"],
+  ["0.32,0.38,0.24", "metal"], // generator
+  ["0.28,0.36,0.22", "metal"], // water drums
+  ["0.55,0.22,0.14", "metal"], // oil barrels
+  ["0.8,0.6,0.15", "metal"], // crane
+  ["0.44,0.4,0.26", "earth"],
+  ["0.36,0.27,0.18", "earth"],
+]);
+const outpostSurface: SurfaceOf = (c) => OUTPOST_SURFACES.get(c.join(","));
+
 export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
   const parts: Mesh[] = [];
-  const box = partBuilder(scene, parts);
+  const box = partBuilder(scene, parts, outpostSurface);
   const sand: RGB = [0.68, 0.6, 0.43];
   const wood: RGB = [0.45, 0.32, 0.2];
   const darkWood: RGB = [0.32, 0.23, 0.15];
@@ -605,7 +635,7 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     const m = MeshBuilder.CreateCylinder("cyl", { height: h, diameter: d, tessellation: 8 }, scene);
     m.position.set(x, y, z);
     m.rotation.z = rz;
-    m.material = mat(scene, c);
+    m.material = mat(scene, c, { surface: outpostSurface(c) });
     parts.push(m);
   };
 
@@ -619,7 +649,7 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     const tent = createGable("wardTent", scene);
     tent.scaling.set(T.hw * 2, 2.8, T.hd * 2);
     tent.position.set(T.x, 0.3, T.z);
-    tent.material = mat(scene, canvas, { twoSided: true });
+    tent.material = mat(scene, canvas, { twoSided: true, surface: "fabric" });
     parts.push(tent);
     /** Red cross on a white field; `rz` tilts it onto a roof slope, `ry` turns it to face along x. */
     const redCross = (x: number, y: number, z: number, size: number, rz: number, ry = 0) => {
@@ -722,7 +752,7 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     const roof = createGable("workshopRoof", scene);
     roof.scaling.set(7.8, 1.3, 6.6);
     roof.position.y = 3.85;
-    roof.material = mat(scene, [0.46, 0.48, 0.5], { twoSided: true });
+    roof.material = mat(scene, [0.46, 0.48, 0.5], { twoSided: true, surface: "metal" });
     parts.push(roof);
     // gantry crane over the bay
     box(0.2, 3.2, 0.2, -2.6, 1.85, 2.2, [0.8, 0.6, 0.15]);
@@ -749,7 +779,7 @@ export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
     const roof = createGable("towerRoof", scene);
     roof.scaling.set(4.2, 1.4, 4.2);
     roof.position.y = 7.6;
-    roof.material = mat(scene, [0.4, 0.3, 0.22], { twoSided: true });
+    roof.material = mat(scene, [0.4, 0.3, 0.22], { twoSided: true, surface: "wood" });
     parts.push(roof);
     box(0.2, 5, 0.2, 0.6, 2.4, 1.9, darkWood, 0.25); // ladder rails
     box(0.2, 5, 0.2, -0.6, 2.4, 1.9, darkWood, 0.25);
@@ -1043,11 +1073,21 @@ export function createExplosionTemplates(scene: Scene): ExplosionTemplates {
     m.material = mat(scene, c, { emissive });
     return m;
   };
+  /** Fading puff: its own blending material; every puff is a copy whose visibility thins it out. */
+  const fading = (name: string, c: RGB) => {
+    const m = MeshBuilder.CreateIcoSphere(name, { radius: 1, subdivisions: 1, flat: true }, scene);
+    const mt = new StandardMaterial(`${name}Mat`, scene);
+    mt.diffuseColor = new Color3(c[0], c[1], c[2]);
+    mt.specularColor = Color3.Black();
+    mt.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    m.material = mt;
+    return m;
+  };
   const flash = ico("flash", [1, 0.55, 0.16], true); // orange fireball
   const core = ico("flashCore", [1, 0.93, 0.62], true); // white-hot core
-  const smoke = ico("smoke", [0.62, 0.58, 0.52]);
-  const darkSmoke = ico("darkSmoke", [0.28, 0.26, 0.24]); // lingering column of dark smoke
-  const dust = ico("dust", [0.58, 0.5, 0.38]); // earth thrown up, crawling along the ground
+  const smoke = fading("smoke", [0.62, 0.58, 0.52]);
+  const darkSmoke = fading("darkSmoke", [0.28, 0.26, 0.24]); // lingering column of dark smoke
+  const dust = fading("dust", [0.58, 0.5, 0.38]); // earth thrown up, crawling along the ground
   const debris = MeshBuilder.CreateBox("debris", { width: 0.34, height: 0.2, depth: 0.26 }, scene);
   debris.material = mat(scene, [0.3, 0.23, 0.16]);
   const spark = MeshBuilder.CreateBox("spark", { width: 0.12, height: 0.12, depth: 0.36 }, scene);
@@ -1063,6 +1103,9 @@ export function createExplosionTemplates(scene: Scene): ExplosionTemplates {
   sm.diffuseColor = new Color3(0.27, 0.22, 0.17);
   sm.specularColor = Color3.Black();
   sm.zOffset = -6;
+  // every mark is its own mesh draped over the ground, fading out through its visibility
+  sm.transparencyMode = Material.MATERIAL_ALPHABLEND;
+  sm.disableDepthWrite = true;
   scorch.material = sm;
   for (const m of [flash, core, smoke, darkSmoke, dust, debris, spark, ring, scorch]) {
     m.isPickable = false;

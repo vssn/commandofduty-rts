@@ -1,27 +1,29 @@
 import { Axis, Matrix, MeshBuilder, Quaternion, Scene, StandardMaterial, Color3, Vector3 } from "@babylonjs/core";
 import { rng } from "../util/noise";
 import { toWorld, type Field, type MapLayout, type RGB } from "./layout";
+import type { CropKind, RealisticCrops } from "./floraPbr";
 import type { Terrain } from "./terrain";
 
 /** Distance between crop rows (across the furrows) and between plants along a row. */
 const ROW = 0.6;
 const STEP = 0.55;
 
-/** Crop height range by how the field looks: ploughed soil gets low clods, green fields tall shoots. */
-function cropHeight(f: Field): [number, number] {
+/** What grows on a field, by how it looks: green shoots, ploughed soil (clods) or ripe cereal. */
+function cropKind(f: Field): CropKind {
   const [r, g, b] = f.base;
-  const green = g > r * 1.05;
-  const dark = r + g + b < 1.15;
-  if (green) return [0.25, 0.6];
-  if (dark) return [0.05, 0.16];
-  return [0.12, 0.38];
+  if (g > r * 1.05) return "shoots";
+  if (r + g + b < 1.15) return "clods";
+  return "cereal";
 }
+
+/** Crop height range by kind: ploughed soil gets low clods, green fields tall shoots. */
+const CROP_HEIGHT: Record<CropKind, [number, number]> = { shoots: [0.25, 0.6], clods: [0.05, 0.16], cereal: [0.12, 0.38] };
 
 /**
  * Covers every field with small square tufts of varying height, laid out in rows along the
  * furrow stripes and tinted like the stripe below. One thin-instanced box with per-instance colour.
  */
-export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain) {
+export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain, realistic?: RealisticCrops) {
   const r = rng(314);
   const box = MeshBuilder.CreateBox("crop", { size: 1 }, scene);
   box.position.y = 0.5;
@@ -35,7 +37,8 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain) {
   const colors: number[] = [];
   const m = new Matrix();
   for (const f of layout.fields) {
-    const [hMin, hMax] = cropHeight(f);
+    const kind = cropKind(f);
+    const [hMin, hMax] = CROP_HEIGHT[kind];
     const q = Quaternion.RotationAxis(Axis.Y, f.rot);
     // rows run along the local z axis, i.e. along the furrow stripes
     for (let lx = -f.hw + ROW / 2; lx < f.hw; lx += ROW) {
@@ -52,7 +55,9 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain) {
         matrices.push(...m.asArray());
         // tufts are a little lighter than the soil stripe, with some variation
         const k = 1.08 + (r() - 0.5) * 0.22;
-        colors.push(Math.min(1, c[0] * k), Math.min(1, c[1] * k * 1.02), Math.min(1, c[2] * k * 0.95), 1);
+        const col: [number, number, number, number] = [Math.min(1, c[0] * k), Math.min(1, c[1] * k * 1.02), Math.min(1, c[2] * k * 0.95), 1];
+        colors.push(...col);
+        realistic?.add(kind, m, col);
       }
     }
   }
@@ -63,5 +68,6 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain) {
   box.isPickable = false;
   box.receiveShadows = true;
   box.freezeWorldMatrix();
+  realistic?.classic.push(box);
   return matrices.length / 16;
 }

@@ -30,6 +30,7 @@
               <span class="slider-value" data-music-value></span>
             </label>
             <button id="pause-sfx" class="menu-btn">Effekte &amp; Funk: an</button>
+            <button id="pause-graphics" class="menu-btn" data-graphics>Grafik: Klassisch</button>
             <button id="pause-resume" class="menu-btn primary">Weiter</button>
             <button id="pause-quit" class="menu-btn">Zum Hauptmenü</button>
           </div>
@@ -81,11 +82,20 @@
               <nav class="menu-nav">
                 <button id="menu-new" class="menu-btn primary">Neues Spiel</button>
                 <button id="menu-controls" class="menu-btn">Steuerung</button>
+                <button id="menu-settings-open" class="menu-btn">Einstellungen</button>
+                <button id="menu-fullscreen" class="menu-btn">Vollbild ein</button>
+              </nav>
+            </div>
+            <div id="menu-settings" hidden>
+              <h2 class="menu-sub">Einstellungen</h2>
+              <nav class="menu-nav">
                 <label class="menu-btn menu-slider" for="menu-music">
                   <span class="slider-label">Musik</span>
                   <input id="menu-music" type="range" min="0" max="4" step="1" />
                   <span id="menu-music-value" class="slider-value" data-music-value></span>
                 </label>
+                <button id="menu-graphics" class="menu-btn" data-graphics>Grafik: Klassisch</button>
+                <button id="menu-settings-back" class="menu-btn menu-back">‹ Zurück</button>
               </nav>
             </div>
             <div id="menu-modes" hidden>

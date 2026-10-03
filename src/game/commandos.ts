@@ -1,4 +1,5 @@
 import { Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh } from "@babylonjs/core";
+import { classicMaterial } from "../world/pbr";
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
 import { toWorld, type V2 } from "../world/layout";
@@ -450,12 +451,14 @@ export class CommandosMission {
         this.agentMaterials.push(c);
         return c;
       };
-      if (src.material instanceof MultiMaterial) {
-        const mm = src.material.clone(`${src.material.name}-agent`) as MultiMaterial;
-        mm.subMaterials = src.material.subMaterials.map((s) => (s instanceof StandardMaterial ? own(s) : s));
+      // (with PBR graphics the classic materials are cloned; the PBR mode converts the clones)
+      const mat = src.material && classicMaterial(src.material);
+      if (mat instanceof MultiMaterial) {
+        const mm = mat.clone(`${mat.name}-agent`) as MultiMaterial;
+        mm.subMaterials = mat.subMaterials.map((s) => (s && classicMaterial(s) instanceof StandardMaterial ? own(classicMaterial(s) as StandardMaterial) : s));
         src.material = mm;
-      } else if (src.material instanceof StandardMaterial) {
-        src.material = own(src.material);
+      } else if (mat instanceof StandardMaterial) {
+        src.material = own(mat);
       }
     }
   }

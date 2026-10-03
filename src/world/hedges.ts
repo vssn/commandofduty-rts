@@ -2,6 +2,7 @@ import { Axis, Matrix, MeshBuilder, Quaternion, Scene, ShadowGenerator, Vector3 
 import { rng } from "../util/noise";
 import { toWorld, type MapLayout, type RGB } from "./layout";
 import { mat } from "./models";
+import type { RealisticHedges } from "./floraPbr";
 import type { Terrain } from "./terrain";
 
 const HEDGE: RGB = [0.3, 0.36, 0.16];
@@ -12,7 +13,7 @@ export interface HedgePiece { x: number; z: number; rot: number; hw: number; hd:
  * Hedgerows along some field edges (roads and fields themselves are painted into the terrain).
  * Returns all hedge pieces (used for cover and as obstacles).
  */
-export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator): HedgePiece[] {
+export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator, realistic?: RealisticHedges): HedgePiece[] {
   const r = rng(7);
   const hedge = MeshBuilder.CreateBox("hedge", { width: 1, height: 1, depth: 1 }, scene);
   hedge.convertToFlatShadedMesh();
@@ -43,6 +44,7 @@ export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, 
           new Vector3(p.x, terrain.heightAt(p.x, p.z) + h / 2 - 0.15, p.z),
         );
         data.push(...m.asArray());
+        realistic?.add(m, HEDGE);
         hedgePositions.push({ x: p.x, z: p.z, rot, hw: 1.4, hd: depth / 2 });
       }
     }
@@ -52,5 +54,6 @@ export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, 
   hedge.isPickable = false;
   hedge.receiveShadows = true;
   shadows.addShadowCaster(hedge);
+  realistic?.classic.push(hedge);
   return hedgePositions;
 }

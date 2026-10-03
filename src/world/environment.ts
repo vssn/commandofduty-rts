@@ -109,5 +109,5 @@ export function createEnvironment(scene: Scene) {
     ip.vignetteColor = new Color4(0.01, 0.02, 0.05, 0);
   };
 
-  return { sun, shadows, followFocus, setNight, get haze() { return env.haze; } };
+  return { sun, hemi, shadows, followFocus, setNight, get haze() { return env.haze; } };
 }

@@ -5,6 +5,7 @@ import { rng, valueNoise } from "../util/noise";
 import { HOUSE_BODY, HOUSE_ROOF, toWorld, type MapLayout, type RGB } from "./layout";
 import { brickBox, brickFaceUV, brickMaterial, createRoofTiles, type RoofSpec } from "./masonry";
 import { createGable, mat } from "./models";
+import type { RealisticTrees } from "./floraPbr";
 import type { Terrain } from "./terrain";
 
 export interface TreeInfo { x: number; z: number; conifer: boolean; color: RGB }
@@ -115,7 +116,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
   }
 }
 
-export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator): TreeInfo[] {
+export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator, realistic?: RealisticTrees): TreeInfo[] {
   const r = rng(99);
   const trunkTpl = MeshBuilder.CreateCylinder("trunk", { height: 2.4, diameterTop: 0.22, diameterBottom: 0.38, tessellation: 5 }, scene);
   trunkTpl.position.y = 1.2;
@@ -157,10 +158,12 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     if (conifer) {
       conifers.add(m);
       trees.push({ x, z, conifer, color: CONIFER });
+      realistic?.add(m, true, CONIFER);
     } else {
       const ci = Math.floor(r() * CANOPY.length);
       canopies[ci].add(m);
       trees.push({ x, z, conifer, color: CANOPY[ci] });
+      realistic?.add(m, false, CANOPY[ci]);
     }
   };
 
@@ -205,5 +208,6 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
   trunks.finish(shadows);
   canopies.forEach((c) => c.finish(shadows));
   conifers.finish(shadows);
+  realistic?.classic.push(trunks.mesh, ...canopies.map((c) => c.mesh), conifers.mesh);
   return trees;
 }

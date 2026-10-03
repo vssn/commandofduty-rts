@@ -1,6 +1,7 @@
-import type { InstancedMesh, Mesh, Scene, ShadowGenerator } from "@babylonjs/core";
+import { Mesh, VertexData, type AbstractMesh, type InstancedMesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { GRENADE, UNITS } from "../config";
 import { createExplosionTemplates, createGrenadeTemplate, type ExplosionTemplates } from "../world/models";
+import { RealisticBlasts } from "./blastFx";
 import type { Game } from "./game";
 import type { Unit } from "./unit";
 
@@ -24,7 +25,7 @@ type PuffKind = "flash" | "smoke" | "debris" | "spark" | "ring" | "dust";
 /** One animated piece of an explosion. `delay` staggers its start (hidden until then). */
 interface Puff {
   kind: PuffKind;
-  mesh: InstancedMesh;
+  mesh: AbstractMesh;
   t: number;
   delay: number;
   life: number;
@@ -37,7 +38,11 @@ interface Puff {
 
 /** Gravity for flung debris and sparks (world units / s²). */
 const GRAVITY = 24;
-interface Scorch { mesh: InstancedMesh; t: number; size: number }
+interface Scorch { mesh: Mesh; t: number }
+
+/** Scorch marks / craters stay fully visible for a moment, then fade out over a minute. */
+const SCORCH_HOLD = 5;
+const SCORCH_FADE = 60;
 
 /** Grenades in flight, explosions and their leftovers. */
 export class Effects {
@@ -46,6 +51,8 @@ export class Effects {
   private readonly grenades: Grenade[] = [];
   private readonly puffs: Puff[] = [];
   private readonly scorches: Scorch[] = [];
+  /** Particle explosions of the realistic graphics mode (switched on by the PBR mode). */
+  readonly real: RealisticBlasts;
   /** Called for every explosion (sound, screen feedback). */
   onExplosion: ((x: number, z: number, size: number) => void) | null = null;
 
@@ -55,11 +62,13 @@ export class Effects {
     for (const p of this.puffs) p.mesh.dispose();
     for (const s of this.scorches) s.mesh.dispose();
     this.grenades.length = this.puffs.length = this.scorches.length = 0;
+    this.real.clear();
   }
 
-  constructor(scene: Scene, shadows: ShadowGenerator, private readonly game: Game) {
+  constructor(private readonly scene: Scene, private readonly shadows: ShadowGenerator, private readonly game: Game) {
     this.grenadeTpl = createGrenadeTemplate(scene);
     this.tpl = createExplosionTemplates(scene);
+    this.real = new RealisticBlasts(scene);
     shadows.addShadowCaster(this.grenadeTpl);
     shadows.addShadowCaster(this.tpl.smoke);
     shadows.addShadowCaster(this.tpl.darkSmoke);
@@ -88,7 +97,14 @@ export class Effects {
   }
 
   private add(kind: PuffKind, tpl: Mesh, x: number, y: number, z: number, o: Partial<Puff> & { life: number; size: number }) {
-    const mesh = tpl.createInstance(kind);
+    // smoke and dust thin out through their own visibility, so they are copies (sharing geometry
+    // and material) rather than instances, which all share their template's visibility
+    const fades = kind === "smoke" || kind === "dust";
+    const mesh: AbstractMesh = fades ? tpl.clone(kind) : tpl.createInstance(kind);
+    if (fades) {
+      mesh.isVisible = true;
+      if (kind === "smoke") this.shadows.addShadowCaster(mesh);
+    }
     mesh.isPickable = false;
     mesh.position.set(x, y, z);
     mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
@@ -105,6 +121,21 @@ export class Effects {
     const T = this.tpl;
     const y = this.game.terrain.heightAt(x, z);
     const r = () => Math.random();
+
+    if (this.real.active) {
+      // realistic mode: fire, smoke, dust and sparks as particles; clods and the scorch mark stay
+      this.real.spawn(x, y, z, size);
+      const clods = Math.round(8 * size);
+      for (let i = 0; i < clods; i++) {
+        const a = r() * Math.PI * 2, s = (3 + r() * 6) * Math.sqrt(size);
+        this.add("debris", T.debris, x, y + 0.4, z, {
+          life: 2.4 + r() * 1.2, size: 0.45 + r() * 0.7,
+          vx: Math.cos(a) * s, vz: Math.sin(a) * s, vy: (6 + r() * 8) * Math.sqrt(size), spin: 6 + r() * 10,
+        });
+      }
+      this.scorch(x, y, z, size);
+      return;
+    }
 
     // fireball: several blooms, slightly offset and staggered, plus the bright core
     for (let i = 0; i < 3; i++) {
@@ -155,14 +186,64 @@ export class Effects {
       });
     }
 
-    const sc = this.tpl.scorch.createInstance("scorch");
-    sc.position.set(x, y + 0.12, z);
-    sc.rotation.y = Math.random() * Math.PI;
-    this.scorches.push({ mesh: sc, t: 0, size: (1.1 + Math.random() * 0.4) * size });
+    this.scorch(x, y, z, size);
+  }
+
+  private scorch(x: number, y: number, z: number, size: number) {
+    // the realistic mode leaves a crater (blackened bowl, thrown-up rim), the classic one a dark spot
+    const tpl = this.real.active ? this.real.craterTemplate() : this.tpl.scorch;
+    const radius = (1.1 + Math.random() * 0.4) * size * (this.real.active ? 1.35 : 1);
+    this.scorches.push({ mesh: this.drape(tpl, x, y, z, radius), t: 0 });
+  }
+
+  /**
+   * A round mark of `radius` lying on the ground: a disc of rings whose points follow the terrain
+   * (so it neither floats over hollows nor cuts into slopes), with the template's material.
+   */
+  private drape(tpl: Mesh, x: number, y: number, z: number, radius: number): Mesh {
+    const terrain = this.game.terrain;
+    const rings = 7, seg = 28, turn = Math.random() * Math.PI * 2;
+    const pos: number[] = [0, terrain.heightAt(x, z) - y + 0.08, 0];
+    const uv: number[] = [0.5, 0.5];
+    const idx: number[] = [];
+    for (let k = 1; k <= rings; k++) {
+      const f = k / rings, r = radius * f;
+      for (let s = 0; s < seg; s++) {
+        const a = (s / seg) * Math.PI * 2;
+        const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+        pos.push(px, terrain.heightAt(x + px, z + pz) - y + 0.08, pz);
+        uv.push(0.5 + Math.cos(a + turn) * f * 0.5, 0.5 + Math.sin(a + turn) * f * 0.5);
+      }
+    }
+    const at = (k: number, s: number) => (k === 0 ? 0 : 1 + (k - 1) * seg + (s % seg));
+    // wound so the faces (and normals) look up
+    for (let s = 0; s < seg; s++) idx.push(0, at(1, s), at(1, s + 1));
+    for (let k = 1; k < rings; k++) {
+      for (let s = 0; s < seg; s++) {
+        idx.push(at(k, s), at(k + 1, s + 1), at(k, s + 1));
+        idx.push(at(k, s), at(k + 1, s), at(k + 1, s + 1));
+      }
+    }
+    const nor: number[] = [];
+    VertexData.ComputeNormals(pos, idx, nor);
+    const vd = new VertexData();
+    vd.positions = pos;
+    vd.indices = idx;
+    vd.normals = nor;
+    vd.uvs = uv;
+    const m = new Mesh("scorch", this.scene);
+    vd.applyToMesh(m);
+    m.material = tpl.material;
+    m.position.set(x, y, z);
+    m.isPickable = false;
+    m.receiveShadows = true;
+    m.scaling.set(0.01, 1, 0.01);
+    return m;
   }
 
   update(dt: number) {
     const g = this.game;
+    this.real.update(dt);
     for (let i = this.grenades.length - 1; i >= 0; i--) {
       const gr = this.grenades[i];
       if (gr.delay > 0) {
@@ -251,7 +332,9 @@ export class Effects {
           m.position.z += p.vz * dt;
           p.vx *= 1 - dt * 2.2;
           p.vz *= 1 - dt * 2.2;
-          m.scaling.set(p.size * (0.5 + k * 1.3) * (1 - k * k), p.size * 0.55 * (1 - k), p.size * (0.5 + k * 1.3) * (1 - k * k));
+          // keeps spreading and settles flatter while it becomes transparent
+          m.scaling.set(p.size * (0.5 + k * 1.5), p.size * 0.55 * (1 - k * 0.5), p.size * (0.5 + k * 1.5));
+          m.visibility = 1 - k * k;
           break;
         }
         case "smoke": {
@@ -263,9 +346,10 @@ export class Effects {
           p.vz *= 1 - dt * 0.9;
           p.vy *= 1 - dt * 0.35;
           m.rotation.y += dt * 0.3;
-          const grow = 0.3 + Math.sqrt(k) * 1.35;
-          const thin = k > 0.6 ? 1 - ((k - 0.6) / 0.4) ** 2 : 1;
-          m.scaling.setAll(p.size * grow * thin);
+          // keeps growing while it drifts off, and thins out until it is gone
+          const grow = 0.3 + Math.sqrt(k) * 1.6;
+          m.scaling.setAll(p.size * grow);
+          m.visibility = k < 0.3 ? 1 : Math.pow(1 - (k - 0.3) / 0.7, 1.5);
           break;
         }
       }
@@ -274,14 +358,16 @@ export class Effects {
     for (let i = this.scorches.length - 1; i >= 0; i--) {
       const s = this.scorches[i];
       s.t += dt;
-      const fade = s.t > 20 ? Math.max(0, 1 - (s.t - 20) / 5) : 1;
+      // full size throughout; it fades out slowly instead of shrinking
+      const fade = s.t > SCORCH_HOLD ? 1 - (s.t - SCORCH_HOLD) / SCORCH_FADE : 1;
       if (fade <= 0) {
         s.mesh.dispose();
         this.scorches.splice(i, 1);
         continue;
       }
       const grow = Math.min(1, s.t / 0.15);
-      s.mesh.scaling.set(s.size * grow * fade, 1, s.size * grow * fade);
+      s.mesh.scaling.set(grow, 1, grow);
+      s.mesh.visibility = fade;
     }
   }
 }

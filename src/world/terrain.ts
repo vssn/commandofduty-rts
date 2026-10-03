@@ -1,4 +1,4 @@
-import { Color3, DynamicTexture, Mesh, Scene, StandardMaterial, Texture, VertexData } from "@babylonjs/core";
+import { Color3, DynamicTexture, Mesh, Scene, StandardMaterial, Texture, VertexBuffer, VertexData } from "@babylonjs/core";
 import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
 import { toLocal, type MapLayout, type RGB } from "./layout";
@@ -95,6 +95,23 @@ function createGrainTexture(scene: Scene): DynamicTexture {
 
 interface FlatZone { x: number; z: number; r: number; f: number; h: number }
 
+/** Kind of painted surface (for the realistic ground's texture layers); 0 = natural ground. */
+export const Surface = { Natural: 0, Dirt: 1, Field: 2, Asphalt: 3, Gravel: 4 } as const;
+export type Surface = (typeof Surface)[keyof typeof Surface];
+
+/**
+ * The painted surfaces baked into two textures over the playable area (for the realistic ground):
+ * `decal` holds the surface colour (rgb) and its opacity (a), `kind` the share of each surface kind
+ * (r dirt, g field, b asphalt, a gravel).
+ */
+export interface SurfaceMaps { res: number; half: number; decal: Uint8Array; kind: Uint8Array; roads: Uint8Array }
+
+/** Range (metres) of the road distances baked for the realistic ground. */
+export const ROAD_RANGE = 4;
+
+/** Data for the realistic (PBR) ground: smooth normals and the natural ground colour per vertex. */
+export interface RealisticGround { normals: Float32Array; colors: Float32Array }
+
 /** Low-poly, flat shaded, vertex-coloured height field. */
 export class Terrain {
   readonly n = TERRAIN_RES;
@@ -104,6 +121,10 @@ export class Terrain {
   private readonly zones: FlatZone[];
   /** Number of grid cells that were subdivided for extra surface detail (for diagnostics). */
   detailCells = 0;
+  /** Surface kind found by the last decalAt() call. */
+  private kind: Surface = Surface.Natural as Surface;
+  /** Natural ground colour (gamma, without decals and facet jitter) per vertex, for the realistic ground. */
+  private naturalColors: Float32Array = new Float32Array(0);
 
   constructor(scene: Scene, readonly layout: MapLayout) {
     const L = layout;
@@ -233,8 +254,9 @@ export class Terrain {
    * Man-made surface painted onto the ground at a point: roads with worn verges, fields, base pads
    * and trampled earth around outposts. Writes the colour and returns its opacity (0 = nothing).
    */
-  private decalAt(x: number, z: number, out: RGB): number {
+  private decalAt(x: number, z: number, out: RGB, roads = true): number {
     const L = this.layout;
+    this.kind = Surface.Natural;
     const nz = valueNoise(x * 0.3, z * 0.3, 9);
 
     for (const b of [L.playerBase, L.enemyBase]) {
@@ -242,22 +264,25 @@ export class Terrain {
       const edge = Math.max(Math.abs(x - b.x) - 15, Math.abs(z - b.z) - 12) + nz * 1.2;
       if (edge < 2.5) {
         mix(out, CONCRETE, GRAVEL, smoothstep(-6, 1, edge) * 0.8 + nz * 0.2);
+        this.kind = Surface.Gravel;
         return smoothstep(2.5, -0.5, edge);
       }
     }
 
-    const rd = L.nearestRoad(x, z);
+    const rd = roads ? L.nearestRoad(x, z) : { d: Infinity, road: null };
     if (rd.road) {
       const asphalt = rd.road.kind === "asphalt";
       if (rd.d < 0) {
+        this.kind = asphalt ? Surface.Asphalt : Surface.Dirt;
         set(out, asphalt ? ASPHALT : DIRT, 1 + nz * (asphalt ? 0.04 : 0.08));
         if (!asphalt && rd.d < -0.9) set(out, DIRT_CENTRE, 1 + nz * 0.06); // grassy hump between the ruts
         return 1;
       }
-      if (asphalt && rd.d < 0.6) { set(out, CURB); return 1; }
+      if (asphalt && rd.d < 0.6) { set(out, CURB); this.kind = Surface.Gravel; return 1; }
       const verge = asphalt ? rd.d - 0.6 : rd.d;
       if (verge < VERGE) {
         set(out, asphalt ? VERGE_TOWN : VERGE_DIRT, 1 + nz * 0.08);
+        this.kind = Surface.Dirt;
         return smoothstep(VERGE, 0, verge + nz * 0.4) * 0.75;
       }
     }
@@ -266,6 +291,7 @@ export class Terrain {
     if (fa) {
       const f = fa.f;
       const stripe = (Math.floor(fa.lx / f.sw) & 1) === 0;
+      this.kind = Surface.Field;
       set(out, stripe ? f.base : f.stripe, 1 + nz * 0.05);
       // headland: the outermost strip is worn and blends into the surrounding grass
       const edge = Math.min(f.hw - Math.abs(fa.lx), f.hd - Math.abs(fa.lz));
@@ -283,6 +309,7 @@ export class Terrain {
         // patches of flattened grass survive in the trodden ground
         const tufts = valueNoise(x * 0.9, z * 0.9, 63) > 0.35 ? 0.55 : 1;
         set(out, TRAMPLED, 1 + nz * 0.1);
+        this.kind = Surface.Dirt;
         return smoothstep(1.1, 0.7, d) * 0.92 * tufts;
       }
     }
@@ -317,16 +344,83 @@ export class Terrain {
     return w > 0 ? mix(out, out, d, w) : out;
   }
 
+  /**
+   * Bakes the painted surfaces (colour, opacity and kind) into `res`² texels over the playable area,
+   * for the realistic ground, whose textures follow these smooth masks instead of the triangles.
+   * Roads are not painted into the masks: `roads` holds the signed distance to the nearest asphalt
+   * (r) and dirt road (g) instead, and the street's direction (b, a: cos and sin of twice its angle). Distances interpolate smoothly between texels, so the shader
+   * draws road, kerb and verge edges crisp and straight at any angle.
+   */
+  bakeSurfaces(res = 1024): SurfaceMaps {
+    const half = MAP_HALF + 12, step = (half * 2) / res;
+    const decal = new Uint8Array(res * res * 4), kind = new Uint8Array(res * res * 4), roads = new Uint8Array(res * res * 4);
+    const enc = (d: number) => Math.round(Math.min(1, Math.max(0, d / ROAD_RANGE * 0.5 + 0.5)) * 255);
+    const d: RGB = [0, 0, 0];
+    for (let j = 0; j < res; j++) {
+      const z = -half + (j + 0.5) * step;
+      for (let i = 0; i < res; i++) {
+        const x = -half + (i + 0.5) * step;
+        const w = this.decalAt(x, z, d, false);
+        const o = (i + j * res) * 4;
+        // the bases' gravel pads cover the roads leading to them
+        const pad = this.kind === Surface.Gravel && w > 0.5;
+        const asphalt = this.layout.nearestOfKind(x, z, "asphalt", ROAD_RANGE);
+        roads[o] = pad ? 255 : enc(asphalt.d);
+        roads[o + 1] = pad ? 255 : enc(this.layout.roadDistance(x, z, "dirt", ROAD_RANGE));
+        // direction of the street (as a doubled angle: a street has no front or back), so the
+        // asphalt texture can run along it
+        const ang = asphalt.road ? Math.atan2(asphalt.road.b.z - asphalt.road.a.z, asphalt.road.b.x - asphalt.road.a.x) * 2 : 0;
+        roads[o + 2] = Math.round((Math.cos(ang) * 0.5 + 0.5) * 255);
+        roads[o + 3] = Math.round((Math.sin(ang) * 0.5 + 0.5) * 255);
+        if (w <= 0) continue;
+        decal[o] = Math.round(Math.min(1, d[0]) * 255);
+        decal[o + 1] = Math.round(Math.min(1, d[1]) * 255);
+        decal[o + 2] = Math.round(Math.min(1, d[2]) * 255);
+        decal[o + 3] = Math.round(w * 255);
+        kind[o + this.kind - 1] = 255;
+      }
+    }
+    return { res, half, decal, kind, roads };
+  }
+
+  /**
+   * Smooth normals (from the height field's slope) and the natural ground colour per vertex, in
+   * linear space: the realistic ground shades softly instead of in flat facets, and its painted
+   * surfaces come from the baked masks.
+   */
+  realisticGround(): RealisticGround {
+    const pos = this.mesh.getVerticesData(VertexBuffer.PositionKind)!;
+    const count = pos.length / 3;
+    const normals = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 4);
+    const e = this.cell;
+    for (let v = 0; v < count; v++) {
+      const x = pos[v * 3], z = pos[v * 3 + 2];
+      const dx = (this.heightAt(x + e, z) - this.heightAt(x - e, z)) / (2 * e);
+      const dz = (this.heightAt(x, z + e) - this.heightAt(x, z - e)) / (2 * e);
+      const len = Math.hypot(dx, 1, dz);
+      normals[v * 3] = -dx / len;
+      normals[v * 3 + 1] = 1 / len;
+      normals[v * 3 + 2] = -dz / len;
+      for (let k = 0; k < 3; k++) colors[v * 4 + k] = Math.pow(this.naturalColors[v * 3 + k], 2.2);
+      colors[v * 4 + 3] = 1;
+    }
+    return { normals, colors };
+  }
+
   private buildMesh(scene: Scene): Mesh {
     const n = this.n, n1 = n + 1, cs = this.cell, H = this.heights;
-    const pos: number[] = [], nor: number[] = [], col: number[] = [];
+    const pos: number[] = [], nor: number[] = [], col: number[] = [], nat: number[] = [];
+    /** Natural ground colour of the triangle being emitted. */
+    let base: RGB = [0, 0, 0];
     const c: RGB = [0, 0, 0];
     const dc: RGB = [0, 0, 0];
     let subdivided = 0;
 
     /** Blends the painted surfaces sampled inside the triangle over `base` into `c`. */
-    const shade = (base: RGB, ax: number, az: number, bx: number, bz: number, cx: number, cz: number, samples: readonly (readonly number[])[]) => {
-      c[0] = base[0]; c[1] = base[1]; c[2] = base[2];
+    const shade = (ground: RGB, ax: number, az: number, bx: number, bz: number, cx: number, cz: number, samples: readonly (readonly number[])[]) => {
+      base = ground;
+      c[0] = ground[0]; c[1] = ground[1]; c[2] = ground[2];
       let wr = 0, wg = 0, wb = 0, ws = 0;
       for (const [a, b, cc] of samples) {
         const w = this.decalAt(ax * a + bx * b + cx * cc, az * a + bz * b + cz * cc, dc);
@@ -350,6 +444,7 @@ export class Terrain {
       for (let k = 0; k < 3; k++) {
         nor.push(nx, ny, nzz);
         col.push(c[0] * jit, c[1] * jit, c[2] * jit, 1);
+        nat.push(base[0], base[1], base[2]);
       }
     };
 
@@ -392,13 +487,14 @@ export class Terrain {
           continue;
         }
 
-        if (painted) shade(gA, x0, z0, x1, z0, x1, z1, SAMPLES); else { c[0] = gA[0]; c[1] = gA[1]; c[2] = gA[2]; }
+        if (painted) shade(gA, x0, z0, x1, z0, x1, z1, SAMPLES); else { base = gA; c[0] = gA[0]; c[1] = gA[1]; c[2] = gA[2]; }
         emit(x0, h00, z0, x1, h10, z0, x1, h11, z1, jitA);
-        if (painted) shade(gB, x0, z0, x1, z1, x0, z1, SAMPLES); else { c[0] = gB[0]; c[1] = gB[1]; c[2] = gB[2]; }
+        if (painted) shade(gB, x0, z0, x1, z1, x0, z1, SAMPLES); else { base = gB; c[0] = gB[0]; c[1] = gB[1]; c[2] = gB[2]; }
         emit(x0, h00, z0, x1, h11, z1, x0, h01, z1, jitB);
       }
     }
     this.detailCells = subdivided;
+    this.naturalColors = new Float32Array(nat);
 
     const vertCount = pos.length / 3;
     const idx = new Uint32Array(vertCount);

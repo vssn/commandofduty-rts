@@ -3,21 +3,26 @@ import { MAP_HALF } from "../config";
 import type { NavGrid } from "../game/nav";
 import { rng } from "../util/noise";
 import { toLocal, toWorld, type MapLayout, type RGB } from "./layout";
-import { mat, merge, partBuilder, type PartFn } from "./models";
+import { mat, merge, partBuilder, type PartFn, type SurfaceOf } from "./models";
 import type { Terrain } from "./terrain";
 
 /** A solid prop: blocks movement; `height` > 0 also blocks sight (fog of war) and gives cover. */
 export interface Obstacle { x: number; z: number; hw: number; hd: number; rot: number; height: number }
 
 /** Builds a hidden template from parts drawn by `draw(box, cyl)`. */
-function template(scene: Scene, name: string, draw: (box: PartFn, cyl: (h: number, d: number, x: number, y: number, z: number, c: RGB, rx?: number, rz?: number) => Mesh) => void): Mesh {
+function template(
+  scene: Scene,
+  name: string,
+  draw: (box: PartFn, cyl: (h: number, d: number, x: number, y: number, z: number, c: RGB, rx?: number, rz?: number) => Mesh) => void,
+  surfaceOf?: SurfaceOf,
+): Mesh {
   const parts: Mesh[] = [];
-  const box = partBuilder(scene, parts);
+  const box = partBuilder(scene, parts, surfaceOf);
   const cyl = (h: number, d: number, x: number, y: number, z: number, c: RGB, rx = 0, rz = 0) => {
     const m = MeshBuilder.CreateCylinder("cyl", { height: h, diameter: d, tessellation: 10 }, scene);
     m.position.set(x, y, z);
     m.rotation.set(rx, 0, rz);
-    m.material = mat(scene, c);
+    m.material = mat(scene, c, { surface: surfaceOf?.(c) });
     parts.push(m);
     return m;
   };
@@ -48,7 +53,7 @@ function containerTpl(scene: Scene, color: RGB, name: string): Mesh {
     for (const z of [-0.75, -0.3, 0.3, 0.75]) box(0.06, 2.2, 0.05, 3.06, 1.25, z, [0.25, 0.25, 0.23]);
     for (const x of [-2.95, 2.95]) for (const z of [-1.12, 1.12]) for (const y of [0.08, 2.42]) box(0.18, 0.16, 0.18, x, y, z, DARK);
     box(1.2, 0.35, 0.02, -1.6, 1.9, 1.23, [0.85, 0.85, 0.8]); // stencilled marking
-  });
+  }, () => "metal"); // corrugated steel all over (the realistic mode's texture)
 }
 
 /** Portable living cabin (Wohncontainer): light walls, windows, door, small step. */

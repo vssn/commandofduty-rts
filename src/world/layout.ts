@@ -251,6 +251,24 @@ export class MapLayout {
     return { d: best, road };
   }
 
+  /** Signed distance to the edge of the nearest road of one kind (negative = on it), at most `max`. */
+  roadDistance(x: number, z: number, kind: Road["kind"], max = 4): number {
+    return this.nearestOfKind(x, z, kind, max).d;
+  }
+
+  /** Nearest road of one kind within `max` of its edge (signed distance as in roadDistance). */
+  nearestOfKind(x: number, z: number, kind: Road["kind"], max = 4): { d: number; road: Road | null } {
+    let best = max, road: Road | null = null;
+    for (const rd of this.roads) {
+      if (rd.kind !== kind) continue;
+      const m = rd.w / 2 + max;
+      if (x < Math.min(rd.a.x, rd.b.x) - m || x > Math.max(rd.a.x, rd.b.x) + m || z < Math.min(rd.a.z, rd.b.z) - m || z > Math.max(rd.a.z, rd.b.z) + m) continue;
+      const d = segDist(x, z, rd.a, rd.b) - rd.w / 2;
+      if (d < best) { best = d; road = rd; }
+    }
+    return { d: best, road };
+  }
+
   fieldAt(x: number, z: number): { f: Field; lx: number; lz: number } | null {
     for (const f of this.fields) {
       if (Math.abs(x - f.cx) > 25 || Math.abs(z - f.cz) > 25) continue;

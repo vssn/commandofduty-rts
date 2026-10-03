@@ -474,7 +474,7 @@ svg.portrait { visibility: visible; }
 
 /* ---------------------------------------------------------------- mode selection */
 
-#menu-main[hidden], #menu-modes[hidden] { display: none; }
+#menu-main[hidden], #menu-modes[hidden], #menu-settings[hidden] { display: none; }
 body.menu-choose .menu-panel { max-width: 1080px; }
 body.menu-choose .menu-brief { display: none; }
 .menu-sub {
@@ -699,7 +699,9 @@ body:not(.touch-ui) .dpad { left: 24px; bottom: 24px; }
 #btn-fullscreen svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 #btn-fullscreen .fs-exit, body.fullscreen #btn-fullscreen .fs-enter { display: none; }
 body.fullscreen #btn-fullscreen .fs-exit { display: block; }
-body.no-fullscreen #btn-fullscreen { display: none; }
+body.no-fullscreen #btn-fullscreen, body.no-fullscreen #menu-fullscreen { display: none; }
+/* in the main menu fullscreen is a menu item instead */
+body.in-menu #btn-fullscreen { display: none; }
 
 /* music volume slider in the main menu, styled like the menu buttons */
 .menu-slider { display: flex; align-items: center; gap: 12px; cursor: default; }
@@ -792,4 +794,32 @@ body.in-menu #btn-pause { display: none; }
   #btn-pause span { display: none; }
   .pause-box { min-width: 0; width: min(88vw, 320px); padding: 18px 20px; gap: 8px; }
   .pause-title { font-size: 26px; }
+}
+
+/* ------------------------------------------------------------------ realistic graphics: brushed metal
+   With "Grafik: Realistisch" the menus get a subtle brushed-metal surface: fine horizontal streaks
+   (stretched SVG noise), a soft diagonal sheen and a slight bevel. The colours stay the same. */
+body.gfx-real {
+  --metal-streaks: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.9' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.24 0 0 0 -0.085'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --metal-sheen: linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.035) 58%, rgba(0, 0, 0, 0.12) 100%);
+  --metal-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+body.gfx-real .menu-btn,
+body.gfx-real .pause-box,
+body.gfx-real .panel,
+body.gfx-real .mode-body,
+body.gfx-real #btn-pause,
+body.gfx-real #btn-fullscreen {
+  background-image: var(--metal-sheen), var(--metal-streaks);
+  background-size: 100% 100%, 240px 240px;
+}
+body.gfx-real .menu-btn,
+body.gfx-real .panel,
+body.gfx-real #btn-pause,
+body.gfx-real #btn-fullscreen { box-shadow: var(--metal-bevel); }
+body.gfx-real .pause-box { box-shadow: var(--metal-bevel), 0 18px 60px rgba(0, 0, 0, 0.55); }
+/* the gold button: brushed brass, the sheen a little stronger */
+body.gfx-real .menu-btn.primary {
+  background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.14) 100%), var(--metal-streaks);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
 }

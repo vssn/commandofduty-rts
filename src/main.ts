@@ -19,13 +19,16 @@ import { RtsCamera } from "./ui/rtsCamera";
 import { createCrops } from "./world/crops";
 import { COMPOUND } from "./world/fortification";
 import { createHedges } from "./world/hedges";
-import { createEnvironment } from "./world/environment";
+import { createEnvironment, type Haze } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
 import { createStreetLights } from "./world/lighting";
 import { createProps } from "./world/props";
 import { Birds } from "./world/birds";
 import { createDirtTracks } from "./world/dirtTracks";
 import { FogRenderer } from "./world/fogRender";
+import { PbrMode } from "./world/pbr";
+import { RealisticTerrain } from "./world/terrainPbr";
+import { RealisticCrops, RealisticHedges, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
 
@@ -40,10 +43,14 @@ const env = createEnvironment(scene);
 const layout = new MapLayout();
 const terrain = new Terrain(scene, layout);
 const nav = new NavGrid();
-const hedges = createHedges(scene, layout, terrain, env.shadows);
-createCrops(scene, layout, terrain);
+const realHedges = new RealisticHedges(scene, env.shadows);
+const hedges = createHedges(scene, layout, terrain, env.shadows, realHedges);
+// the realistic graphics mode has its own field plants and trees, placed exactly like the classic ones
+const realCrops = new RealisticCrops(scene, env.shadows);
+createCrops(scene, layout, terrain, realCrops);
 createHouses(scene, layout, terrain, env.shadows, nav);
-const trees = createVegetation(scene, layout, terrain, env.shadows);
+const realTrees = new RealisticTrees(scene, env.shadows);
+const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);
 // street lamps stand in every mode; they are only switched on for the night mission
 const streetLights = createStreetLights(scene, layout, terrain, env.shadows, nav);
 // trees and hedges are solid: nobody walks or drives through them. The tree radius covers the low
@@ -93,7 +100,10 @@ const cam = new RtsCamera(scene, terrain);
 scene.activeCamera = cam.camera;
 cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
 
-const fogRender = new FogRenderer(scene, cam.camera, fog, () => env.haze, env.sun.direction, () => cam.distance);
+// our own distance haze; switched off while the PBR atmosphere draws the aerial perspective
+let hazeOn = true;
+const noHaze: Haze = { color: [0, 0, 0], sunColor: [0, 0, 0], start: 1, density: 0, max: 0, depth: 0 };
+const fogRender = new FogRenderer(scene, cam.camera, fog, () => (hazeOn ? env.haze : noHaze), env.sun.direction, () => cam.distance);
 fogRender.strength = 0; // no fog over the menu fly-over
 const overlay = new Overlay(document.getElementById("overlay") as HTMLCanvasElement, engine, cam.camera);
 const input = new InputController(canvas, scene, game, cam, overlay);
@@ -153,6 +163,35 @@ pauseSfx.addEventListener("click", () => {
 });
 // the M key keeps the sliders in step
 hud.onAudioChange = syncAudioUi;
+
+// ------------------------------------------------------------------ graphics: classic / PBR
+const pbr = new PbrMode(scene, env.sun, env.hemi, (on) => (hazeOn = on), [
+  new RealisticTerrain(scene, terrain), realTrees, realCrops, realHedges,
+  { enable: () => game.effects.real.enable(), disable: () => game.effects.real.disable() },
+]);
+/** Day / night for the environment and - after it - the PBR lighting. */
+function setNight(on: boolean) {
+  env.setNight(on);
+  pbr.setNight(on);
+  game.effects.real.night = on;
+}
+const GRAPHICS_KEY = "cod.graphics";
+const syncGraphicsUi = () => {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-graphics]")) el.textContent = `Grafik: ${pbr.active ? "Realistisch (PBR)" : "Klassisch"}`;
+  // the menus get a brushed-metal look in the realistic mode
+  document.body.classList.toggle("gfx-real", pbr.active);
+};
+const setGraphics = (realistic: boolean) => {
+  pbr.setEnabled(realistic);
+  try {
+    localStorage.setItem(GRAPHICS_KEY, realistic ? "pbr" : "classic");
+  } catch {
+    /* storage unavailable: the choice just isn't remembered */
+  }
+  syncGraphicsUi();
+};
+for (const el of document.querySelectorAll<HTMLElement>("[data-graphics]")) el.addEventListener("click", () => setGraphics(!pbr.active));
+syncGraphicsUi();
 document.getElementById("menu-controls")!.addEventListener("click", () => {
   const help = document.getElementById("menu-help")!;
   help.hidden = !help.hidden;
@@ -192,14 +231,17 @@ const toggleFullscreen = () => {
     : (root.requestFullscreen?.() ?? root.webkitRequestFullscreen?.());
   Promise.resolve(done).catch(() => {});
 };
+const menuFullscreen = document.getElementById("menu-fullscreen")!;
 const syncFullscreen = () => {
   document.body.classList.toggle("fullscreen", isFullscreen());
+  menuFullscreen.textContent = isFullscreen() ? "Vollbild aus" : "Vollbild ein";
   engine.resize();
   overlay.resize();
 };
 document.addEventListener("fullscreenchange", syncFullscreen);
 document.addEventListener("webkitfullscreenchange", syncFullscreen);
 document.getElementById("btn-fullscreen")!.addEventListener("click", toggleFullscreen);
+menuFullscreen.addEventListener("click", toggleFullscreen);
 window.addEventListener("keydown", (e) => {
   if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
 });
@@ -293,7 +335,7 @@ function returnToMenu() {
   document.body.classList.remove("paused", "mode-skirmish", "mode-commandos");
   if (game.commandos) {
     game.commandos.dispose();
-    env.setNight(false);
+    setNight(false);
     streetLights.setOn(false);
     birds.setEnabled(true);
     tracks.setNight(false);
@@ -336,7 +378,7 @@ function startGame(mode: GameMode) {
     const mission = new CommandosMission(game);
     mission.setup();
     // the mission plays at night: moonlight, street lamps on, searchlights at the outposts
-    env.setNight();
+    setNight(true);
     streetLights.setOn(true);
     birds.setEnabled(false); // no birds at night
     tracks.setNight(true);
@@ -369,14 +411,24 @@ function startGame(mode: GameMode) {
 }
 // "Neues Spiel" opens the mode selection: two large cards, "Eroberung" (base building) and "Gefecht"
 const menuMain = document.getElementById("menu-main")!, menuModes = document.getElementById("menu-modes")!;
+const menuSettings = document.getElementById("menu-settings")!;
 const showModes = (on: boolean) => {
   menuMain.hidden = on;
   menuModes.hidden = !on;
+  menuSettings.hidden = true;
   document.body.classList.toggle("menu-choose", on);
+  if (on) document.getElementById("menu-help")!.hidden = true;
+};
+// "Einstellungen": a sub-menu with music volume and graphics
+const showSettings = (on: boolean) => {
+  menuMain.hidden = on;
+  menuSettings.hidden = !on;
   if (on) document.getElementById("menu-help")!.hidden = true;
 };
 document.getElementById("menu-new")!.addEventListener("click", () => showModes(true));
 document.getElementById("menu-back")!.addEventListener("click", () => showModes(false));
+document.getElementById("menu-settings-open")!.addEventListener("click", () => showSettings(true));
+document.getElementById("menu-settings-back")!.addEventListener("click", () => showSettings(false));
 // The artwork is rendered from the live battlefield (temporary units, lights): a game may only start
 // once it is done, otherwise its clean-up would hit the running game.
 let starting = false;
@@ -390,7 +442,13 @@ document.getElementById("mode-skirmish")!.addEventListener("click", () => reques
 document.getElementById("mode-commandos")!.addEventListener("click", () => requestStart("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
-const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight: env.setNight, streetLights }).finally(() => {
+const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight, streetLights }).finally(() => {
+  // the remembered graphics choice (after the mode art, which is drawn in the classic look)
+  try {
+    if (localStorage.getItem(GRAPHICS_KEY) === "pbr") setGraphics(true);
+  } catch {
+    /* no storage */
+  }
   renderingArt = false;
   if (inMenu && !starting) startBackgroundBattle();
 });
@@ -406,6 +464,7 @@ artDone.then(
 let dt = 0;
 scene.onBeforeRenderObservable.add(() => {
   dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+  pbr.update();
   if (!paused && !hud.bannerShown) {
     birds.update(dt);
     tracks.update(dt);
@@ -460,4 +519,4 @@ window.addEventListener("resize", () => {
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
-Object.assign(window, { game, scene, cam, audio, ai, fog, startGame, returnToMenu });
+Object.assign(window, { game, scene, cam, audio, ai, fog, pbr, startGame, returnToMenu });

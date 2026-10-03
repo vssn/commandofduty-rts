@@ -20,8 +20,62 @@ und bremst sanft ab (Zoomen oder Scrollen übernimmt sofort). „Neues Spiel“
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht
 mit Jeeps, Schützenlinie und Artilleriesalve in verschiedenen Phasen, und – bei Nacht – der Agent über die Schulter
 gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt die Tastenbelegung,
-Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), im Spiel stellt man Musik und Effekte im Pausenmenü (Esc) ein. Nach Sieg oder Niederlage
+„Einstellungen“ öffnet ein Untermenü mit Musik und Grafik; „Vollbild ein/aus“ schaltet den Vollbildmodus (im Spiel über den Button oben rechts oder F). Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), im Spiel stellt man Musik und Effekte im Pausenmenü (Esc) ein. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
+
+„Grafik“ (Einstellungen und Pausenmenü, wird gespeichert) schaltet live zwischen **Klassisch** und **Realistisch (PBR)** um
+(`src/world/pbr.ts`). Im PBR-Modus werden alle beleuchteten Materialien durch gleichwertige, physikalisch basierte
+Materialien ersetzt (matt, nicht metallisch; Farbe und Textur werden übernommen), Eckpunkt- und Instanzfarben in den
+linearen Farbraum umgerechnet, und am Tag liefert Babylons physikalische Atmosphäre (`@babylonjs/addons`) Sonnenfarbe,
+Himmelslicht und Luftperspektive – der eigene Distanz-Dunst ist dann aus. In der Commandos-Nacht bleibt die Atmosphäre
+aus, das Mondlicht übernimmt. Selbstleuchtende Materialien (Lampen, Lichtkegel, Markierungen) und die Pfützen bleiben
+unverändert; später erzeugte Materialien werden automatisch umgestellt.
+
+Das **Gelände** bekommt im PBR-Modus ein eigenes Material mit sechs Fototextur-Schichten von Poly Haven
+(`src/world/terrainPbr.ts`): Wiese, Erde, Acker, Asphalt, Kies/Beton und Fels. Jede Schicht hat Farb-, Normal- und
+Rauheits-Map. Wo Straßen, Wege, Felder, Kasernenplatz und Stellungen liegen, wird beim ersten Einschalten aus den
+Kartendaten in zwei Masken gebacken (1024², etwa 0,26 m pro Texel), so dass die Ränder weich verlaufen statt den
+Dreiecken zu folgen; Fels erscheint nach Hangneigung (an steilen Wänden seitlich projiziert). Die Texturen liefern nur
+Detail relativ zu ihrer Mittelfarbe, die Farben der Karte (Herbstwiese, Feldstreifen, Ränder) bleiben erhalten; die Wiese
+wird zusätzlich in großem Maßstab überlagert, damit sich keine Kacheln wiederholen. Das Gelände ist dabei weich
+schattiert statt facettiert. Die Texturen (6 × 3 Karten, zusammen ~9 MB) werden erst beim Einschalten geladen und zu
+zwei Textur-Arrays gepackt.
+
+**Bäume und Felder** haben im PBR-Modus eigene Low-Poly-Modelle (`src/world/floraPbr.ts`), an exakt denselben
+Positionen wie die klassischen (Thin Instances, ein Draw Call je Vorlage; gebaut erst beim ersten Einschalten):
+Laubbäume aus mehreren unregelmäßigen Blattballen mit weich schattierter Krone, darüber eine Hülle mit
+ausgestanzter Blatttextur (zur Laufzeit gezeichnet) für einen lockeren Rand, Stamm mit drei Ästen; Herbstfarbe je
+Baum leicht variiert. Tannen aus sechs hängenden Etagen mit gezacktem Rand. Auf den Feldern wachsen statt der
+Quader Getreidepflanzen (Halme mit goldenen Ähren, die Schatten werfen), junge Triebe auf grünen Feldern und
+Erdklumpen auf gepflügten Äckern.
+
+Die **Straßen** werden im PBR-Modus nicht aus der Maske, sondern aus einem gebackenen Abstandsfeld gezeichnet (Abstand
+zum nächsten Asphalt- bzw. Feldweg, ±4 m): Asphalt, Bordstein (0–0,6 m) und Randstreifen bekommen so gerade,
+kantenglatte Ränder in jedem Winkel, auch an Kreuzungen und Straßenenden in den Orten.
+
+**Stellungen und Container** bekommen Fototexturen nach ihrem Material (`src/world/surfacePbr.ts`): Holz, Sackleinen
+(Sandsäcke, Zelt), Beton, Wellblech und Erde. Die Teile sind in den Modellen nach Farbe markiert (`SurfaceKind`); der
+Shader projiziert die Textur von drei Seiten in Weltmaßstab, so dass keine Texturkoordinaten nötig sind, und behält die
+Farbe des Teils (Tarnfarben, Teamfarben). Dorfhäuser und Kaserne bleiben wie sie sind.
+Die Projektion folgt den Achsen des Modells: Wellblechrippen, Dielen und Fugen laufen rechtwinklig zu Container oder
+Dach, egal wie das Objekt gedreht ist. Der Asphalt in den Orten richtet sich nach der gebackenen Straßenrichtung aus.
+
+**Hecken** sind im PBR-Modus belaubte Reihen aus Blattballen mit der Blatthülle der Bäume (je Stück leicht anderes Grün).
+
+**Explosionen** bestehen im PBR-Modus aus weichen Partikeln (`src/game/blastFx.ts`, Texturen zur Laufzeit gezeichnet):
+ein Lichtblitz, der die Umgebung kurz erhellt (zwei ständig vorhandene, sonst dunkle Punktlichter, damit keine Shader
+neu übersetzt werden müssen), ein Feuerball aus rollenden Flammen, der in Ruß übergeht, eine Erdfontäne, glühende
+Splitter als Streifen, ein Staubring am Boden und eine Rauchsäule, die aufsteigt, sich ausbreitet, mit dem Wind abzieht
+und dabei immer durchsichtiger wird. Zurück bleibt ein Krater (verkohlte Mulde, aufgeworfener Rand, Erdbrocken,
+strahlenförmiger Auswurf mit Normal-Map). Die Partikel laufen auf der Spieluhr und stehen in der Pause still.
+
+In beiden Modi blenden Krater bzw. Brandflecken nach 5 s über eine Minute aus, statt zu schrumpfen; im klassischen Modus
+werden auch Rauch- und Staubwolken beim Abziehen transparent. Jeder Krater ist ein eigenes kleines Netz aus Ringen,
+dessen Punkte dem Gelände folgen (kein Abschneiden an Hängen); ausgeblendet wird über die Sichtbarkeit des Netzes.
+
+Im realistischen Modus bekommen auch die Menüs (Hauptmenü, Pausenmenü, Seitenleiste, Buttons) eine dezente
+gebürstete Metall-Oberfläche: feine waagerechte Schlieren (gestrecktes SVG-Rauschen), ein leichter Glanzverlauf und
+eine schmale Fase; der goldene Button wirkt wie gebürstetes Messing. Rein per CSS (`body.gfx-real`), ohne Bilddateien.
 
 ## Spielmodus „Gefecht“
 
@@ -224,7 +278,7 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 | Strg+1–9 / 1–9 | Gruppe speichern / abrufen (zweimal drücken zentriert die Kamera) |
 | N · B | MG-Nest · Poller errichten (Shift: mehrere) |
 | S · H | Stopp · zur Basis |
-| Esc / Button „Menü“ oben links | Pause: Musik-Lautstärke, Effekte & Funk an/aus, Weiter, zurück zum Hauptmenü (mit Rückfrage); Esc bricht zuerst eine laufende Zielauswahl ab |
+| Esc / Button „Menü“ oben links | Pause: Musik-Lautstärke, Effekte & Funk an/aus, Grafik Klassisch/PBR, Weiter, zurück zum Hauptmenü (mit Rückfrage); Esc bricht zuerst eine laufende Zielauswahl ab |
 
 ## Aufbau
 
@@ -252,6 +306,11 @@ src/
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
+    pbr.ts            Grafik-Option PBR: Materialtausch Standard → PBR, lineare Farben, Atmosphäre (Tag), umkehrbar
+    surfacePbr.ts     Texturen für Stellungen/Container im PBR-Modus (dreiseitige Projektion, Shader-Plugin)
+    textureLayers.ts  Lädt Fototexturen (Farbe+Rauheit, Normalen) in Textur-Arrays
+    floraPbr.ts       Bäume, Hecken und Feldpflanzen im PBR-Modus (Low-Poly, Thin Instances, Blatttextur)
+    terrainPbr.ts     Gelände im PBR-Modus: Textur-Schichten (Shader-Plugin), gebackene Oberflächen-Masken, weiche Normalen
   game/
     game.ts           Spielzustand, Auswahl, Befehle, Kampf, Separation
     unit.ts           Soldaten-Logik (Bewegen, Zielerfassung, Feuern, Sterben)
@@ -262,6 +321,7 @@ src/
     commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Verstecke, Patrouillen, Alarm, Scheinwerfer, Zeitlimit
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
+    blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)
@@ -278,3 +338,9 @@ src/
     hud.ts            Seitenleiste, Meldungen, Sieg/Niederlage
     portraits.ts      rendert die Einheiten-Porträts der Bau-Kacheln und die Commandos-Fähigkeitskacheln (getarnter Agent, Sprengladung auf Jeep) aus den 3D-Modellen
 ```
+
+## Lizenzen
+
+Der Code ist Teil dieses Projekts. Die Texturen in `public/textures/` stammen von [Poly Haven](https://polyhaven.com)
+und stehen unter **CC0 1.0** (gemeinfrei, keine Namensnennung nötig, auch kommerziell frei nutzbar). Herkunft,
+Urheber, Abrufdatum und vorgenommene Änderungen je Textur: [`public/textures/LICENSE.md`](public/textures/LICENSE.md).
