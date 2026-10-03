@@ -4,6 +4,7 @@ import { rng, valueNoise } from "../util/noise";
 import type { NavGrid } from "../game/nav";
 import { toLocal, type MapLayout, type V2 } from "./layout";
 import type { Terrain } from "./terrain";
+import type { PathLine } from "./pathMap";
 
 /** Width of the textured track band (a little wider than the 3.6 m track, edges fray into the grass). */
 const BAND = 4.6;
@@ -104,6 +105,11 @@ export interface DirtTracks {
   update(dt: number): void;
   /** Dimmer reflections at night. */
   setNight(on: boolean): void;
+  /** The textured band over the farm tracks (the realistic ground draws the tracks itself and hides it). */
+  readonly trackBands: Mesh;
+  /** The footpaths and their band (hidden by the realistic ground, which draws them itself). */
+  readonly footpaths: PathLine[];
+  readonly pathBands: Mesh;
 }
 
 /**
@@ -251,7 +257,7 @@ export function createDirtTracks(scene: Scene, layout: MapLayout, terrain: Terra
     l.taperStart = meets(l.pts[0], l);
     l.taperEnd = meets(l.pts[l.pts.length - 1], l);
   }
-  buildBands(scene, "dirtTracks", terrain, onAsphalt, lines, trackTexture(scene));
+  const trackBands = buildBands(scene, "dirtTracks", terrain, onAsphalt, lines, trackTexture(scene));
 
   // footpaths: from every outpost a trodden path winds to the nearest track or street
   const fr = rng(515);
@@ -283,7 +289,7 @@ export function createDirtTracks(scene: Scene, layout: MapLayout, terrain: Terra
       break;
     }
   }
-  buildBands(scene, "footpaths", terrain, onAsphalt, paths, pathTexture(scene));
+  const pathBands = buildBands(scene, "footpaths", terrain, onAsphalt, paths, pathTexture(scene));
 
   // ---- puddles in the ruts
   const r = rng(909);
@@ -377,6 +383,9 @@ export function createDirtTracks(scene: Scene, layout: MapLayout, terrain: Terra
 
   let t = 0;
   return {
+    trackBands,
+    footpaths: paths,
+    pathBands,
     update(dt: number) {
       // a light breeze ripples the water: the reflection wobbles a little
       t += dt;

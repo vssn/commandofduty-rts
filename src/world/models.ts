@@ -7,13 +7,15 @@ const matCache = new Map<string, StandardMaterial>();
 
 /** Shared flat material (no textures, no specular). */
 /** Real-world material a part is made of: the realistic graphics mode gives it a matching texture. */
+/** Roughness of roof tiles / sheeting in the realistic mode (the default is 0.85: matt). */
+export const ROOF_ROUGH = 0.42;
 export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth";
 /** Picks the surface kind of a part by its colour (undefined = plain). */
 export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
 
-export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind } = {}): StandardMaterial {
+export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number } = {}): StandardMaterial {
   // materials belong to a scene, so the cache is per scene (the build-menu portraits use their own)
-  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "");
+  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "");
   let m = matCache.get(key);
   if (!m) {
     m = new StandardMaterial("m" + key, scene);
@@ -24,7 +26,8 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
       m.disableLighting = true;
     }
     if (opts.twoSided) m.backFaceCulling = false;
-    if (opts.surface) m.metadata = { surface: opts.surface };
+    // `rough`: roughness of the realistic (PBR) copy; smooth parts such as roofs catch the sun
+    if (opts.surface || opts.rough !== undefined) m.metadata = { surface: opts.surface, rough: opts.rough };
     matCache.set(key, m);
   }
   return m;
@@ -572,7 +575,7 @@ export function createBarracksMesh(scene: Scene, team: Team): Mesh {
   roof.scaling.set(8.9, 2.5, 12.9);
   roof.rotation.y = Math.PI / 2;
   roof.position.y = 4.4;
-  roof.material = mat(scene, roofC, { twoSided: true });
+  roof.material = mat(scene, roofC, { twoSided: true, rough: ROOF_ROUGH });
   parts.push(roof);
 
   const m = merge(`barracks${team}`, parts);

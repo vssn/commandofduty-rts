@@ -54,7 +54,8 @@ export async function loadTextureLayers(scene: Scene, paths: readonly string[]):
     const t = new RawTexture2DArray(data, SIZE, SIZE, paths.length, Constants.TEXTUREFORMAT_RGBA, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
     t.name = name;
     t.wrapU = t.wrapV = Texture.WRAP_ADDRESSMODE;
-    t.anisotropicFilteringLevel = 8;
+    // phones: lighter filtering of the ground (the shader reads many layers per pixel)
+    t.anisotropicFilteringLevel = window.matchMedia("(pointer: coarse)").matches ? 4 : 8;
     return t;
   };
   return { albedo: arr(albedo, `${paths[0]}-albedo`), normal: arr(normal, `${paths[0]}-normal`), means };

@@ -19,12 +19,13 @@ import { RtsCamera } from "./ui/rtsCamera";
 import { createCrops } from "./world/crops";
 import { COMPOUND } from "./world/fortification";
 import { createHedges } from "./world/hedges";
-import { createEnvironment, type Haze } from "./world/environment";
+import { createEnvironment } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
 import { createStreetLights } from "./world/lighting";
 import { createProps } from "./world/props";
 import { Birds } from "./world/birds";
 import { createDirtTracks } from "./world/dirtTracks";
+import { MuzzleFlashes } from "./game/muzzleFlash";
 import { FogRenderer } from "./world/fogRender";
 import { PbrMode } from "./world/pbr";
 import { RealisticTerrain } from "./world/terrainPbr";
@@ -63,7 +64,11 @@ const props = createProps(scene, layout, terrain, env.shadows, nav);
 const birds = new Birds(scene, terrain, trees);
 // farm tracks with ruts, a grassy middle strip and puddles
 const tracks = createDirtTracks(scene, layout, terrain, nav);
+// muzzle flashes that light up the surroundings in the night mission
+const muzzle = new MuzzleFlashes(scene, terrain);
 const game = new Game(scene, terrain, nav, layout, env.shadows);
+// fire fights in the fog stay hidden, as for the tracers
+game.onMuzzle = (x, y, z, kind) => (!game.canSee || game.canSee(x, z)) && muzzle.flash(x, y, z, kind);
 game.cover = new CoverMap(
   layout,
   trees,
@@ -100,10 +105,7 @@ const cam = new RtsCamera(scene, terrain);
 scene.activeCamera = cam.camera;
 cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
 
-// our own distance haze; switched off while the PBR atmosphere draws the aerial perspective
-let hazeOn = true;
-const noHaze: Haze = { color: [0, 0, 0], sunColor: [0, 0, 0], start: 1, density: 0, max: 0, depth: 0 };
-const fogRender = new FogRenderer(scene, cam.camera, fog, () => (hazeOn ? env.haze : noHaze), env.sun.direction, () => cam.distance);
+const fogRender = new FogRenderer(scene, cam.camera, fog, () => env.haze, env.sun.direction, () => cam.distance);
 fogRender.strength = 0; // no fog over the menu fly-over
 const overlay = new Overlay(document.getElementById("overlay") as HTMLCanvasElement, engine, cam.camera);
 const input = new InputController(canvas, scene, game, cam, overlay);
@@ -169,14 +171,18 @@ for (const c of VOLUME_CONTROLS) {
 hud.onAudioChange = syncAudioUi;
 
 // ------------------------------------------------------------------ graphics: classic / PBR
-const pbr = new PbrMode(scene, env.sun, env.hemi, (on) => (hazeOn = on), [
-  new RealisticTerrain(scene, terrain), realTrees, realCrops, realHedges,
+const pbr = new PbrMode(scene, env.sun, env.hemi, [
+  new RealisticTerrain(scene, terrain, () => tracks.footpaths), realTrees, realCrops, realHedges,
+  // the realistic ground draws the farm tracks and footpaths itself (irregular edges, ruts, gravel, trampled earth)
+  { enable: () => { tracks.trackBands.setEnabled(false); tracks.pathBands.setEnabled(false); }, disable: () => { tracks.trackBands.setEnabled(true); tracks.pathBands.setEnabled(true); } },
   { enable: () => game.effects.real.enable(), disable: () => game.effects.real.disable() },
 ]);
 /** Day / night for the environment and - after it - the PBR lighting. */
 function setNight(on: boolean) {
+  muzzle.enabled = on;
+  muzzle.clear();
   env.setNight(on);
-  pbr.setNight(on);
+  pbr.setLighting();
   game.effects.real.night = on;
 }
 const GRAPHICS_KEY = "cod.graphics";
@@ -477,6 +483,7 @@ scene.onBeforeRenderObservable.add(() => {
   if (!paused && !hud.bannerShown) {
     birds.update(dt);
     tracks.update(dt);
+    muzzle.update(dt);
   }
   if (inMenu) {
     // cinematic fly-over along a slow loop across the battlefield

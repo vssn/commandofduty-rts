@@ -91,6 +91,8 @@ export class Game {
   cover: CoverMap | null = null;
   /** Called for every shot fired (used for sound). */
   onShot: ((x: number, z: number, kind: WeaponKind) => void) | null = null;
+  /** A shot leaves its muzzle at this world position (for the flash that lights the surroundings). */
+  onMuzzle: ((x: number, y: number, z: number, kind: WeaponKind) => void) | null = null;
   /**
    * A bullet arrives at a jeep or a drone (used for sound): `hit` = metal impact, otherwise it
    * whizzes past; `delay` = flight time of the bullet in seconds.
@@ -852,6 +854,7 @@ export class Game {
       az = from.z + Math.cos(from.heading) * 1.3;
       ay = from.y + (from.stance === "prone" ? 0.5 : from.stance === "kneel" ? 1.3 : 1.75);
     }
+    this.onMuzzle?.(ax, ay, az, kind);
     this.tracers.push({
       ax, ay, az,
       bx: to.x + (Math.random() - 0.5) * spread,

@@ -1,10 +1,12 @@
 import {
-  Color3, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, type DirectionalLight, type HemisphericLight, type Material,
+  Color3, ColorCurves, ImageProcessingConfiguration, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, type DirectionalLight, type HemisphericLight, type Material,
   type Scene,
 } from "@babylonjs/core";
-import { Atmosphere } from "@babylonjs/addons/atmosphere/index.js";
 import type { SurfaceKind } from "./models";
 import { attachSurfaceTexture } from "./surfacePbr";
+
+/** Colour grading of the realistic mode (ColorCurves scale: -100..100). */
+const GRADE = { saturation: 0, highlights: 20, shadows: 12, tint: 18, exposure: 1.55 };
 
 const toLinear = (v: number) => Math.pow(v, 2.2);
 
@@ -19,14 +21,14 @@ export function classicMaterial(m: Material): Material {
 }
 
 /** Saved settings of the classic look, restored when PBR is switched off again. */
-interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: number; exposure: number }
+interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: number; exposure: number; contrast: number }
 
 /**
  * Optional physically based rendering ("Realistisch"): every lit material is replaced by an
  * equivalent PBR material (matte, non-metallic; colour and texture carried over), vertex and
- * instance colours are converted to linear space, and - in daylight - Babylon's physically based
- * atmosphere provides the sky, the sun's colour and aerial perspective. Switching is live and can
- * be undone; materials created later are converted as they appear.
+ * instance colours are converted to linear space and the light levels are lifted to suit. There is
+ * deliberately no physically based atmosphere (too costly on phones); the classic haze stays.
+ * Switching is live and can be undone; materials created later are converted as they appear.
  *
  * Kept as they are: unlit / self-illuminated materials (lights, glows, markers) and the puddles'
  * fake sky reflection.
@@ -36,18 +38,15 @@ export class PbrMode {
   private readonly swapped = new Map<StandardMaterial, PBRMaterial>();
   /** Gamma vertex / instance colours of converted meshes, to restore them. */
   private readonly colorBackup = new Map<Mesh, { vertex?: Float32Array; instance?: Float32Array }>();
-  private atmosphere: Atmosphere | null = null;
-  private night = false;
   private dirty = false;
   private classic: Classic | null = null;
-  private ambient = new Color3(0, 0, 0);
+  /** The classic image processing (tone mapping, curves), restored with the classic look. */
+  private classicGrade: { toneMapping: boolean; type: number; curves: boolean; colorCurves: ColorCurves | null } | null = null;
 
   constructor(
     private readonly scene: Scene,
     private readonly sun: DirectionalLight,
     private readonly hemi: HemisphericLight,
-    /** Our own distance haze is switched off while the atmosphere draws aerial perspective. */
-    private readonly setHaze: (on: boolean) => void,
     /** Parts with their own realistic look (e.g. the textured ground), switched along. */
     private readonly extras: { enable(): void; disable(): void }[] = [],
   ) {
@@ -60,23 +59,49 @@ export class PbrMode {
     if (on === this.active) return;
     this.active = on;
     if (on) {
-      this.ambient = this.scene.ambientColor.clone();
       this.capture();
-      // the atmosphere must exist before the PBR materials are made: it attaches to new ones
-      this.updateAtmosphere();
+      this.applyGrade();
       for (const e of this.extras) e.enable();
       this.convertAll();
       this.applyLighting();
     } else {
       for (const e of this.extras) e.disable();
       this.restoreAll();
-      this.atmosphere?.dispose();
-      this.atmosphere = null;
-      // the atmosphere drives the scene's ambient colour; the classic look has none
-      this.scene.ambientColor = this.ambient.clone();
-      this.setHaze(true);
+      this.restoreGrade();
       this.restoreLighting();
     }
+  }
+
+  /**
+   * Film look for the realistic mode: ACES tone mapping (soft highlights, rich shadows) and colour
+   * curves - more saturation, brighter highlights with a warm tint, deeper shadows with a cool one.
+   */
+  private applyGrade() {
+    const ip = this.scene.imageProcessingConfiguration;
+    this.classicGrade = { toneMapping: ip.toneMappingEnabled, type: ip.toneMappingType, curves: ip.colorCurvesEnabled, colorCurves: ip.colorCurves };
+    ip.toneMappingEnabled = true;
+    ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+    const c = new ColorCurves();
+    c.globalSaturation = GRADE.saturation;
+    c.highlightsExposure = GRADE.highlights;
+    c.highlightsHue = 42; // warm
+    c.highlightsDensity = GRADE.tint;
+    c.shadowsExposure = GRADE.shadows;
+    c.shadowsHue = 215; // cool
+    c.shadowsDensity = GRADE.tint;
+    ip.colorCurves = c;
+    ip.colorCurvesEnabled = true;
+  }
+
+  private restoreGrade() {
+    const g = this.classicGrade;
+    if (!g) return;
+    const ip = this.scene.imageProcessingConfiguration;
+    ip.toneMappingEnabled = g.toneMapping;
+    ip.toneMappingType = g.type;
+    ip.colorCurves = g.colorCurves;
+    ip.colorCurvesEnabled = g.curves;
+    this.classicGrade = null;
   }
 
   /** Remembers the classic light levels (the environment has just set them). */
@@ -84,6 +109,7 @@ export class PbrMode {
     this.classic = {
       sunIntensity: this.sun.intensity, sunColor: this.sun.diffuse.clone(),
       hemiIntensity: this.hemi.intensity, exposure: this.scene.imageProcessingConfiguration.exposure,
+      contrast: this.scene.imageProcessingConfiguration.contrast,
     };
   }
 
@@ -93,15 +119,13 @@ export class PbrMode {
     this.sun.diffuse = this.classic.sunColor.clone();
     this.hemi.intensity = this.classic.hemiIntensity;
     this.scene.imageProcessingConfiguration.exposure = this.classic.exposure;
+    this.scene.imageProcessingConfiguration.contrast = this.classic.contrast;
   }
 
-  /** Night (commandos): no atmosphere - the moonlit lighting stays in charge. Call after the environment switched. */
-  setNight(on: boolean) {
-    this.night = on;
+  /** Day / night (commandos) changed the classic light levels: take them over. Call after the environment switched. */
+  setLighting() {
     if (!this.active) return;
     this.capture();
-    this.atmosphere?.setEnabled(!on);
-    this.setHaze(on || !this.atmosphere);
     this.applyLighting();
   }
 
@@ -118,46 +142,18 @@ export class PbrMode {
     }
   }
 
-  private updateAtmosphere() {
-    const engine = this.scene.getEngine();
-    if (this.atmosphere || !Atmosphere.IsSupported(engine)) {
-      this.setHaze(!this.atmosphere || this.night);
-      return;
-    }
-    // the atmosphere drives the first light of the scene: make it the sun
-    const lights = this.scene.lights;
-    const i = lights.indexOf(this.sun);
-    if (i > 0) {
-      lights.splice(i, 1);
-      lights.unshift(this.sun);
-    }
-    this.atmosphere = new Atmosphere("atmosphere", this.scene, [this.sun], {
-      isLinearSpaceLight: true,
-      // the battlefield is only a few hundred metres across: strengthen the haze a little so it shows
-      aerialPerspectiveIntensity: 1.6,
-      aerialPerspectiveSaturation: 0.9,
-      diffuseSkyIrradianceIntensity: 1.2,
-    });
-    this.atmosphere.setEnabled(!this.night);
-    this.setHaze(this.night);
-  }
-
-  /** Light levels for PBR: the atmosphere colours the sun by day; the hemispheric fill is only a soft extra. */
+  /**
+   * Light levels for PBR: PBR divides diffuse light by pi less forgivingly, so the sun is lifted. The
+   * sky fill stays low and the contrast a little higher: shadows stay deep and forms read crisply.
+   */
   private applyLighting() {
     if (!this.classic) return;
-    const ip = this.scene.imageProcessingConfiguration;
     this.restoreLighting();
-    if (this.night || !this.atmosphere) {
-      // PBR divides diffuse light by pi less forgivingly: lift the classic levels a little
-      this.sun.intensity = this.classic.sunIntensity * 1.6;
-      this.hemi.intensity = this.classic.hemiIntensity * 1.4;
-    } else {
-      // white sunlight: the atmosphere tints it by the air it passes through
-      this.sun.diffuse = new Color3(1, 1, 1);
-      this.sun.intensity = 6;
-      this.hemi.intensity = 0.25;
-      ip.exposure = 1.1;
-    }
+    this.sun.intensity = this.classic.sunIntensity * 1.7;
+    this.hemi.intensity = this.classic.hemiIntensity * 1.1;
+    // ACES takes some brightness: make up for it
+    this.scene.imageProcessingConfiguration.exposure = this.classic.exposure * GRADE.exposure;
+    this.scene.imageProcessingConfiguration.contrast = this.classic.contrast * 1.1;
   }
 
   // ---------------------------------------------------------------- materials
@@ -175,7 +171,7 @@ export class PbrMode {
     p.albedoTexture = m.diffuseTexture;
     p.bumpTexture = m.bumpTexture;
     p.metallic = 0;
-    p.roughness = 0.85;
+    p.roughness = (m.metadata as { rough?: number } | null)?.rough ?? 0.85;
     p.emissiveColor = m.emissiveColor.clone();
     p.alpha = m.alpha;
     p.transparencyMode = m.transparencyMode;
@@ -234,7 +230,6 @@ export class PbrMode {
       if (b.instance) mesh.thinInstanceSetBuffer("color", b.instance, 4, true);
     }
     this.colorBackup.clear();
-    // the atmosphere is rebuilt on the next switch: its material plugin belongs to these materials
     for (const p of this.swapped.values()) p.dispose();
     this.swapped.clear();
   }

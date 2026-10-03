@@ -4,7 +4,7 @@ import type { NavGrid } from "../game/nav";
 import { rng, valueNoise } from "../util/noise";
 import { HOUSE_BODY, HOUSE_ROOF, toWorld, type MapLayout, type RGB } from "./layout";
 import { brickBox, brickFaceUV, brickMaterial, createRoofTiles, type RoofSpec } from "./masonry";
-import { createGable, mat } from "./models";
+import { createGable, mat, ROOF_ROUGH } from "./models";
 import type { RealisticTrees } from "./floraPbr";
 import type { Terrain } from "./terrain";
 
@@ -53,7 +53,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
   const roofs = HOUSE_ROOF.map((c, i) => {
     const m = roofTpl.clone(`houseRoof${i}`);
     m.makeGeometryUnique();
-    m.material = mat(scene, c, { twoSided: true });
+    m.material = mat(scene, c, { twoSided: true, rough: ROOF_ROUGH });
     return new InstanceBatch(m);
   });
   const chimneys = new InstanceBatch(chimTpl);
@@ -78,7 +78,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
       roof.scaling.set(h.w * 1.08, h.roofH, h.d * 1.04);
       roof.position.set(h.x, y + h.h + 0.3, h.z);
       roof.rotation.y = h.rot;
-      roof.material = mat(scene, [0.3, 0.32, 0.36], { twoSided: true });
+      roof.material = mat(scene, [0.3, 0.32, 0.36], { twoSided: true, rough: ROOF_ROUGH });
       tiles.push({ w: h.w * 1.08, h: h.roofH, d: h.d * 1.04, color: [0.32, 0.34, 0.38], transform: Matrix.Compose(Vector3.One(), q, new Vector3(h.x, y + h.h + 0.3, h.z)) });
       const tp = toWorld(h.x, h.z, h.rot, 0, h.d / 2 + 1.6);
       const tower = brickBox(scene, "tower", 3.4, 12, 3.4, [0.8, 0.76, 0.68]);
