@@ -16,6 +16,10 @@ export class EnemyAI {
   private artilleryTimer = 20;
   private buildTimer = 90;
   private time = 0;
+  /** The units of the attack wave that is under way, the medics that go with it, and the support clock. */
+  private attackers: Unit[] = [];
+  private escorts: Unit[] = [];
+  private supportT = 0;
   /**
    * Units caught in a strike's target area: when they will react (a moment of shock first) and the
    * strike they flee from. While it lasts the AI gives them no other orders.
@@ -89,15 +93,72 @@ export class EnemyAI {
 
     this.waveTimer -= dt;
     const idle = available.filter((u) => u.armed && u.path.length === 0);
-    const waveReady = g.mode === "skirmish" ? idle.length >= 6 : idle.length >= this.waveSize;
+    const skirmish = g.mode === "skirmish";
+    const foot = idle.filter((u) => !u.isVehicle);
+    const waveReady = skirmish ? foot.length >= 5 : idle.length >= this.waveSize;
     if (this.waveTimer <= 0 && waveReady) {
       const t = this.foe === PLAYER ? g.playerBarracks : g.enemyBarracks;
-      g.commandMove(idle, { x: t.x, z: t.z }, true, false);
-      // idle medics follow the wave a little behind it and patch up the wounded on the way
-      const followers = medics.filter((m) => !m.patient && m.path.length === 0).slice(0, 2);
-      if (followers.length) g.commandMove(followers, { x: (t.x + idle[0].x) / 2, z: (t.z + idle[0].z) / 2 }, false, false);
+      // skirmish: the infantry marches on the enemy base, the jeeps escort it and hunt what it meets
+      // (see supportWave); otherwise everybody goes together
+      g.commandMove(skirmish ? foot : idle, { x: t.x, z: t.z }, true, false);
+      this.attackers = [...idle];
+      // two idle medics join this wave and follow it a little behind, patching up the wounded
+      this.escorts = medics.filter((m) => !m.patient && !m.healing).slice(0, 2);
+      this.supportT = 0;
       this.waveTimer = 75;
       this.waveSize = Math.min(10, this.waveSize + 1);
+    }
+    this.supportT -= dt;
+    if (this.supportT <= 0) {
+      this.supportT = 2.5;
+      this.supportWave(b);
+    }
+  }
+
+  /**
+   * While a wave is under way: the medics keep a few metres behind its infantry (they heal on their
+   * own whenever they stand and someone near is hurt), and in a skirmish the jeeps work with it -
+   * they hunt the nearest enemy close to the infantry, otherwise stay a little ahead of it, and once
+   * the infantry is gone make a last dash at the enemy base.
+   */
+  private supportWave(base: { x: number; z: number }) {
+    const g = this.game;
+    this.attackers = this.attackers.filter((u) => u.alive);
+    this.escorts = this.escorts.filter((m) => m.alive);
+    const foot = this.attackers.filter((u) => !u.isVehicle);
+    const foeBase = this.foe === PLAYER ? g.playerBarracks : g.enemyBarracks;
+    let cx = 0, cz = 0;
+    for (const u of foot) { cx += u.x; cz += u.z; }
+    if (foot.length) {
+      cx /= foot.length;
+      cz /= foot.length;
+      // medics: five metres behind the infantry, towards our own base
+      const bx = base.x - cx, bz = base.z - cz, bl = Math.hypot(bx, bz) || 1;
+      const px = cx + (bx / bl) * 5, pz = cz + (bz / bl) * 5;
+      const loose = this.escorts.filter((m) => !m.patient && !m.healing && Math.hypot(m.x - px, m.z - pz) > 7);
+      if (loose.length) g.commandMove(loose, g.nav.freePoint(px, pz), false, false);
+    }
+    if (g.mode !== "skirmish") return;
+    for (const j of this.attackers) {
+      if (j.type !== "jeep" || (j.target && j.target.alive)) continue;
+      if (!foot.length) {
+        if (j.path.length === 0) g.commandMove([j], { x: foeBase.x, z: foeBase.z }, true, false);
+        continue;
+      }
+      let best: Unit | null = null, bd = 30;
+      for (const e of g.units) {
+        if (!e.alive || e.team === this.team || e.vehicle || e.isStructure || e.type === "drone") continue;
+        const d = Math.hypot(e.x - cx, e.z - cz);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (best) {
+        g.commandAttack([j], best);
+        continue;
+      }
+      // nothing near: roll along a little ahead of the infantry
+      const fx = foeBase.x - cx, fz = foeBase.z - cz, fl = Math.hypot(fx, fz) || 1;
+      const ex = cx + (fx / fl) * 7, ez = cz + (fz / fl) * 7;
+      if (Math.hypot(j.x - ex, j.z - ez) > 9) g.commandMove([j], g.nav.freePoint(ex, ez, 1), true, false);
     }
   }
 
