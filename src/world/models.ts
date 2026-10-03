@@ -623,7 +623,7 @@ const OUTPOST_SURFACES = new Map<string, SurfaceKind>([
   ["0.44,0.4,0.26", "earth"],
   ["0.36,0.27,0.18", "earth"],
 ]);
-const outpostSurface: SurfaceOf = (c) => OUTPOST_SURFACES.get(c.join(","));
+export const outpostSurface: SurfaceOf = (c) => OUTPOST_SURFACES.get(c.join(","));
 
 export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
   const parts: Mesh[] = [];

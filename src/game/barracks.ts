@@ -25,6 +25,8 @@ export class Barracks implements Target {
   hp = BARRACKS_HP;
   maxHp = BARRACKS_HP;
   alive = true;
+  /** Extra model detail of the realistic graphics mode (a child of the building mesh). */
+  detail: Mesh | null = null;
   radius = 6.5;
   aimY = 3;
   y: number;

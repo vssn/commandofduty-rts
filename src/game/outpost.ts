@@ -1,6 +1,7 @@
 import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
+import { createOutpostDetail } from "../world/outpostDetail";
 import { createOutpostMesh, createRing, mat, RADAR_DIM, TEAM_COLOR } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import type { Game } from "./game";
@@ -43,6 +44,12 @@ export class Outpost {
   /** 0 = banners lowered, 1 = fully hoisted. */
   private hoist = 0;
   private readonly model: Mesh;
+  /** Extra detail of the realistic graphics mode (built on first use). */
+  private detail: Mesh | null = null;
+  private detailOn = false;
+  private readonly scene: Scene;
+  private readonly shadows: ShadowGenerator;
+  private readonly seed: number;
   /** Radar only: red warning light on top of the dome, blinking while the station is manned. */
   private readonly beacon: Mesh | null = null;
   /** Blown up (commandos): no owner, no income, cannot be taken any more. */
@@ -65,6 +72,9 @@ export class Outpost {
     this.spawn = toWorld(spec.x, spec.z, spec.rot, 0, 6.5);
     this.rally = toWorld(spec.x, spec.z, spec.rot, 0, 13);
 
+    this.scene = scene;
+    this.shadows = shadows;
+    this.seed = Math.round(spec.x * 31 + spec.z * 17) | 1;
     const mesh = createOutpostMesh(scene, spec.kind);
     this.model = mesh;
     mesh.position.set(spec.x, this.y, spec.z);
@@ -116,6 +126,20 @@ export class Outpost {
     this.applyOwnerColors();
   }
 
+  /** Shows the extra model detail of the realistic graphics mode (built the first time it is needed). */
+  setDetail(on: boolean) {
+    this.detailOn = on;
+    if (on && !this.detail) {
+      this.detail = createOutpostDetail(this.scene, this.kind, this.seed);
+      this.detail.position.copyFrom(this.model.position);
+      this.detail.rotation.copyFrom(this.model.rotation);
+      this.detail.scaling.copyFrom(this.model.scaling);
+      this.detail.freezeWorldMatrix();
+      this.shadows.addShadowCaster(this.detail);
+    }
+    this.detail?.setEnabled(on && !this.destroyed);
+  }
+
   /** Back to the start of a game: neutral, capture bonus unpaid, rebuilt if it was blown up. */
   reset() {
     if (this.destroyed) {
@@ -124,6 +148,7 @@ export class Outpost {
       this.model.rotation.z = 0;
       this.model.position.y = this.y;
       this.model.freezeWorldMatrix();
+      this.setDetail(this.detailOn);
       this.flag.setEnabled(true);
       this.ring.setEnabled(true);
     }
@@ -168,6 +193,7 @@ export class Outpost {
     this.model.scaling.set(1.1, 0.22, 1.1);
     this.model.rotation.z = 0.08;
     this.model.position.y -= 0.15;
+    this.detail?.setEnabled(false); // the rubble heap is the plain model
     this.flag.setEnabled(false);
     this.ring.setEnabled(false);
     for (const b of this.banners) b.flag.setEnabled(false);

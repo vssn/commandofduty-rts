@@ -1,3 +1,4 @@
+import { createBarracksDetail } from "../world/barracksDetail";
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
@@ -183,6 +184,18 @@ export class Game {
         const u = this.spawnUnit(type, b.team, p.x + (i - 1.5) * 2, p.z + (Math.random() - 0.5));
         u.heading = b.rot;
       });
+    }
+  }
+
+  /** Shows or hides the detailed base buildings of the realistic graphics mode (built on first use). */
+  setBaseDetail(on: boolean) {
+    for (const b of this.buildings) {
+      if (on && !b.detail) {
+        b.detail = createBarracksDetail(this.scene, b.team);
+        b.detail.parent = b.mesh;
+        this.shadows.addShadowCaster(b.detail);
+      }
+      b.detail?.setEnabled(on);
     }
   }
 

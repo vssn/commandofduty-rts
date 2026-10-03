@@ -1,5 +1,5 @@
 import {
-  Color3, ColorCurves, ImageProcessingConfiguration, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, type DirectionalLight, type HemisphericLight, type Material,
+  Color3, ColorCurves, ImageProcessingConfiguration, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, ShadowGenerator, type DirectionalLight, type HemisphericLight, type Material,
   type Scene,
 } from "@babylonjs/core";
 import type { SurfaceKind } from "./models";
@@ -21,7 +21,7 @@ export function classicMaterial(m: Material): Material {
 }
 
 /** Saved settings of the classic look, restored when PBR is switched off again. */
-interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: number; exposure: number; contrast: number }
+interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: number; exposure: number; contrast: number; darkness: number; quality: number }
 
 /**
  * Optional physically based rendering ("Realistisch"): every lit material is replaced by an
@@ -47,6 +47,7 @@ export class PbrMode {
     private readonly scene: Scene,
     private readonly sun: DirectionalLight,
     private readonly hemi: HemisphericLight,
+    private readonly shadows: ShadowGenerator,
     /** Parts with their own realistic look (e.g. the textured ground), switched along. */
     private readonly extras: { enable(): void; disable(): void }[] = [],
   ) {
@@ -110,6 +111,7 @@ export class PbrMode {
       sunIntensity: this.sun.intensity, sunColor: this.sun.diffuse.clone(),
       hemiIntensity: this.hemi.intensity, exposure: this.scene.imageProcessingConfiguration.exposure,
       contrast: this.scene.imageProcessingConfiguration.contrast,
+      darkness: this.shadows.getDarkness(), quality: this.shadows.filteringQuality,
     };
   }
 
@@ -120,6 +122,8 @@ export class PbrMode {
     this.hemi.intensity = this.classic.hemiIntensity;
     this.scene.imageProcessingConfiguration.exposure = this.classic.exposure;
     this.scene.imageProcessingConfiguration.contrast = this.classic.contrast;
+    this.shadows.setDarkness(this.classic.darkness);
+    this.shadows.filteringQuality = this.classic.quality;
   }
 
   /** Day / night (commandos) changed the classic light levels: take them over. Call after the environment switched. */
@@ -149,11 +153,14 @@ export class PbrMode {
   private applyLighting() {
     if (!this.classic) return;
     this.restoreLighting();
-    this.sun.intensity = this.classic.sunIntensity * 1.7;
-    this.hemi.intensity = this.classic.hemiIntensity * 1.1;
+    this.sun.intensity = this.classic.sunIntensity * 1.9;
+    this.hemi.intensity = this.classic.hemiIntensity * 0.7;
+    // crisp, deep shadows like on a sunny day: less sky fill, darker shadow, a tighter filter
+    this.shadows.setDarkness(this.classic.darkness * 0.5);
+    this.shadows.filteringQuality = ShadowGenerator.QUALITY_LOW;
     // ACES takes some brightness: make up for it
     this.scene.imageProcessingConfiguration.exposure = this.classic.exposure * GRADE.exposure;
-    this.scene.imageProcessingConfiguration.contrast = this.classic.contrast * 1.1;
+    this.scene.imageProcessingConfiguration.contrast = this.classic.contrast * 1.15;
   }
 
   // ---------------------------------------------------------------- materials

@@ -3,7 +3,8 @@ import {
   type AbstractEngine, type Material, type MaterialDefines, type Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import { ROAD_RANGE, type Terrain } from "./terrain";
-import { bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
+import { bakeOcclusion, bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
+import type { MapLayout, V2 } from "./layout";
 import { loadTextureLayers, type TextureLayers } from "./textureLayers";
 
 /**
@@ -253,6 +254,10 @@ tsRough = mix(tsRough, tsA4.a, tsW); tsNm = mix(tsNm, tsN4, tsW);
 tsW = smoothstep(tsAa.x, -tsAa.x, tsRd.x);
 tsCol = mix(tsCol, tsLin(${vec3(ROAD_COLORS.asphalt)}) * tsDetail(tsA3, tsMean3), tsW);
 tsRough = mix(tsRough, tsA3.a, tsW); tsNm = mix(tsNm, tsN3, tsW);
+// static ambient occlusion: darker and cooler under foliage, darker and greyer between houses
+vec2 tsAo = tsPth.ba * tsIn;
+tsCol *= mix(vec3(1.0), vec3(0.45, 0.58, 0.42), tsAo.x);
+tsCol *= mix(vec3(1.0), vec3(0.62, 0.58, 0.56), tsAo.y);
 surfaceAlbedo = tsCol;
 tsRough = clamp(tsRough, 0.35, 1.0);
 vec3 tsNt = tsNm * 2.0 - 1.0;
@@ -282,7 +287,18 @@ export class RealisticTerrain {
   private masks: { decal: RawTexture; kind: RawTexture; roads: RawTexture; paths: RawTexture; half: number } | null = null;
   private arrays: TextureLayers | null = null;
 
-  constructor(private readonly scene: Scene, private readonly terrain: Terrain, private readonly footpaths: () => PathLine[]) {}
+  constructor(private readonly scene: Scene, private readonly terrain: Terrain, private readonly footpaths: () => PathLine[],
+    /** What shades the ground: for the baked ambient occlusion. */
+    private readonly occluders: () => { trees: V2[]; layout: MapLayout },
+  ) {}
+
+  /** Footpaths (r, g) and the static ambient occlusion (b, a) in one map. */
+  private bakePaths(res: number, half: number): Uint8Array {
+    const data = bakePathMap(this.footpaths(), res, half);
+    const o = this.occluders();
+    bakeOcclusion(data, res, half, o.trees, o.layout);
+    return data;
+  }
 
   /** Switches the ground to its realistic material. */
   enable() {
@@ -302,7 +318,7 @@ export class RealisticTerrain {
         t.wrapU = t.wrapV = Texture.CLAMP_ADDRESSMODE;
         return t;
       };
-      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(bakePathMap(this.footpaths(), m.res, m.half), "groundPaths"), half: m.half };
+      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(this.bakePaths(m.res, m.half), "groundPaths"), half: m.half };
     }
     mesh.setVerticesData(VertexBuffer.NormalKind, this.ground.normals);
     mesh.setVerticesData(VertexBuffer.ColorKind, this.ground.colors);

@@ -1,4 +1,4 @@
-import type { V2 } from "./layout";
+import { toLocal, type MapLayout, type V2 } from "./layout";
 
 /** A footpath as laid out by the dirt tracks: a polyline with its width and tapering ends. */
 export interface PathLine { pts: V2[]; width: number; taperStart?: boolean; taperEnd?: boolean }
@@ -51,4 +51,51 @@ export function bakePathMap(lines: readonly PathLine[], res: number, half: numbe
     }
   }
   return data;
+}
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Bakes a static ambient occlusion of the ground into the blue and alpha channels of the path map:
+ * b = under trees and inside forests, a = between houses and inside the villages. The shader darkens
+ * and tints the ground by them (cool and green under foliage, warm and grey in the alleys).
+ */
+export function bakeOcclusion(data: Uint8Array, res: number, half: number, trees: readonly V2[], layout: MapLayout) {
+  const step = (half * 2) / res;
+  const forest = new Float32Array(res * res), village = new Float32Array(res * res);
+  /** Adds weight `w(x, z)` (0..1) to `buf` for all texels within `reach` of (cx, cz): w values combine like independent shadows. */
+  const splat = (buf: Float32Array, cx: number, cz: number, reach: number, w: (x: number, z: number) => number) => {
+    const i0 = Math.max(0, Math.floor((cx - reach + half) / step)), i1 = Math.min(res - 1, Math.ceil((cx + reach + half) / step));
+    const j0 = Math.max(0, Math.floor((cz - reach + half) / step)), j1 = Math.min(res - 1, Math.ceil((cz + reach + half) / step));
+    for (let j = j0; j <= j1; j++) {
+      const z = -half + (j + 0.5) * step;
+      for (let i = i0; i <= i1; i++) {
+        const v = w(-half + (i + 0.5) * step, z);
+        if (v <= 0) continue;
+        const k = i + j * res;
+        buf[k] = 1 - (1 - buf[k]) * (1 - v);
+      }
+    }
+  };
+  // every tree shades the ground under and around its crown
+  for (const t of trees) splat(forest, t.x, t.z, 3.6, (x, z) => 0.55 * smooth(3.6, 0.4, Math.hypot(x - t.x, z - t.z)));
+  // forests are darker inside than their individual trees suggest
+  for (const f of layout.forests) splat(forest, f.x, f.z, f.r, (x, z) => 0.3 * smooth(f.r, f.r * 0.55, Math.hypot(x - f.x, z - f.z)));
+  // alleys between the houses, and a little shade over the whole village
+  for (const s of layout.suburbs) splat(village, s.x, s.z, s.r, (x, z) => 0.16 * smooth(s.r, s.r * 0.6, Math.hypot(x - s.x, z - s.z)));
+  for (const h of layout.houses) {
+    const reach = Math.hypot(h.w, h.d) / 2 + 3.2;
+    splat(village, h.x, h.z, reach, (x, z) => {
+      const l = toLocal(h.x, h.z, h.rot, x, z);
+      const d = Math.hypot(Math.max(Math.abs(l.x) - h.w / 2, 0), Math.max(Math.abs(l.z) - h.d / 2, 0));
+      return 0.75 * smooth(3.0, 0, d);
+    });
+  }
+  for (let k = 0; k < res * res; k++) {
+    data[k * 4 + 2] = Math.round(forest[k] * 255);
+    data[k * 4 + 3] = Math.round(village[k] * 255);
+  }
 }
