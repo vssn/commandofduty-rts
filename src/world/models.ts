@@ -9,13 +9,15 @@ const matCache = new Map<string, StandardMaterial>();
 /** Real-world material a part is made of: the realistic graphics mode gives it a matching texture. */
 /** Roughness of roof tiles / sheeting in the realistic mode (the default is 0.85: matt). */
 export const ROOF_ROUGH = 0.42;
-export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth";
+/** A different look for the realistic (PBR) copy of a material: another colour and/or the camouflage pattern. */
+export interface PbrLook { color?: RGB; camo?: boolean }
+export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth" | "cloth";
 /** Picks the surface kind of a part by its colour (undefined = plain). */
 export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
 
-export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number } = {}): StandardMaterial {
+export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook } = {}): StandardMaterial {
   // materials belong to a scene, so the cache is per scene (the build-menu portraits use their own)
-  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "");
+  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "") + (opts.metal !== undefined ? `m${opts.metal}` : "") + (opts.pbr ? `p${JSON.stringify(opts.pbr)}` : "");
   let m = matCache.get(key);
   if (!m) {
     m = new StandardMaterial("m" + key, scene);
@@ -26,8 +28,8 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
       m.disableLighting = true;
     }
     if (opts.twoSided) m.backFaceCulling = false;
-    // `rough`: roughness of the realistic (PBR) copy; smooth parts such as roofs catch the sun
-    if (opts.surface || opts.rough !== undefined) m.metadata = { surface: opts.surface, rough: opts.rough };
+    // `rough` / `metal`: roughness and metallic of the realistic (PBR) copy; smooth parts such as roofs catch the sun
+    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr };
     matCache.set(key, m);
   }
   return m;
@@ -79,8 +81,14 @@ export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1]): StandardMater
   m.diffuseTexture = tex;
   m.diffuseColor = new Color3(tint[0], tint[1], tint[2]);
   m.specularColor = Color3.Black();
+  m.metadata = { surface: "cloth", rough: 0.92 }; // woven fabric in the realistic mode
   matCache.set(key, m);
   return m;
+}
+
+/** The camouflage pattern (shared per scene), e.g. for a helmet cover in the realistic mode. */
+export function camoTexture(scene: Scene): Texture {
+  return camoMaterial(scene).diffuseTexture as Texture;
 }
 
 /** Builds a flat shaded mesh from raw triangles, normals pointing away from `center`. */
@@ -189,11 +197,22 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const kit: RGB = [0.35, 0.38, 0.24];
   const wood: RGB = [0.45, 0.3, 0.17];
   const metal: RGB = [0.12, 0.12, 0.13];
+  // what the parts are made of, for the realistic mode: woven cloth, leather, skin, steel, wood
+  const cloth = { surface: "cloth" as SurfaceKind, rough: 0.92 };
+  const looks = new Map<string, { surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook }>([
+    [skin.join(), { rough: 0.5 }],
+    [leather.join(), { rough: 0.45 }],
+    [metal.join(), { rough: 0.3, metal: 0.65 }],
+    // realistic mode: the helmet (and pack flap) wear a camouflage cover; the team shows on a band
+    [helmet.join(), { surface: "cloth", rough: 0.9, pbr: { color: [0.92, 0.92, 0.88], camo: true } }],
+    [wood.join(), { rough: 0.55 }],
+    [webbing.join(), cloth], [kit.join(), cloth], [uni.join(), cloth], [uniDark.join(), cloth], [pants.join(), cloth],
+  ]);
   const parts: Mesh[] = [];
   /** Camouflage parts get the camo material, with UVs scaled to world size so the blotches stay even. */
   const paint = (m: Mesh, c: RGB, uSize = 1, vSize = 1) => {
     if (c !== CAMO && c !== CAMO_PANTS) {
-      m.material = mat(scene, c);
+      m.material = mat(scene, c, looks.get(c.join()) ?? {});
       return;
     }
     m.material = camoMaterial(scene, c);
@@ -219,7 +238,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const tube = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, ra: number, rb: number, c: RGB, flat = 1) => {
     const d = new Vector3(bx - ax, by - ay, bz - az);
     const len = d.length();
-    const m = MeshBuilder.CreateCylinder("seg", { height: len, diameterBottom: ra * 2, diameterTop: rb * 2, tessellation: 8 }, scene);
+    const m = MeshBuilder.CreateCylinder("seg", { height: len, diameterBottom: ra * 2, diameterTop: rb * 2, tessellation: 12 }, scene);
     m.scaling.z = flat;
     m.bakeCurrentTransformIntoVertices();
     m.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
@@ -230,7 +249,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     return m;
   };
   const ball = (r: number, x: number, y: number, z: number, c: RGB, sy = 1) => {
-    const m = MeshBuilder.CreateSphere("ball", { diameter: r * 2, segments: 6 }, scene);
+    const m = MeshBuilder.CreateSphere("ball", { diameter: r * 2, segments: 10 }, scene);
     m.scaling.y = sy;
     m.position.set(x, y, z);
     paint(m, c, Math.PI * r * 2, Math.PI * r * sy);
@@ -254,6 +273,36 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     ball(0.062, e[0], e[1], e[2], uni);
     tube(e[0], e[1], e[2], h[0], h[1], h[2], 0.062, 0.05, uni);
     ball(0.058, h[0], h[1], h[2], skin);
+    // cuff, fingers and thumb along the forearm's direction
+    const f0 = 0.78;
+    tube(e[0] + (h[0] - e[0]) * f0, e[1] + (h[1] - e[1]) * f0, e[2] + (h[2] - e[2]) * f0, h[0] - (h[0] - e[0]) * 0.04, h[1] - (h[1] - e[1]) * 0.04, h[2] - (h[2] - e[2]) * 0.04, 0.058, 0.056, uniDark);
+    const dir = new Vector3(h[0] - e[0], h[1] - e[1], h[2] - e[2]).normalize();
+    const side = Vector3.Cross(dir, up);
+    if (side.lengthSquared() < 1e-4) side.set(1, 0, 0);
+    side.normalize();
+    for (const i of [-1.5, -0.5, 0.5, 1.5]) {
+      const len = 0.08 - Math.abs(i) * 0.008;
+      const bx = h[0] + side.x * i * 0.022, by = h[1] + side.y * i * 0.022, bz = h[2] + side.z * i * 0.022;
+      tube(bx, by, bz, bx + dir.x * len, by + dir.y * len - 0.012, bz + dir.z * len, 0.014, 0.011, skin);
+    }
+    tube(h[0] + side.x * 0.05, h[1] + side.y * 0.05, h[2] + side.z * 0.05, h[0] + side.x * 0.03 + dir.x * 0.05, h[1] + side.y * 0.03 + dir.y * 0.05, h[2] + side.z * 0.03 + dir.z * 0.05, 0.015, 0.012, skin);
+  };
+
+  /** Face (the head ball sits at y 1.69): eyes with brows, nose, lips, chin, ears and a jaw line. */
+  const faceDetail = () => {
+    const brow: RGB = [0.22, 0.16, 0.1];
+    const shade: RGB = [0.8, 0.62, 0.5];
+    ball(0.1, 0, 1.64, 0.05, skin, 0.75); // jaw
+    ball(0.04, 0, 1.607, 0.105, skin); // chin
+    for (const x of [-1, 1]) {
+      ball(0.034, x * 0.135, 1.685, 0.0, skin, 1.25); // ears
+      ball(0.017, x * 0.05, 1.705, 0.127, white); // eyes
+      ball(0.009, x * 0.05, 1.705, 0.141, [0.18, 0.14, 0.1]);
+      box(0.06, 0.011, 0.014, x * 0.052, 1.735, 0.127, brow).rotation.z = -x * 0.12; // brows
+    }
+    box(0.03, 0.055, 0.045, 0, 1.69, 0.138, shade); // nose
+    box(0.026, 0.014, 0.03, 0, 1.662, 0.15, shade);
+    box(0.055, 0.012, 0.012, 0, 1.628, 0.137, [0.58, 0.36, 0.32]); // lips
   };
 
 
@@ -285,7 +334,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
 
     tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin);
     ball(0.135, 0, 1.69, 0.01, skin, 1.15);
-    box(0.05, 0.07, 0.04, 0, 1.66, 0.14, [0.8, 0.62, 0.5]);
+    faceDetail();
+    ball(0.125, 0, 1.655, -0.035, [0.2, 0.15, 0.1], 0.85); // hair under the cap
     const capC: RGB = [0.15, 0.15, 0.14];
     tube(0, 1.75, -0.01, 0, 1.86, -0.02, 0.15, 0.17, capC, 0.95); // cap crown, slightly wider on top
     tube(0, 1.74, -0.01, 0, 1.77, -0.01, 0.152, 0.152, [0.08, 0.08, 0.07]); // cap band
@@ -302,6 +352,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     tube(0, -0.08, -0.01, 0, -0.3, -0.02, 0.075, 0.072, [0.13, 0.1, 0.08]); // tall boot shaft
     box(0.13, 0.12, 0.27, 0, -0.33, 0.03, [0.13, 0.1, 0.08]);
     box(0.14, 0.035, 0.29, 0, -0.385, 0.03, [0.06, 0.05, 0.05]);
+    ball(0.068, 0, -0.35, 0.17, [0.13, 0.1, 0.08], 0.72); // toe cap
+    box(0.14, 0.03, 0.08, 0, -0.41, -0.06, [0.05, 0.04, 0.04]); // heel
     const shin = merge(`agentShin${team}`, parts.splice(0));
     shin.scaling.setAll(SOLDIER_SCALE);
     shin.bakeCurrentTransformIntoVertices();
@@ -324,6 +376,13 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     for (const y of [1.05, 0.72, 0.56]) box(0.035, 0.035, 0.02, 0.07, y, y > 0.9 ? 0.155 : 0.19, [0.1, 0.1, 0.09]); // buttons
     tube(0, 1.42, 0, 0, 1.6, 0, 0.12, 0.09, uniDark); // turned-up collar
     box(0.16, 0.2, 0.06, -0.22, 0.84, 0.08, [0.3, 0.22, 0.14]); // map case
+    for (const x of [-0.14, 0.14]) {
+      box(0.12, 0.04, 0.02, x, 0.74, 0.17, uniDark); // hip pocket flaps
+      box(0.11, 0.1, 0.012, x, 0.68, 0.172, coat);
+    }
+    for (const x of [-0.22, 0.22]) box(0.08, 0.02, 0.1, x, 1.455, 0, uniDark); // epaulettes
+    tube(-0.07, 1.47, 0, -0.22, 1.42, 0, 0.06, 0.085, coat, 0.7);
+    tube(0.07, 1.47, 0, 0.22, 1.42, 0, 0.06, 0.085, coat, 0.7);
     const body = merge(`agent${team}`, parts.splice(0));
     body.scaling.setAll(SOLDIER_SCALE);
     body.bakeCurrentTransformIntoVertices();
@@ -336,6 +395,15 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   ball(0.09, 0.25, 1.4, 0, uni);
   tube(0, 0.72, 0, 0, 0.88, 0, 0.17, 0.185, pants, 0.7);
   tube(0, 0.82, 0, 0, 0.9, 0, 0.2, 0.2, leather, 0.66);
+  // shoulder slope, chest pockets with flaps, belt pouches, hips
+  tube(-0.06, 1.47, 0, -0.22, 1.41, 0, 0.06, 0.08, uni, 0.7);
+  tube(0.06, 1.47, 0, 0.22, 1.41, 0, 0.06, 0.08, uni, 0.7);
+  for (const x of [-0.1, 0.1]) {
+    box(0.09, 0.09, 0.02, x, 1.22, 0.148, uniDark);
+    box(0.095, 0.03, 0.025, x, 1.268, 0.15, uni);
+  }
+  for (const x of [-0.205, 0.205]) box(0.06, 0.1, 0.09, x, 0.87, 0.06, leather);
+  for (const x of [-0.09, 0.09]) ball(0.1, x, 0.77, 0, pants, 1.05);
   box(0.08, 0.06, 0.02, 0, 0.86, 0.14, [0.7, 0.62, 0.35]);
   for (const x of [-0.12, 0.12]) {
     box(0.05, 0.56, 0.02, x, 1.15, 0.145, webbing).rotation.x = 0.1;
@@ -359,6 +427,9 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
   box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.38, 0.31, 0.2]);
   box(0.28, 0.12, 0.03, 0, 1.3, -0.3, helmet); // pack flap in team colour
+  for (const x of [-0.18, 0.18]) box(0.08, 0.2, 0.12, x, 1.12, -0.22, [0.34, 0.28, 0.18]); // pack side pockets
+  box(0.04, 0.32, 0.015, 0.1, 1.05, -0.31, metal); // entrenching tool
+  box(0.03, 0.18, 0.016, 0.1, 0.84, -0.31, wood);
   tube(-0.2, 1.46, -0.2, 0.2, 1.46, -0.2, 0.075, 0.075, kit); // bedroll
   tube(0, 1.44, 0, 0, 1.56, 0, 0.1, 0.06, uniDark); // collar
   if (grenadier) {
@@ -380,8 +451,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   if (grenadier) {
     // no rifle: the left arm hangs loosely here; the right arm with the grenade is a separate part
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.14]);
-  } else if (medic || pilot) {
-    // unarmed: both arms hang loosely (the view swings them forward to treat a patient / type)
+  } else if (medic) {
+    // unarmed: the left arm hangs loosely here, the right one is a separate part (like the
+    // grenadier's), so the arms can swing against each other when he walks and reach out to treat a patient
+    arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.12]);
+  } else if (pilot) {
+    // both arms hang loosely (the view brings them forward to type)
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.12]);
     arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
   } else {
@@ -390,18 +465,30 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     box(0.06, 0.08, 0.34, 0.08, 1.24, 0.5, metal);
     box(0.05, 0.16, 0.07, 0.08, 1.13, 0.5, metal);
     box(0.07, 0.05, 0.28, 0.08, 1.2, 0.62, wood);
-    box(0.035, 0.035, 0.45, 0.08, 1.25, 0.9, metal);
+    tube(0.08, 1.25, 0.66, 0.08, 1.25, 1.14, 0.02, 0.017, metal); // barrel
+    tube(0.08, 1.25, 1.12, 0.08, 1.25, 1.18, 0.027, 0.027, metal); // muzzle
+    box(0.01, 0.035, 0.012, 0.08, 1.288, 1.1, metal); // front sight
+    box(0.03, 0.025, 0.015, 0.08, 1.288, 0.62, metal); // rear sight
+    box(0.05, 0.012, 0.012, 0.118, 1.258, 0.44, metal); // bolt handle
+    box(0.012, 0.03, 0.07, 0.08, 1.17, 0.38, metal); // trigger guard
+    tube(0.1, 1.17, 0.0, 0.1, 0.98, 0.3, 0.012, 0.012, webbing); // sling
+    tube(0.1, 0.98, 0.3, 0.09, 1.19, 0.68, 0.012, 0.012, webbing);
     arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
     arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
   }
   const suffix = grenadier ? "g" : medic ? "m" : pilot ? "p" : "";
   const arms = shoulderPart(`soldierArms${team}${suffix}`);
   let throwArm: Mesh | undefined;
-  if (grenadier) {
-    // throwing arm: grenade held loosely at the hip, pivots at the right shoulder so it can wind up
-    arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
-    ball(0.08, 0.25, 0.94, 0.28, [0.3, 0.36, 0.2], 1.25); // grenade
-    throwArm = merge(`soldierThrowArm${team}`, parts.splice(0));
+  if (grenadier || medic) {
+    // right arm, pivoting at its shoulder: the grenadier's holds the grenade loosely at the hip and
+    // can wind up to throw; the medic's just hangs
+    if (grenadier) {
+      arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
+      ball(0.08, 0.25, 0.94, 0.28, [0.3, 0.36, 0.2], 1.25); // grenade
+    } else {
+      arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
+    }
+    throwArm = merge(`soldierThrowArm${team}${suffix}`, parts.splice(0));
     throwArm.position.set(-0.26, -SHOULDER, 0);
     throwArm.bakeCurrentTransformIntoVertices();
     throwArm.scaling.setAll(SOLDIER_SCALE);
@@ -410,7 +497,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
 
   tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin); // neck
   ball(0.135, 0, 1.69, 0.01, skin, 1.15); // head
-  box(0.05, 0.07, 0.04, 0, 1.66, 0.14, [0.8, 0.62, 0.5]); // nose
+  faceDetail();
   if (pilot) {
     // no helmet: short hair, a headset with ear cups, a boom microphone and a glowing status LED
     ball(0.14, 0, 1.73, -0.01, [0.2, 0.15, 0.1], 0.85); // hair
@@ -429,39 +516,94 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     led.material = mat(scene, [0.3, 1, 0.5], { emissive: true });
     parts.push(led);
   } else {
-    const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.36, segments: 8, slice: 0.5 }, scene);
-    helm.position.y = 1.73;
-    helm.material = mat(scene, helmet, { twoSided: true });
-    const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.43, height: 0.025, tessellation: 14 }, scene);
-    brim.position.y = 1.73;
-    brim.material = mat(scene, helmet);
-    parts.push(helm, brim);
+    // modern combat helmet: a rounded composite shell, longer front to back, with a skirt that runs
+    // down over the sides and the back of the head and leaves the face open; a mount on the front,
+    // rails on the sides, a retention pad at the back, a chin strap
+    const hl = { rough: 0.55, metal: 0.08, surface: "cloth" as SurfaceKind, pbr: { color: [0.92, 0.92, 0.88] as RGB, camo: true } };
+    const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.37, segments: 14, slice: 0.5 }, scene);
+    helm.scaling.set(1, 0.95, 1.13);
+    helm.position.set(0, 1.755, -0.012);
+    helm.material = mat(scene, helmet, { twoSided: true, ...hl });
+    const skirt = MeshBuilder.CreateSphere("helmSkirt", { diameter: 0.376, segments: 14, slice: 0.66, arc: 0.64 }, scene);
+    skirt.scaling.set(1, 0.95, 1.13);
+    skirt.position.set(0, 1.74, -0.012);
+    skirt.rotation.y = -2.513; // the open side faces forward
+    skirt.material = mat(scene, helmet, { twoSided: true, ...hl });
+    parts.push(helm, skirt);
+    box(0.2, 0.012, 0.055, 0, 1.754, 0.215, helmet, 0.3).material = mat(scene, helmet, hl); // front lip
+    box(0.075, 0.05, 0.035, 0, 1.805, 0.205, metal); // mount for night vision on the front
+    box(0.05, 0.02, 0.012, 0, 1.805, 0.225, [0.3, 0.3, 0.28]);
+    for (const x of [-1, 1]) {
+      box(0.014, 0.026, 0.11, x * 0.186, 1.745, 0.0, metal); // side rails
+      tube(x * 0.128, 1.735, 0.03, x * 0.075, 1.605, 0.1, 0.009, 0.009, leather); // chin strap
+      box(0.045, 0.025, 0.012, x * 0.075, 1.6, 0.105, leather);
+    }
+    tube(-0.07, 1.6, 0.108, 0.07, 1.6, 0.108, 0.008, 0.008, leather);
+    box(0.13, 0.05, 0.04, 0, 1.655, -0.205, [0.16, 0.16, 0.15]); // retention pad at the back
+    box(0.02, 0.04, 0.012, 0, 1.69, -0.215, [0.16, 0.16, 0.15]);
+    // the team's colour on an elastic band round the shell and a patch on the crown (in the classic
+    // look they merge with the team-coloured helmet; on the camouflage cover they mark the side)
+    const teamBand = MeshBuilder.CreateTorus("helmBand", { diameter: 0.372, thickness: 0.022, tessellation: 20 }, scene);
+    teamBand.scaling.z = 1.13;
+    teamBand.position.set(0, 1.775, -0.012);
+    teamBand.material = mat(scene, teamC, { rough: 0.7 });
+    parts.push(teamBand);
+    if (!medic) box(0.1, 0.016, 0.1, 0, 1.932, -0.01, teamC);
+    // a net of dark patches over the shell
+    for (const [a, el] of [[0.4, 0.9], [2.0, 0.8], [3.6, 1.0], [5.1, 0.85], [1.2, 1.2], [4.4, 1.15]] as [number, number][]) {
+      const r0 = 0.18, ca = Math.cos(a), sa = Math.sin(a), ce = Math.cos(el);
+      const patch = box(0.07, 0.02, 0.05, ca * r0 * ce * 0.98, 1.755 + Math.sin(el) * r0 * 0.9, sa * r0 * ce * 0.98, [0.26, 0.3, 0.18], 0, -a);
+      patch.rotation.x = 0.4 * (sa > 0 ? 1 : -1);
+    }
+    if (grenadier) {
+      // hearing protection: ear cups with foam seals on the helmet's rails, held by a bracket
+      for (const x of [-1, 1]) {
+        const cup = MeshBuilder.CreateCylinder("earCup", { diameter: 0.115, height: 0.06, tessellation: 14 }, scene);
+        cup.rotation.z = Math.PI / 2;
+        cup.position.set(x * 0.188, 1.69, 0.0);
+        cup.material = mat(scene, [0.17, 0.17, 0.16], { rough: 0.5 });
+        const seal = MeshBuilder.CreateTorus("earSeal", { diameter: 0.105, thickness: 0.026, tessellation: 14 }, scene);
+        seal.rotation.z = Math.PI / 2;
+        seal.position.set(x * 0.158, 1.69, 0.0);
+        seal.material = mat(scene, [0.1, 0.1, 0.1], { rough: 0.85 });
+        const cap = MeshBuilder.CreateCylinder("earCap", { diameter: 0.07, height: 0.012, tessellation: 12 }, scene);
+        cap.rotation.z = Math.PI / 2;
+        cap.position.set(x * 0.222, 1.69, 0.0);
+        cap.material = mat(scene, metal);
+        parts.push(cup, seal, cap);
+        tube(x * 0.19, 1.72, 0.0, x * 0.19, 1.745, 0.0, 0.016, 0.016, metal); // bracket to the rail
+      }
+    }
+    ball(0.125, 0, 1.655, -0.035, [0.22, 0.16, 0.1], 0.85); // hair
   }
   if (grenadier) {
     // light band around the helmet makes grenadiers easy to tell apart
-    const band = MeshBuilder.CreateCylinder("band", { height: 0.06, diameter: 0.37, tessellation: 12 }, scene);
-    band.position.y = 1.77;
+    const band = MeshBuilder.CreateCylinder("band", { height: 0.05, diameter: 0.372, tessellation: 14 }, scene);
+    band.scaling.z = 1.13;
+    band.position.y = 1.79;
     band.material = mat(scene, [0.9, 0.86, 0.7]);
     parts.push(band);
   }
   if (medic) {
     // white patch with a red cross on the front, back and crown of the helmet
     for (const side of [1, -1]) {
-      const z = 0.175 * side, y = 1.8, tilt = -0.45 * side;
+      const z = 0.2 * side, y = 1.835, tilt = -0.45 * side;
       box(0.13, 0.13, 0.02, 0, y, z, white).rotation.x = tilt;
       box(0.1, 0.03, 0.03, 0, y, z + 0.004 * side, red).rotation.x = tilt;
       box(0.03, 0.1, 0.03, 0, y, z + 0.004 * side, red).rotation.x = tilt;
     }
-    box(0.14, 0.02, 0.14, 0, 1.912, 0, white);
-    box(0.11, 0.03, 0.035, 0, 1.915, 0, red);
-    box(0.035, 0.03, 0.11, 0, 1.915, 0, red);
+    box(0.14, 0.02, 0.14, 0, 1.937, 0, white);
+    box(0.11, 0.03, 0.035, 0, 1.94, 0, red);
+    box(0.035, 0.03, 0.11, 0, 1.94, 0, red);
   }
 
   const head = shoulderPart(`soldierHead${team}${suffix}`);
 
   // ---- thigh (origin = hip joint) with the knee cap
   tube(0, 0, 0, 0, -0.4, 0.02, 0.095, 0.075, pants);
+  tube(0, -0.02, 0, 0, -0.3, 0.01, 0.1, 0.088, pants);
   ball(0.074, 0, -0.4, 0.02, pants);
+  box(0.115, 0.11, 0.05, 0, -0.4, 0.085, kit); // knee pad
   const leg = merge(`soldierThigh${team}`, parts.splice(0));
   leg.scaling.setAll(SOLDIER_SCALE);
   leg.bakeCurrentTransformIntoVertices();
@@ -471,6 +613,9 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   tube(0, -0.12, -0.01, 0, -0.28, -0.02, 0.074, 0.07, [0.56, 0.5, 0.38]);
   box(0.13, 0.12, 0.26, 0, -0.33, 0.03, [0.2, 0.16, 0.12]);
   box(0.14, 0.035, 0.28, 0, -0.385, 0.03, [0.1, 0.09, 0.08]);
+  ball(0.068, 0, -0.35, 0.165, [0.2, 0.16, 0.12], 0.72); // toe cap
+  for (const z of [-0.02, 0.04, 0.1]) box(0.09, 0.008, 0.014, 0, -0.268, z, [0.12, 0.1, 0.08]); // laces
+  box(0.14, 0.03, 0.08, 0, -0.41, -0.06, [0.07, 0.06, 0.06]); // heel
   const shin = merge(`soldierShin${team}`, parts.splice(0));
   shin.scaling.setAll(SOLDIER_SCALE);
   shin.bakeCurrentTransformIntoVertices();
@@ -879,6 +1024,83 @@ export function createJeepBody(scene: Scene, team: Team): Mesh {
   steer.material = mat(scene, dark);
   parts.push(spare, steer);
 
+  // ---- detail: lights and guards, grille, bumper fittings, bonnet louvres and latches, windscreen
+  // frame with wipers and mirrors, doors, steps, stowed tools, dashboard, roll of the spare wheel,
+  // tail lights, tow hitch, number plates
+  const cyl = (h: number, d: number, x: number, y: number, z: number, c: RGB, rx = 0, rz = 0, tess = 12) => {
+    const m = MeshBuilder.CreateCylinder("cyl", { height: h, diameter: d, tessellation: tess }, scene);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, 0, rz);
+    m.material = mat(scene, c);
+    parts.push(m);
+    return m;
+  };
+  const steel: RGB = [0.3, 0.3, 0.29];
+  const lamp: RGB = [0.95, 0.9, 0.7];
+  const tail: RGB = [0.62, 0.08, 0.06];
+  const olive2: RGB = [olive[0] * 0.8, olive[1] * 0.8, olive[2] * 0.8];
+  for (const x of [-1, 1]) {
+    cyl(0.1, 0.34, x * 0.66, 1.16, 2.2, dark, Math.PI / 2); // headlight housing and glass
+    cyl(0.05, 0.27, x * 0.66, 1.16, 2.27, lamp, Math.PI / 2);
+    for (const a of [0, 1, 2]) box(0.02, 0.38, 0.02, x * 0.66 + (a - 1) * 0.09, 1.16, 2.31, steel); // guard bars
+    box(0.38, 0.02, 0.02, x * 0.66, 1.16, 2.31, steel);
+    box(0.1, 0.1, 0.1, x * 0.95, 1.12, 2.15, [0.9, 0.55, 0.12]); // indicator lamps
+    box(0.12, 0.12, 0.3, x * 0.68, 0.7, 2.45, steel); // tow shackle on the bumper
+    box(0.18, 0.04, 0.6, x * 1.14, 0.62, -0.5, steel); // side steps
+    box(0.06, 0.04, 0.24, x * 1.1, 1.18, 0.15, steel); // door handles
+    // door outlines on both sides
+    box(0.02, 0.5, 0.02, x * 1.075, 1.25, 0.8, dark);
+    box(0.02, 0.5, 0.02, x * 1.075, 1.25, -0.2, dark);
+    box(0.02, 0.02, 1.0, x * 1.075, 1.0, 0.3, dark);
+    // bonnet hinges and latches
+    box(0.08, 0.04, 0.1, x * 0.95, 1.45, 0.72, steel);
+    box(0.06, 0.12, 0.05, x * 0.7, 1.35, 2.2, steel);
+    // mirrors on the windscreen frame
+    box(0.04, 0.5, 0.05, x * 1.0, 1.95, 0.6, dark, -0.18); // frame pillars
+    cyl(0.03, 0.16, x * 1.2, 2.0, 0.55, dark, Math.PI / 2);
+    box(0.2, 0.025, 0.025, x * 1.1, 1.95, 0.58, steel);
+    // tail lights, rear bumper with its fittings
+    box(0.18, 0.12, 0.05, x * 0.88, 1.05, -2.2, tail);
+    box(0.12, 0.1, 0.12, x * 0.55, 0.7, -2.34, steel);
+    // grab handles by the rear seats
+    cyl(0.5, 0.04, x * 0.9, 1.75, -0.55, steel);
+  }
+  for (let i = -3; i <= 3; i++) box(0.05, 0.4, 0.04, i * 0.23, 1.08, 2.24, steel); // grille slats
+  for (const z of [0.95, 1.2, 1.45, 1.7]) box(0.5, 0.012, 0.05, 0, 1.445, z, olive2); // bonnet louvres
+  box(0.05, 0.05, 1.45, 0, 1.45, 1.4, olive2); // bonnet centre line
+  box(0.5, 0.2, 0.03, 0, 0.7, 2.43, dark); // front number plate
+  box(0.4, 0.14, 0.02, 0, 0.88, -2.38, [0.9, 0.9, 0.85]); // rear number plate (the spare wheel is above it)
+  box(0.4, 0.14, 0.04, 0, 0.7, -2.4, steel); // tow hitch
+  cyl(0.18, 0.1, 0, 0.7, -2.55, steel, Math.PI / 2);
+  // wipers, instrument panel, steering column
+  for (const x of [-0.8, 0.25]) box(0.03, 0.03, 0.5, x, 1.5, 0.66, dark, -0.18).rotation.z = -0.5;
+  box(1.8, 0.3, 0.3, 0, 1.38, 0.36, dark);
+  box(0.4, 0.12, 0.04, -0.5, 1.5, 0.19, [0.55, 0.55, 0.5]);
+  cyl(0.5, 0.06, -0.5, 1.5, 0.3, dark, 0.6, 0);
+  // spare wheel: tread and a rim disc; a mount behind it
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    box(0.1, 0.08, 0.3, Math.cos(a) * 0.48, 1.25 + Math.sin(a) * 0.48, -2.28, [0.07, 0.07, 0.07]).rotation.z = a;
+  }
+  cyl(0.04, 0.55, 0, 1.25, -2.44, olive2, Math.PI / 2);
+  // stowed tools on the left side: a shovel and an axe
+  box(0.04, 0.04, 1.1, -1.13, 1.2, -1.0, [0.45, 0.3, 0.17]);
+  box(0.04, 0.3, 0.2, -1.13, 1.2, -0.35, steel);
+  box(0.04, 0.04, 0.7, -1.13, 1.05, -1.3, [0.45, 0.3, 0.17]);
+  box(0.04, 0.12, 0.2, -1.13, 1.05, -0.9, steel);
+  // jerry can: handle, spout and cross-shaped stamping
+  box(0.3, 0.04, 0.05, 0.7, 1.52, -1.8, [0.3, 0.36, 0.2]);
+  box(0.08, 0.06, 0.08, 0.82, 1.52, -1.7, dark);
+  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, [0.22, 0.27, 0.15]).rotation.z = 0.7;
+  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, [0.22, 0.27, 0.15]).rotation.z = -0.7;
+  // seats: cushions with a stitched edge, head rests
+  for (const x of [-0.5, 0.5]) {
+    box(0.6, 0.06, 0.58, x, 1.4, -0.05, [0.24, 0.17, 0.1]);
+    box(0.6, 0.08, 0.1, x, 1.88, -0.38, [0.24, 0.17, 0.1]);
+  }
+  // team marking on the doors: a white star-like square under the stripe
+  for (const x of [-1, 1]) box(0.02, 0.22, 0.22, x * 1.076, 1.18, -0.2, [0.9, 0.88, 0.8]);
+
   const m = merge(`jeep${team}`, parts);
   m.isPickable = false;
   m.isVisible = false;
@@ -890,7 +1112,37 @@ export function createJeepWheel(scene: Scene): Mesh {
   tyre.material = mat(scene, [0.1, 0.1, 0.1]);
   const hub = MeshBuilder.CreateCylinder("hub", { height: 0.44, diameter: 0.5, tessellation: 6 }, scene);
   hub.material = mat(scene, [0.33, 0.37, 0.26]);
-  const m = merge("jeepWheel", [tyre, hub]);
+  // tread blocks in two staggered rows, a rim with lug nuts on both faces
+  const extra: Mesh[] = [];
+  const dark: RGB = [0.07, 0.07, 0.07];
+  const R = JEEP_DIM.wheelR;
+  for (let i = 0; i < 20; i++) {
+    for (const row of [-1, 1]) {
+      const a = ((i + (row > 0 ? 0.5 : 0)) / 20) * Math.PI * 2;
+      const block = MeshBuilder.CreateBox("tread", { width: 0.07, height: 0.19, depth: 0.16 }, scene);
+      block.position.set(Math.cos(a) * (R + 0.01), row * 0.11, Math.sin(a) * (R + 0.01));
+      block.rotation.y = -a;
+      block.material = mat(scene, dark);
+      extra.push(block);
+    }
+  }
+  for (const side of [-1, 1]) {
+    const rim = MeshBuilder.CreateCylinder("rim", { height: 0.03, diameter: 0.64, tessellation: 18 }, scene);
+    rim.position.y = side * 0.21;
+    rim.material = mat(scene, [0.27, 0.3, 0.22]);
+    const cap = MeshBuilder.CreateCylinder("cap", { height: 0.05, diameter: 0.2, tessellation: 10 }, scene);
+    cap.position.y = side * 0.235;
+    cap.material = mat(scene, [0.2, 0.2, 0.19]);
+    extra.push(rim, cap);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const nut = MeshBuilder.CreateCylinder("nut", { height: 0.05, diameter: 0.05, tessellation: 6 }, scene);
+      nut.position.set(Math.cos(a) * 0.19, side * 0.235, Math.sin(a) * 0.19);
+      nut.material = mat(scene, [0.45, 0.45, 0.43]);
+      extra.push(nut);
+    }
+  }
+  const m = merge("jeepWheel", [tyre, hub, ...extra]);
   m.rotation.z = Math.PI / 2;
   m.bakeCurrentTransformIntoVertices();
   m.isPickable = false;
@@ -910,6 +1162,23 @@ export function createJeepGun(scene: Scene): Mesh {
   box(0.06, 0.2, 0.06, -0.12, -0.12, -0.3, metal);
   box(0.06, 0.2, 0.06, 0.12, -0.12, -0.3, metal);
   box(0.5, 0.35, 0.05, 0, 0.12, 0.55, [0.3, 0.33, 0.25]); // gun shield
+  // cooling jacket with vent holes, flash hider, sights, carry handle, spade grips, ammunition belt
+  const jacket = MeshBuilder.CreateCylinder("jacket", { height: 0.7, diameter: 0.15, tessellation: 12 }, scene);
+  jacket.rotation.x = Math.PI / 2;
+  jacket.position.set(0, 0.03, 0.85);
+  jacket.material = mat(scene, metal);
+  const hider = MeshBuilder.CreateCylinder("hider", { height: 0.2, diameterTop: 0.2, diameterBottom: 0.12, tessellation: 10 }, scene);
+  hider.rotation.x = Math.PI / 2;
+  hider.position.set(0, 0.03, 1.72);
+  hider.material = mat(scene, [0.1, 0.1, 0.1]);
+  parts.push(jacket, hider);
+  for (let i = 0; i < 4; i++) for (const x of [-1, 1]) box(0.02, 0.05, 0.06, x * 0.078, 0.03, 0.62 + i * 0.16, [0.05, 0.05, 0.05]);
+  box(0.03, 0.08, 0.03, 0, 0.19, 1.6, metal); // front sight
+  box(0.1, 0.05, 0.05, 0, 0.18, 0.28, metal); // rear sight
+  box(0.04, 0.12, 0.3, 0, 0.19, 0.78, metal); // carry handle
+  for (const x of [-0.07, 0.07]) box(0.04, 0.04, 0.2, x, 0.0, -0.38, [0.2, 0.2, 0.2]); // spade grips
+  box(0.2, 0.05, 0.04, 0, 0.0, -0.46, metal);
+  for (let i = 0; i < 9; i++) box(0.05, 0.03, 0.05, 0.22 - i * 0.02, -0.02 + Math.sin(i / 8 * Math.PI) * 0.06, 0.06 + i * 0.035, [0.72, 0.58, 0.25]); // belt
   const m = merge("jeepGun", parts);
   m.isPickable = false;
   m.isVisible = false;

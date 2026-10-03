@@ -1,4 +1,5 @@
 import { Color3, Constants, RawTexture2DArray, Texture, type Scene } from "@babylonjs/core";
+import { lawnLayer, meadowLayer, type LayerPixels } from "./lawnTexture";
 
 /**
  * Loading of photo textures (Poly Haven, CC0 - see public/textures/LICENSE.md) into texture
@@ -10,6 +11,9 @@ export interface TextureLayers { albedo: RawTexture2DArray; normal: RawTexture2D
 
 const SIZE = 1024;
 
+/** Layers generated in code instead of loaded from photos (by their path). */
+const PROCEDURAL: Record<string, (size: number) => LayerPixels> = { "terrain/lawn": lawnLayer, "terrain/meadow": meadowLayer };
+
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -19,7 +23,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Loads the layers (each `<path>_diff_1k.jpg`, `_rough_1k.jpg`, `_nor_gl_1k.jpg` under public/textures/). */
+/** Loads the layers (each `<path>_diff_1k.jpg`, `_rough_1k.jpg`, `_nor_gl_1k.jpg` under public/textures/, or generated, see PROCEDURAL). */
 export async function loadTextureLayers(scene: Scene, paths: readonly string[]): Promise<TextureLayers> {
   const base = `${import.meta.env.BASE_URL}textures/`;
   const canvas = document.createElement("canvas");
@@ -33,10 +37,12 @@ export async function loadTextureLayers(scene: Scene, paths: readonly string[]):
   const layer = SIZE * SIZE * 4;
   const albedo = new Uint8Array(layer * paths.length), normal = new Uint8Array(layer * paths.length);
   const means: Color3[] = [];
-  const imgs = await Promise.all(paths.map((p) => Promise.all(["diff", "rough", "nor_gl"].map((m) => loadImage(`${base}${p}_${m}_1k.jpg`)))));
-  imgs.forEach(([diff, rough, nor], i) => {
+  const sources = await Promise.all(paths.map((p) =>
+    PROCEDURAL[p] ? null : Promise.all(["diff", "rough", "nor_gl"].map((m) => loadImage(`${base}${p}_${m}_1k.jpg`)))));
+  sources.forEach((imgs, i) => {
     const o = i * layer;
-    const d = pixels(diff);
+    const gen = imgs ? null : PROCEDURAL[paths[i]](SIZE);
+    const d = gen ? gen.diff : pixels(imgs![0]);
     albedo.set(d, o);
     let r = 0, g = 0, b = 0;
     for (let k = 0; k < d.length; k += 16) {
@@ -46,9 +52,9 @@ export async function loadTextureLayers(scene: Scene, paths: readonly string[]):
     }
     const n = d.length / 16;
     means.push(new Color3(r / n, g / n, b / n));
-    const rg = pixels(rough);
+    const rg = gen ? gen.rough : pixels(imgs![1]);
     for (let k = 0; k < layer; k += 4) albedo[o + k + 3] = rg[k];
-    normal.set(pixels(nor), o);
+    normal.set(gen ? gen.nor : pixels(imgs![2]), o);
   });
   const arr = (data: Uint8Array, name: string) => {
     const t = new RawTexture2DArray(data, SIZE, SIZE, paths.length, Constants.TEXTUREFORMAT_RGBA, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);

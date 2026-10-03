@@ -211,18 +211,26 @@ export class SoldierView implements UnitView {
     const treat = typing + this.healW * (1.05 + Math.sin(this.treatT * 4 + this.seed) * 0.12)
       // checking his kit: hands down at the satchel, rummaging
       + this.gearW * (0.85 + Math.sin(it * 5 + this.seed) * 0.12);
+    // grenadiers and medics walk with free arms: each swings against the leg on its side, with a
+    // slight bend forward, fading out when the hands are busy (aiming, treating) or kneeling / lying
+    const freeArms = u.type === "grenadier" || u.type === "medic";
+    const busy = (1 - this.aimW) * (1 - this.healW) * (1 - this.gearW) * (1 - k) * (1 - p);
+    const armSwing = freeArms ? swing * 1.15 * busy : 0;
+    const armFwd = freeArms ? this.stride * 0.1 * busy : 0;
+    // elbows out a little more the faster the swing
+    const armRoll = freeArms ? Math.abs(swing) * 0.12 * busy : 0;
     this.arms.rotation.set(
-      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat,
+      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat - armSwing - armFwd,
       carry * (-0.28 - iw * 0.12) + check * 0.2,
-      carry * 0.1,
+      carry * 0.1 - armRoll,
     );
     this.arms.position.y = SHOULDER_Y + breath;
     if (this.throwArm) {
       // throwing arm: relaxed swing with the body normally, the full wind-up and throw when throwing
       this.throwArm.rotation.set(
-        -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.arm) : carry * 0.3 + breath * 2) - check * 0.3,
+        -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.arm) : carry * 0.3 + breath * 2 + armSwing - armFwd - (u.type === "medic" ? treat : 0)) - check * 0.3,
         0,
-        throwing ? curve(tt, THROW.armRoll) : 0,
+        throwing ? curve(tt, THROW.armRoll) : armRoll,
       );
       this.throwArm.position.y = THROW_SHOULDER.y + breath;
     }
@@ -400,7 +408,8 @@ export class JeepView implements UnitView {
     const hL = terrain.heightAt(u.x - ch * D.wheelX, u.z + sh * D.wheelX);
     const hR = terrain.heightAt(u.x + ch * D.wheelX, u.z - sh * D.wheelX);
     const pitch = Math.atan2(hB - hF, D.wheelZ * 2);
-    const roll = Math.atan2(hL - hR, D.wheelX * 2);
+    // a positive roll lifts the right side (+x): bank towards the higher side so the hull follows the slope
+    const roll = Math.atan2(hR - hL, D.wheelX * 2);
     const shake = u.firing ? (Math.random() - 0.5) * 0.02 : 0;
     const bump = moved > 0.001 ? Math.sin(this.spin * 1.7) * 0.03 : 0;
     this.root.position.set(u.x, (hF + hB + hL + hR) / 4 + bump, u.z);

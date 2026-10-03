@@ -12,7 +12,7 @@ import { loadTextureLayers, type TextureLayers } from "./textureLayers";
  * the order of the texture arrays: `tile` is the size in metres of one repeat.
  */
 const LAYERS = [
-  { name: "leafy_grass", tile: 3.4 }, // natural ground
+  { name: "meadow", tile: 2.8 }, // natural ground: a combed meadow (generated, see lawnTexture.ts; "lawn" at 0.9 for a mown lawn)
   { name: "brown_mud_dry", tile: 2.6 }, // dirt roads, verges, trodden earth
   { name: "dry_mud_field_001", tile: 4.5 }, // fields
   { name: "asphalt_02", tile: 4.5 }, // asphalt roads
@@ -199,11 +199,13 @@ if (tsRock > 0.003) {
   tsA5 = textureGrad(tsAlbedo, vec3(tsRockUv, 5.0), tsRockDx, tsRockDy);
   tsN5 = textureGrad(tsNormal, vec3(tsRockUv, 5.0), tsRockDx, tsRockDy).xyz;
 }
-// the grass a second time, much larger and turned: patches of lusher and sparser growth that
+// the lawn a second time, much larger and turned: gentle patches of lusher and sparser growth that
 // break up the repeats and still read from high above
 mat2 tsRotM = mat2(0.6, 0.8, -0.8, 0.6);
 vec4 tsA0m = textureGrad(tsAlbedo, vec3(tsRotM * tsP * 0.043, 0.0), tsRotM * tsDx * 0.043, tsRotM * tsDy * 0.043);
-vec3 tsGrass = tsDetail(tsA0, tsMean0) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.75);
+vec3 tsGrass = tsDetail(tsA0, tsMean0) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.6);
+// a fresher, sunnier meadow green than the map's base colour
+tsGrass *= vec3(1.04, 1.16, 0.78);
 // natural ground (grass or rock) under the painted surfaces
 vec3 tsNat = mix(tsGrass, tsDetail(tsA5, tsMean5), tsRock);
 vec3 tsPaint = tsK.r * tsDetail(tsA1, tsMean1) + tsK.g * tsDetail(tsA2, tsMean2) + tsK.b * tsDetail(tsA3, tsMean3) + tsK.a * tsDetail(tsA4, tsMean4);

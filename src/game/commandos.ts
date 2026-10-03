@@ -83,6 +83,8 @@ export class CommandosMission {
   private agentMaterials: StandardMaterial[] = [];
   /** Thermal-camera look on the agent while a drone has him (0..1). */
   private thermal = 0;
+  /** How much the agent is lit up by a lamp or searchlight (0..1, eased). */
+  private lit = 0;
   /** The agent's footprints, oldest first (none while cloaked). */
   readonly trail: Footprint[] = [];
   /** Mission clock in seconds. */
@@ -847,11 +849,20 @@ export class CommandosMission {
     const seen = a.alive && !a.cloaked && this.drones.some((d) => !d.down && d.mode === "track" && d.lockT >= COMMANDOS.drones.lose - 0.05);
     this.thermal += ((seen ? 1 : 0) - this.thermal) * Math.min(1, dt * 5);
     const k = this.thermal * (0.9 + Math.sin(this.time * 23) * 0.1);
+    // in the light of a lamp or searchlight the agent is lit up: his own colours glow a little, so he
+    // stands out of the dark (the thermal look below is added on top)
+    const lit = a.alive && !a.cloaked && this.isLit(a.x, a.z);
+    this.lit += ((lit ? 1 : 0) - this.lit) * Math.min(1, dt * 6);
+    const L = this.lit * 1.1;
     for (const m of this.agentMaterials) {
       const c = m.diffuseColor;
       // warmer where the surface is lighter (skin) - a rough heat map
       const heat = Math.min(1, (c.r * 0.5 + c.g * 0.3 + c.b * 0.2) * 1.6);
-      m.emissiveColor.set(k * (1.0), k * (0.35 + heat * 0.55), k * (0.08 + heat * 0.35));
+      m.emissiveColor.set(
+        Math.min(1, k * (1.0) + c.r * L),
+        Math.min(1, k * (0.35 + heat * 0.55) + c.g * L * 0.95),
+        Math.min(1, k * (0.08 + heat * 0.35) + c.b * L * 0.8),
+      );
     }
   }
 

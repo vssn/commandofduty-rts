@@ -2,11 +2,11 @@ import {
   Color3, ColorCurves, ImageProcessingConfiguration, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, ShadowGenerator, type DirectionalLight, type HemisphericLight, type Material,
   type Scene,
 } from "@babylonjs/core";
-import type { SurfaceKind } from "./models";
+import { camoTexture, type PbrLook, type SurfaceKind } from "./models";
 import { attachSurfaceTexture } from "./surfacePbr";
 
 /** Colour grading of the realistic mode (ColorCurves scale: -100..100). */
-const GRADE = { saturation: 0, highlights: 20, shadows: 12, tint: 18, exposure: 1.55 };
+const GRADE = { saturation: -10, highlights: 20, shadows: 12, tint: 18, exposure: 1.55 };
 
 const toLinear = (v: number) => Math.pow(v, 2.2);
 
@@ -177,7 +177,7 @@ export class PbrMode {
     p.albedoColor = new Color3(toLinear(d.r), toLinear(d.g), toLinear(d.b));
     p.albedoTexture = m.diffuseTexture;
     p.bumpTexture = m.bumpTexture;
-    p.metallic = 0;
+    p.metallic = (m.metadata as { metal?: number } | null)?.metal ?? 0;
     p.roughness = (m.metadata as { rough?: number } | null)?.rough ?? 0.85;
     p.emissiveColor = m.emissiveColor.clone();
     p.alpha = m.alpha;
@@ -190,6 +190,10 @@ export class PbrMode {
     p.alphaMode = m.alphaMode;
     p.fogEnabled = m.fogEnabled;
     // parts made of wood, fabric, concrete, metal or earth get a matching photo texture
+    // a different look in this mode (e.g. a helmet's camouflage cover)
+    const look = (m.metadata as { pbr?: PbrLook } | null)?.pbr;
+    if (look?.color) p.albedoColor = new Color3(toLinear(look.color[0]), toLinear(look.color[1]), toLinear(look.color[2]));
+    if (look?.camo) p.albedoTexture = camoTexture(this.scene);
     const surface = (m.metadata as { surface?: SurfaceKind } | null)?.surface;
     if (surface) attachSurfaceTexture(p, surface);
     this.swapped.set(m, p);

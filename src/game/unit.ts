@@ -7,6 +7,9 @@ import type { Outpost } from "./outpost";
 import type { UnitView } from "./views";
 
 /** Anything that can be shot at. */
+/** Gentle acceleration and braking of cars: start fraction, rise per second, braking distance, fraction at the end. */
+const THROTTLE = { start: 0.55, accel: 1.4, brakeDist: 5, end: 0.1 };
+
 export interface Target {
   readonly kind: "unit" | "building";
   team: Team;
@@ -111,6 +114,8 @@ export class Unit implements Target {
   private replans = 0;
   /** Vehicles: seconds left backing up out of a corner before trying a new route. */
   private reverseT = 0;
+  /** Vehicles: share of the top speed reached so far (0.55 when setting off, then rising). */
+  private throttle: number = THROTTLE.start;
   private stanceT = 0;
   private calmT = 0;
   private deathT = 0;
@@ -338,6 +343,8 @@ export class Unit implements Target {
     if (fighting) this.combatT = 0;
     if (this.isVehicle && !fighting && !this.isStructure) this.aimTurret(this.x + Math.sin(this.heading), this.z + Math.cos(this.heading), dt);
 
+    // a car that stands still starts off slowly
+    if (this.isVehicle && !(moving && this.path.length)) this.throttle = THROTTLE.start;
     if (moving && this.path.length) this.followPath(dt, g);
     this.moving = moving && this.path.length > 0;
     if (!this.moving) this.grade = 0;
@@ -395,7 +402,11 @@ export class Unit implements Target {
         if (bend > Math.PI) bend = Math.PI * 2 - bend;
         brake = 1 - Math.min(0.65, (bend / Math.PI) * 1.3) * (1 - dist / 8);
       }
-      const speed = this.stats.speed * slope * brake * Math.max(0.3, Math.cos(Math.min(off, Math.PI / 2)));
+      // pulls away gently and eases off a little before the destination (small effects: it only
+      // takes a moment, the game's pace is hardly touched)
+      this.throttle = Math.min(1, this.throttle + dt * THROTTLE.accel);
+      const ease = last && dist < THROTTLE.brakeDist ? THROTTLE.end + (1 - THROTTLE.end) * (dist / THROTTLE.brakeDist) : 1;
+      const speed = this.stats.speed * slope * brake * this.throttle * ease * Math.max(0.3, Math.cos(Math.min(off, Math.PI / 2)));
       const step = Math.min(dist, speed * dt);
       this.x += Math.sin(this.heading) * step;
       this.z += Math.cos(this.heading) * step;

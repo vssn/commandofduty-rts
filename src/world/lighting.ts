@@ -36,14 +36,43 @@ function glowTexture(scene: Scene): DynamicTexture {
   return t;
 }
 
+const ringTex = new Map<string, DynamicTexture>();
+
+/**
+ * Lit spot with a crisp rim: a faint, fading fill and a bright, sharp edge at 0.77 of the radius
+ * (that is the lamp's `radius` on a patch of `radius * 1.3`), falling off to nothing just outside it.
+ */
+function ringTexture(scene: Scene): DynamicTexture {
+  let t = ringTex.get(scene.uid);
+  if (!t) {
+    const size = 256;
+    t = new DynamicTexture("lightRing", { width: size, height: size }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
+    const ctx = t.getContext() as CanvasRenderingContext2D;
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, "rgba(255,255,255,0.10)");
+    g.addColorStop(0.6, "rgba(255,255,255,0.18)");
+    g.addColorStop(0.73, "rgba(255,255,255,0.45)");
+    g.addColorStop(0.765, "rgba(255,255,255,1)"); // the rim
+    g.addColorStop(0.79, "rgba(255,255,255,0.35)");
+    g.addColorStop(0.83, "rgba(255,255,255,0)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    t.hasAlpha = true;
+    t.update(false);
+    ringTex.set(scene.uid, t);
+  }
+  return t;
+}
+
 /** Additive, unlit material that glows in `color`, shaped by the round glow texture. */
-function glowMaterial(scene: Scene, name: string, color: RGB, alpha: number, shaped = true): StandardMaterial {
+function glowMaterial(scene: Scene, name: string, color: RGB, alpha: number, shaped: boolean | Texture = true): StandardMaterial {
   const m = new StandardMaterial(name, scene);
   m.disableLighting = true;
   m.diffuseColor = Color3.Black();
   m.specularColor = Color3.Black();
   m.emissiveColor = new Color3(color[0], color[1], color[2]);
-  if (shaped) m.opacityTexture = glowTexture(scene);
+  if (shaped) m.opacityTexture = shaped === true ? glowTexture(scene) : shaped;
   m.alpha = alpha;
   m.alphaMode = Constants.ALPHA_ADD;
   m.disableDepthWrite = true;
@@ -182,6 +211,7 @@ export class Searchlight {
   private readonly beam: Mesh;
   private readonly pool: Mesh;
   private readonly poolBase: Float32Array;
+  private readonly edge: Mesh;
   private readonly target = new Vector3();
   private static readonly HEAD = 2.3;
 
@@ -233,11 +263,20 @@ export class Searchlight {
     glass.setEnabled(!mounted);
 
     // beam: cone from the lamp (narrow end at the origin) along +z, length scaled per frame
-    this.beam = MeshBuilder.CreateCylinder("slBeam", { height: 1, diameterTop: 0.6, diameterBottom: radius * 1.7, tessellation: 18, cap: Mesh.NO_CAP }, scene);
+    this.beam = MeshBuilder.CreateCylinder("slBeam", { height: 1, diameterTop: 0.6, diameterBottom: radius * 1.7, tessellation: 18, cap: Mesh.NO_CAP, subdivisions: 8 }, scene);
     this.beam.position.y = -0.5;
     this.beam.bakeCurrentTransformIntoVertices();
     this.beam.rotation.x = -Math.PI / 2;
     this.beam.bakeCurrentTransformIntoVertices();
+    // the beam fades out towards its far end (z = 0 at the lamp, 1 at the ground)
+    const bp = this.beam.getVerticesData("position")!;
+    const bc: number[] = [];
+    for (let i = 0; i < bp.length; i += 3) {
+      const k = Math.min(1, Math.max(0, bp[i + 2]));
+      bc.push(1, 1, 1, Math.pow(1 - k, 1.4));
+    }
+    this.beam.setVerticesData("color", bc);
+    this.beam.hasVertexAlpha = true;
     this.beam.material = glowMaterial(scene, "slBeamMat", tint.beam, tint.beamAlpha, false);
     this.beam.alphaIndex = 11;
     this.beam.parent = this.lamp;
@@ -247,18 +286,24 @@ export class Searchlight {
     this.pool = patch(scene, "slPool", radius * 1.3);
     this.pool.material = glowMaterial(scene, "slPoolMat", tint.pool, tint.poolAlpha);
     this.poolBase = Float32Array.from(this.pool.getVerticesData("position")!);
+    // the crisp rim of the lit spot, projected onto the ground
+    this.edge = patch(scene, "slEdge", radius * 1.3);
+    this.edge.material = glowMaterial(scene, "slEdgeMat", tint.pool, Math.min(1, tint.poolAlpha + 0.1), ringTexture(scene));
+    this.edge.alphaIndex = 11;
   }
 
   dispose() {
     this.stand.dispose();
     this.lamp.dispose();
     this.pool.dispose();
+    this.edge.dispose();
   }
 
   /** Switched off (its outpost was blown up): the lamp stays, beam and light go. */
   setEnabled(on: boolean) {
     this.beam.setEnabled(on);
     this.pool.setEnabled(on);
+    this.edge.setEnabled(on);
   }
 
   /** Moves a mounted light's source (the lamp itself) to a point in the air. */
@@ -279,5 +324,6 @@ export class Searchlight {
     const len = Math.hypot(tx - lp.x, ty - lp.y, tz - lp.z);
     this.beam.scaling.set(1, 1, len);
     drape(this.pool, this.poolBase, this.terrain, tx, tz);
+    drape(this.edge, this.poolBase, this.terrain, tx, tz);
   }
 }

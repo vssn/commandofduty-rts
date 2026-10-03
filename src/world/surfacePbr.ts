@@ -15,6 +15,8 @@ const SURFACES: Record<SurfaceKind, { path: string; layer: number; tile: number;
   concrete: { path: "props/concrete_wall_008", layer: 2, tile: 3.0, bump: 0.6 },
   metal: { path: "props/corrugated_iron_02", layer: 3, tile: 2.2, bump: 1.0 },
   earth: { path: "terrain/brown_mud_dry", layer: 4, tile: 2.0, bump: 0.9 },
+  // soldiers' uniforms: the same weave, much finer (the figures are two metres tall)
+  cloth: { path: "props/hessian_230", layer: 5, tile: 0.14, bump: 0.9 },
 };
 const ORDER = (Object.keys(SURFACES) as SurfaceKind[]).sort((a, b) => SURFACES[a].layer - SURFACES[b].layer);
 
