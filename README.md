@@ -85,7 +85,10 @@ Einkommen (Start: 400 Credits). Die Credits bezahlen **Artillerieschläge** (Tas
 Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen Sichtbereich liegen –, nach gut 3 Sekunden
 schlagen 7 Granaten gestreut im Radius 6 ein (Flächenschaden, auch für eigene Einheiten). Rechtsklick/Esc bricht ab.
 Verloren hat, wer alle Einheiten oder seine Kaserne verliert. Die KI setzt ebenfalls Artillerie ein, aber nur auf
-Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. Werte: `SKIRMISH` und `ARTILLERY` in `src/config.ts`.
+Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. KI-Einheiten im Zielgebiet eines Schlags (Streuradius
+plus Explosionsradius) reagieren nach einer Schrecksekunde (0,6–1,6 s) und rennen auf kürzestem Weg aus dem Gebiet –
+auch wenn das Rückzug bedeutet oder auf den Gegner zu führt – ohne unterwegs zu kämpfen; bis die Salve vorbei ist,
+schickt die KI sie nicht wieder hinein. Werte: `SKIRMISH` und `ARTILLERY` in `src/config.ts`.
 
 ## Spielmodus „Commandos“
 
@@ -325,7 +328,7 @@ src/
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)
-    ai.ts             einfacher Gegner (produziert, nimmt Stellungen ein, greift in Wellen an)
+    ai.ts             einfacher Gegner (produziert, nimmt Stellungen ein, greift in Wellen an, flieht aus Artillerie-Zielgebieten)
   audio/
     audio.ts          Audio-Kontext, Schüsse, Funkmeldungen, Stummschalter
     music.ts          prozeduraler Soundtrack mit vier Themen (Menü, Eroberung, Gefecht, Commandos)

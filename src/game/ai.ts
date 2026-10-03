@@ -15,6 +15,12 @@ export class EnemyAI {
   private waveSize = 5;
   private artilleryTimer = 20;
   private buildTimer = 90;
+  private time = 0;
+  /**
+   * Units caught in a strike's target area: when they will react (a moment of shock first) and the
+   * strike they flee from. While it lasts the AI gives them no other orders.
+   */
+  private readonly evading = new Map<Unit, { reactAt: number; strike: object; fled: boolean }>();
 
   /** `firstWave`: seconds before the first attack wave may leave. */
   constructor(private readonly game: Game, private readonly team: Team = ENEMY, firstWave = 150) {
@@ -30,8 +36,10 @@ export class EnemyAI {
     const b = this.team === ENEMY ? g.enemyBarracks : g.playerBarracks;
     if (!b.alive || g.result) return;
 
+    this.time += dt;
     const all = g.units.filter((u) => u.alive && u.team === this.team && !u.vehicle);
     const mine = all.filter((u) => !u.isStructure);
+    this.evadeArtillery(mine);
     const guns = all.filter((u) => u.hasMg && u.buildT <= 0);
     const soldiers = mine.filter((u) => !u.isVehicle);
     const jeeps = mine.filter((u) => u.type === "jeep");
@@ -49,7 +57,7 @@ export class EnemyAI {
 
     // soldiers standing in an outpost that is not ours yet are busy taking it
     const capturing = (u: Unit) => g.outposts.some((o) => o.owner !== this.team && Math.hypot(u.x - o.x, u.z - o.z) <= o.radius);
-    const available = mine.filter((u) => u.armed && u.path.length === 0 && !u.target && !u.boarding && !capturing(u));
+    const available = mine.filter((u) => u.armed && u.path.length === 0 && !u.target && !u.boarding && !capturing(u) && !this.evading.has(u));
 
     // man empty jeeps and MG nests with the nearest idle soldier
     for (const j of guns) {
@@ -90,6 +98,47 @@ export class EnemyAI {
       if (followers.length) g.commandMove(followers, { x: (t.x + idle[0].x) / 2, z: (t.z + idle[0].z) / 2 }, false, false);
       this.waveTimer = 75;
       this.waveSize = Math.min(10, this.waveSize + 1);
+    }
+  }
+
+  /**
+   * Gets units out of the target area of any artillery strike on its way (also their own side's):
+   * after a short moment of shock each one runs straight out, the shortest way, whether that means
+   * falling back or running towards the enemy, and does not stop to fight on the way. The AI leaves
+   * them alone until the salvo is over.
+   */
+  private evadeArtillery(mine: Unit[]) {
+    const g = this.game;
+    const strikes = g.artillery.active;
+    // forget units whose strike is over (or who died)
+    for (const [u, e] of this.evading) if (!u.alive || !strikes.includes(e.strike as (typeof strikes)[number])) this.evading.delete(u);
+    if (!strikes.length) return;
+    const danger = ARTILLERY.spread + ARTILLERY.blastRadius + 1;
+    for (const u of mine) {
+      if (u.boarding) continue;
+      const st = strikes.find((s) => Math.hypot(u.x - s.x, u.z - s.z) < danger);
+      if (!st) continue;
+      let e = this.evading.get(u);
+      if (!e || e.strike !== st) {
+        e = { reactAt: this.time + 0.6 + Math.random() * 1.0, strike: st, fled: false };
+        this.evading.set(u, e);
+      }
+      if (e.fled || this.time < e.reactAt) continue;
+      // straight away from the impact point (a random way if right on it), well outside the area
+      let dx = u.x - st.x, dz = u.z - st.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.5) {
+        const a = Math.random() * Math.PI * 2;
+        dx = Math.cos(a);
+        dz = Math.sin(a);
+      } else {
+        dx /= d;
+        dz /= d;
+      }
+      const out = danger + 2.5 + Math.random() * 2;
+      const p = g.nav.freePoint(st.x + dx * out, st.z + dz * out);
+      g.commandMove([u], p, false, false);
+      e.fled = true;
     }
   }
 
