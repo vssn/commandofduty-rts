@@ -1,5 +1,5 @@
 import type { Vector3 } from "@babylonjs/core";
-import { ARTILLERY, PLAYER } from "../config";
+import { ARTILLERY, ENEMY, PLAYER } from "../config";
 import type { Game, GameEvent } from "../game/game";
 import { MusicGenerator, type MusicTheme } from "./music";
 
@@ -27,6 +27,11 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
 };
 /** Loudness of the spoken announcements (0..1). */
 const ANNOUNCER_VOLUME = 0.45;
+/** Commandos ambience: reach (m) and peak loudness of the loudspeakers at the enemy outposts and of the drones. */
+const PA_RANGE = 70;
+const PA_LEVEL = 0.07;
+const DRONE_RANGE = 55;
+const DRONE_LEVEL = 0.05;
 /** Minimum seconds between two identical announcements. */
 const REPEAT_GAP = 5;
 
@@ -725,4 +730,249 @@ export class AudioSystem {
       o.stop(t + dt + 0.07);
     }
   }
+  // ---------------------------------------------------------------- ambience (commandos)
+
+  /** Seconds until each enemy outpost makes its next announcement. */
+  private paTimers = new Map<object, number>();
+  /** Announcements that are playing: their distance gain follows the agent. */
+  private paActive: { x: number; z: number; level: GainNode; pan: StereoPannerNode; end: number }[] = [];
+  /** One running motor buzz per drone. */
+  private droneVoices = new Map<object, { level: GainNode; pan: StereoPannerNode; nodes: AudioScheduledSourceNode[] }>();
+
+  /** Where the listener is: the agent in the commandos mode, otherwise the camera focus. */
+  private ear(): { x: number; z: number } {
+    const a = this.game.commandos?.agent;
+    return a && a.alive ? a : this.listener;
+  }
+
+  /**
+   * Ambient sound of the commandos mode, called every frame: the public-address announcements of the
+   * enemy outposts (a muffled, unintelligible voice with an echo) and the buzz of drones, both
+   * quieter with distance. `active` is false while paused (everything fades out).
+   */
+  update(dt: number, active: boolean) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const g = this.game;
+    const on = active && !this.quiet && this.sfxOn && !g.result;
+    const ear = this.ear();
+    const now = ctx.currentTime;
+
+    // loudspeaker announcements
+    if (on && g.commandos) {
+      for (const o of g.outposts) {
+        if (o.owner !== ENEMY || o.destroyed) continue;
+        const d = Math.hypot(o.x - ear.x, o.z - ear.z);
+        if (d > PA_RANGE) continue;
+        const left = (this.paTimers.get(o) ?? 2 + Math.random() * 8) - dt;
+        if (left > 0) this.paTimers.set(o, left);
+        else {
+          this.paTimers.set(o, 14 + Math.random() * 18);
+          if (this.paActive.length < 2) this.paAnnouncement(o.x, o.z);
+        }
+      }
+    }
+    this.paActive = this.paActive.filter((a) => now < a.end);
+    for (const a of this.paActive) {
+      const d = Math.hypot(a.x - ear.x, a.z - ear.z);
+      a.level.gain.setTargetAtTime(on ? PA_LEVEL * Math.pow(Math.max(0, 1 - d / PA_RANGE), 2) : 0, now, 0.1);
+      a.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, (a.x - ear.x) / 40)), now, 0.1);
+    }
+
+    // drones
+    const seen = new Set<object>();
+    if (on) {
+      for (const u of g.units) {
+        if (u.type !== "drone" || !u.alive) continue;
+        const d = Math.hypot(u.x - ear.x, u.z - ear.z);
+        let v = this.droneVoices.get(u);
+        if (!v && d < DRONE_RANGE) v = this.startDroneVoice(u);
+        if (!v) continue;
+        seen.add(u);
+        v.level.gain.setTargetAtTime(DRONE_LEVEL * Math.pow(Math.max(0, 1 - d / DRONE_RANGE), 1.6), now, 0.12);
+        v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, (u.x - ear.x) / 35)), now, 0.12);
+      }
+    }
+    for (const [u, v] of this.droneVoices) {
+      if (seen.has(u)) continue;
+      v.level.gain.setTargetAtTime(0, now, 0.15);
+      this.droneVoices.delete(u);
+      window.setTimeout(() => {
+        for (const n of v.nodes) n.stop();
+        v.level.disconnect();
+      }, 900);
+    }
+  }
+
+  /**
+   * An unintelligible announcement over a loudspeaker: a buzzing "voice" whose two formant bands jump
+   * from vowel to vowel in a speech-like rhythm with short consonant hisses, squeezed through a
+   * tinny speaker band with a little distortion, and a long, dull echo off the buildings.
+   */
+  private paAnnouncement(x: number, z: number) {
+    const ctx = this.ctx!;
+    const t0 = ctx.currentTime + 0.05;
+    const syl = 9 + Math.floor(Math.random() * 8);
+    const dur = syl * 0.19 + 0.5;
+
+    // voice source with a falling sentence melody
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    const f0 = 100 + Math.random() * 40;
+    osc.frequency.setValueAtTime(f0, t0);
+    for (let i = 0; i < syl; i++) osc.frequency.linearRampToValueAtTime(f0 * (0.92 + Math.random() * 0.3) * (1 - (0.18 * i) / syl), t0 + 0.12 + i * 0.19);
+
+    // two formants that follow the vowels
+    const vowels = [[700, 1200], [500, 1700], [300, 2300], [450, 900], [330, 1000], [600, 1500]];
+    const f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter();
+    f1.type = f2.type = "bandpass";
+    f1.Q.value = 5;
+    f2.Q.value = 7;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0.6;
+    osc.connect(f1);
+    osc.connect(f2);
+    f2.connect(g2);
+    // syllable envelope: a voiced burst, a short dip, now and then a longer pause between phrases
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t0);
+    f1.connect(env);
+    g2.connect(env);
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noise;
+    noise.loop = true;
+    const hiss = ctx.createBiquadFilter();
+    hiss.type = "highpass";
+    hiss.frequency.value = 2800;
+    const hissG = ctx.createGain();
+    hissG.gain.setValueAtTime(0, t0);
+    noise.connect(hiss).connect(hissG).connect(env);
+    let t = t0 + 0.1;
+    for (let i = 0; i < syl; i++) {
+      const v = vowels[Math.floor(Math.random() * vowels.length)];
+      f1.frequency.setTargetAtTime(v[0], t, 0.025);
+      f2.frequency.setTargetAtTime(v[1], t, 0.025);
+      hissG.gain.setValueAtTime(0.35, t - 0.04);
+      hissG.gain.setValueAtTime(0, t + 0.03);
+      env.gain.setTargetAtTime(0.9, t, 0.015);
+      env.gain.setTargetAtTime(0.18, t + 0.11, 0.03);
+      t += 0.19 + (Math.random() < 0.18 ? 0.25 : 0);
+    }
+    env.gain.setTargetAtTime(0, t, 0.05);
+
+    // the loudspeaker: narrow band, a peak in the mids, slight overdrive
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 420;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 3000;
+    const peak = ctx.createBiquadFilter();
+    peak.type = "peaking";
+    peak.frequency.value = 1500;
+    peak.gain.value = 7;
+    peak.Q.value = 1.2;
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(257);
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i / 128 - 1) * 2.2;
+      curve[i] = Math.tanh(x);
+    }
+    shaper.curve = curve;
+    env.connect(hp).connect(peak).connect(shaper).connect(lp);
+
+    // echoes from the walls: two taps, the long one fed back through a dull filter
+    const out = ctx.createGain();
+    const dry = ctx.createGain();
+    dry.gain.value = 1;
+    lp.connect(dry).connect(out);
+    for (const [delay, level, fb] of [[0.31, 0.5, 0.42], [0.57, 0.3, 0.3]]) {
+      const d = ctx.createDelay(1.5);
+      d.delayTime.value = delay;
+      const wet = ctx.createGain();
+      wet.gain.value = level;
+      const back = ctx.createGain();
+      back.gain.value = fb;
+      const damp = ctx.createBiquadFilter();
+      damp.type = "lowpass";
+      damp.frequency.value = 1700;
+      lp.connect(d);
+      d.connect(damp).connect(wet).connect(out);
+      damp.connect(back).connect(d);
+    }
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    out.connect(level).connect(pan).connect(this.sfxGain);
+    osc.start(t0);
+    noise.start(t0);
+    const end = t + 3.2;
+    osc.stop(t + 0.3);
+    noise.stop(t + 0.3);
+    this.paActive.push({ x, z, level, pan, end });
+    window.setTimeout(() => out.disconnect(), (end - ctx.currentTime + 0.5) * 1000);
+  }
+
+  /** The buzz of a small multicopter: four detuned motors, a thin whine and a flutter of propeller noise. */
+  private startDroneVoice(owner: object) {
+    const ctx = this.ctx!;
+    const nodes: AudioScheduledSourceNode[] = [];
+    const mix = ctx.createGain();
+    mix.gain.value = 0.25;
+    for (const f of [208, 214, 221, 229]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = f;
+      o.connect(mix);
+      o.start();
+      nodes.push(o);
+    }
+    const whine = ctx.createOscillator();
+    whine.type = "triangle";
+    whine.frequency.value = 905;
+    const wg = ctx.createGain();
+    wg.gain.value = 0.05;
+    whine.connect(wg).connect(mix);
+    whine.start();
+    nodes.push(whine);
+    const body = ctx.createBiquadFilter();
+    body.type = "bandpass";
+    body.frequency.value = 600;
+    body.Q.value = 0.8;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2400;
+    mix.connect(body).connect(lp);
+    // propeller wash
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    n.loop = true;
+    const nb = ctx.createBiquadFilter();
+    nb.type = "bandpass";
+    nb.frequency.value = 3200;
+    nb.Q.value = 1.2;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.05;
+    n.connect(nb).connect(ng).connect(lp);
+    n.start();
+    nodes.push(n);
+    // flutter: the whole buzz swells and ebbs about nine times a second
+    const am = ctx.createGain();
+    am.gain.value = 0.85;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 8 + Math.random() * 2;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.15;
+    lfo.connect(lfoG).connect(am.gain);
+    lfo.start();
+    nodes.push(lfo);
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    lp.connect(am).connect(level).connect(pan).connect(this.sfxGain);
+    const v = { level, pan, nodes };
+    this.droneVoices.set(owner, v);
+    return v;
+  }
+
 }

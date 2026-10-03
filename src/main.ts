@@ -484,6 +484,7 @@ let dt = 0;
 scene.onBeforeRenderObservable.add(() => {
   dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   pbr.update();
+  audio.update(dt, !paused && !hud.bannerShown);
   if (!paused && !hud.bannerShown) {
     birds.update(dt);
     tracks.update(dt);

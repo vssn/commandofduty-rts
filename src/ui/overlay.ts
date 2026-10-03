@@ -275,13 +275,13 @@ export class Overlay {
         ctx.fillText(text, x, y);
       };
       // the agent's footprints (only where the player can see), fading with age
-      let side = 1;
+      const thermal = cm.thermalLevel;
       for (const f of cm.trail) {
-        side = -side;
+        const side = f.side;
         if (sees && !sees(f.x, f.z)) continue;
         const age = cm.time - f.t;
         const alpha = 0.5 * Math.max(0, 1 - age / 110);
-        if (alpha <= 0.02) continue;
+        if (alpha <= 0.02 && !(thermal > 0.02 && age < 22)) continue;
         const ox = Math.cos(f.heading) * 0.22 * side, oz = -Math.sin(f.heading) * 0.22 * side;
         const p = this.project(f.x + ox, game.terrain.heightAt(f.x, f.z) + 0.1, f.z + oz);
         if (!p) continue;
@@ -289,6 +289,18 @@ export class Overlay {
         ctx.beginPath();
         ctx.ellipse(p.x * s, p.y * s, 2.2 * s, 3.4 * s, -f.heading, 0, Math.PI * 2);
         ctx.fill();
+        // in a drone's thermal image the warm prints glow blue-violet, and fade away within seconds
+        const warm = thermal * Math.max(0, 1 - age / 22);
+        if (warm > 0.02) {
+          ctx.fillStyle = `rgba(110, 70, 255, ${0.32 * warm})`;
+          ctx.beginPath();
+          ctx.ellipse(p.x * s, p.y * s, 4.6 * s, 6.4 * s, -f.heading, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgba(90, 150, 255, ${0.85 * warm})`;
+          ctx.beginPath();
+          ctx.ellipse(p.x * s, p.y * s, 2.4 * s, 3.8 * s, -f.heading, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       // what the enemy knows: "!" = has spotted the agent, "?" = searching or following tracks
       for (const u of game.units) {

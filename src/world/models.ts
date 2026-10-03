@@ -1,9 +1,19 @@
-import { Color3, DynamicTexture, Material, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Texture, Vector3, VertexData } from "@babylonjs/core";
+import { Color3, DynamicTexture, FresnelParameters, Material, Mesh, MeshBuilder, Quaternion, Scene, StandardMaterial, Texture, Vector3, VertexData } from "@babylonjs/core";
 import { PLAYER, type OutpostKind, type Team } from "../config";
 import type { RGB } from "./layout";
 import { brickBox } from "./masonry";
 
 const matCache = new Map<string, StandardMaterial>();
+
+/** Classic look of a rim light inside a surface: the emissive colour fades in towards the edges (Fresnel). */
+function rimFresnel(m: StandardMaterial, rim: RGB) {
+  const f = new FresnelParameters();
+  f.bias = 0.05;
+  f.power = 2.4;
+  f.leftColor = new Color3(rim[0] * 0.55, rim[1] * 0.55, rim[2] * 0.55); // at the edges
+  f.rightColor = Color3.Black(); // facing the camera: nothing
+  m.emissiveFresnelParameters = f;
+}
 
 /** Shared flat material (no textures, no specular). */
 /** Real-world material a part is made of: the realistic graphics mode gives it a matching texture. */
@@ -15,9 +25,9 @@ export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth" | "
 /** Picks the surface kind of a part by its colour (undefined = plain). */
 export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
 
-export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook } = {}): StandardMaterial {
+export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook; rim?: RGB } = {}): StandardMaterial {
   // materials belong to a scene, so the cache is per scene (the build-menu portraits use their own)
-  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "") + (opts.metal !== undefined ? `m${opts.metal}` : "") + (opts.pbr ? `p${JSON.stringify(opts.pbr)}` : "");
+  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "") + (opts.metal !== undefined ? `m${opts.metal}` : "") + (opts.pbr ? `p${JSON.stringify(opts.pbr)}` : "") + (opts.rim ? `rim${opts.rim.join(",")}` : "");
   let m = matCache.get(key);
   if (!m) {
     m = new StandardMaterial("m" + key, scene);
@@ -29,7 +39,8 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
     }
     if (opts.twoSided) m.backFaceCulling = false;
     // `rough` / `metal`: roughness and metallic of the realistic (PBR) copy; smooth parts such as roofs catch the sun
-    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr };
+    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr || opts.rim) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr, rim: opts.rim };
+    if (opts.rim) rimFresnel(m, opts.rim);
     matCache.set(key, m);
   }
   return m;
@@ -41,8 +52,8 @@ const camoTex = new Map<string, DynamicTexture>();
  * Woodland camouflage cloth: an olive base with overlapping blotches of dark green, brown and
  * pale green. The pattern tiles seamlessly and is shared per scene; `tint` darkens or shifts it.
  */
-export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1]): StandardMaterial {
-  const key = scene.uid + ":camo:" + tint.map((v) => v.toFixed(3)).join(",");
+export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1], rim?: RGB): StandardMaterial {
+  const key = scene.uid + ":camo:" + tint.map((v) => v.toFixed(3)).join(",") + (rim ? `:rim${rim.join(",")}` : "");
   let m = matCache.get(key);
   if (m) return m;
   let tex = camoTex.get(scene.uid);
@@ -81,7 +92,8 @@ export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1]): StandardMater
   m.diffuseTexture = tex;
   m.diffuseColor = new Color3(tint[0], tint[1], tint[2]);
   m.specularColor = Color3.Black();
-  m.metadata = { surface: "cloth", rough: 0.92 }; // woven fabric in the realistic mode
+  m.metadata = { surface: "cloth", rough: 0.92, rim }; // woven fabric in the realistic mode
+  if (rim) rimFresnel(m, rim);
   matCache.set(key, m);
   return m;
 }
@@ -208,14 +220,16 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     [wood.join(), { rough: 0.55 }],
     [webbing.join(), cloth], [kit.join(), cloth], [uni.join(), cloth], [uniDark.join(), cloth], [pants.join(), cloth],
   ]);
+  // a rim light inside the figure's own materials in the team's colour (not for the agent)
+  const rim: RGB | undefined = agent ? undefined : player ? [0.3, 0.55, 1.0] : [1.0, 0.35, 0.25];
   const parts: Mesh[] = [];
   /** Camouflage parts get the camo material, with UVs scaled to world size so the blotches stay even. */
   const paint = (m: Mesh, c: RGB, uSize = 1, vSize = 1) => {
     if (c !== CAMO && c !== CAMO_PANTS) {
-      m.material = mat(scene, c, looks.get(c.join()) ?? {});
+      m.material = mat(scene, c, { ...(looks.get(c.join()) ?? {}), rim });
       return;
     }
-    m.material = camoMaterial(scene, c);
+    m.material = camoMaterial(scene, c, rim);
     const uv = m.getVerticesData("uv");
     if (uv) {
       const ref = 0.9; // cloth size covered by one tile of the pattern
@@ -523,14 +537,14 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.37, segments: 14, slice: 0.5 }, scene);
     helm.scaling.set(1, 0.95, 1.13);
     helm.position.set(0, 1.755, -0.012);
-    helm.material = mat(scene, helmet, { twoSided: true, ...hl });
+    helm.material = mat(scene, helmet, { twoSided: true, ...hl, rim });
     const skirt = MeshBuilder.CreateSphere("helmSkirt", { diameter: 0.376, segments: 14, slice: 0.66, arc: 0.64 }, scene);
     skirt.scaling.set(1, 0.95, 1.13);
     skirt.position.set(0, 1.74, -0.012);
     skirt.rotation.y = -2.513; // the open side faces forward
-    skirt.material = mat(scene, helmet, { twoSided: true, ...hl });
+    skirt.material = mat(scene, helmet, { twoSided: true, ...hl, rim });
     parts.push(helm, skirt);
-    box(0.2, 0.012, 0.055, 0, 1.754, 0.215, helmet, 0.3).material = mat(scene, helmet, hl); // front lip
+    box(0.2, 0.012, 0.055, 0, 1.754, 0.215, helmet, 0.3).material = mat(scene, helmet, { ...hl, rim }); // front lip
     box(0.075, 0.05, 0.035, 0, 1.805, 0.205, metal); // mount for night vision on the front
     box(0.05, 0.02, 0.012, 0, 1.805, 0.225, [0.3, 0.3, 0.28]);
     for (const x of [-1, 1]) {
@@ -1417,3 +1431,5 @@ export function createAuraTemplate(scene: Scene, name: string, strength: number)
   m.isVisible = false;
   return m;
 }
+
+

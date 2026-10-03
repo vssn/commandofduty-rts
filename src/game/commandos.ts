@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh } from "@babylonjs/core";
 import { classicMaterial } from "../world/pbr";
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
@@ -21,7 +21,8 @@ interface Patrol {
   trackT: number;
   onFoot: boolean;
 }
-interface Footprint { x: number; z: number; t: number; heading: number }
+/** `side`: which foot (+1 / -1), fixed when the print is made. */
+interface Footprint { x: number; z: number; t: number; heading: number; side: number }
 interface Death { x: number; z: number; t: number; found: boolean }
 interface Search { cx: number; cz: number; t0: number; until: number }
 /** Hidden explosives at the edge of a wood. */
@@ -81,12 +82,15 @@ export class CommandosMission {
   private spottedCooldown = 0;
   private chargeTpl!: Mesh;
   private agentMaterials: StandardMaterial[] = [];
+  /** The agent's own colours (the thermal look darkens them and puts them back). */
+  private agentBase = new Map<StandardMaterial, Color3>();
   /** Thermal-camera look on the agent while a drone has him (0..1). */
   private thermal = 0;
   /** How much the agent is lit up by a lamp or searchlight (0..1, eased). */
   private lit = 0;
   /** The agent's footprints, oldest first (none while cloaked). */
   readonly trail: Footprint[] = [];
+  private stepSide = 1;
   /** Mission clock in seconds. */
   time = 0;
   private readonly deaths: Death[] = [];
@@ -312,6 +316,8 @@ export class CommandosMission {
     for (const m of this.agentMaterials) {
       m.alpha = 1;
       m.emissiveColor.set(0, 0, 0);
+      const c = this.agentBase.get(m);
+      if (c) m.diffuseColor.copyFrom(c);
     }
     g.spotRange = null;
     g.onKilled = null;
@@ -388,7 +394,8 @@ export class CommandosMission {
     if (!a.alive || a.cloaked) return; // a cloaked agent leaves no readable tracks
     const last = this.trail[this.trail.length - 1];
     if (last && Math.hypot(a.x - last.x, a.z - last.z) < 1.4) return;
-    this.trail.push({ x: a.x, z: a.z, t: now, heading: a.heading });
+    this.stepSide = -this.stepSide;
+    this.trail.push({ x: a.x, z: a.z, t: now, heading: a.heading, side: this.stepSide });
   }
 
   /** Foot patrols that come across fresh tracks follow them in the direction the agent went. */
@@ -450,6 +457,8 @@ export class CommandosMission {
       done.add(src);
       const own = (x: StandardMaterial) => {
         const c = x.clone(`${x.name}-agent`);
+        c.metadata = { ...(x.metadata ?? {}), mirrorDiffuse: true }; // the PBR copy follows the colour changes of the thermal look
+        this.agentBase.set(c, c.diffuseColor.clone());
         this.agentMaterials.push(c);
         return c;
       };
@@ -854,16 +863,25 @@ export class CommandosMission {
     const lit = a.alive && !a.cloaked && this.isLit(a.x, a.z);
     this.lit += ((lit ? 1 : 0) - this.lit) * Math.min(1, dt * 6);
     const L = this.lit * 1.1;
+    const th = this.thermal;
     for (const m of this.agentMaterials) {
-      const c = m.diffuseColor;
-      // warmer where the surface is lighter (skin) - a rough heat map
-      const heat = Math.min(1, (c.r * 0.5 + c.g * 0.3 + c.b * 0.2) * 1.6);
+      const c = this.agentBase.get(m) ?? m.diffuseColor;
+      // thermal image: the bare skin (face, neck, hands) is the hottest - a bright orange to yellow;
+      // the clothes are cooler - a dark, deep red (their own colour is darkened for it)
+      const skin = c.r > 0.7 && c.g > 0.5 && c.b > 0.38 && c.r > c.g && c.g > c.b;
+      const dark = th * (skin ? 0.35 : 0.8);
+      m.diffuseColor.set(c.r * (1 - dark), c.g * (1 - dark), c.b * (1 - dark));
       m.emissiveColor.set(
-        Math.min(1, k * (1.0) + c.r * L),
-        Math.min(1, k * (0.35 + heat * 0.55) + c.g * L * 0.95),
-        Math.min(1, k * (0.08 + heat * 0.35) + c.b * L * 0.8),
+        Math.min(1, k * (skin ? 1.0 : 0.55) + c.r * L),
+        Math.min(1, k * (skin ? 0.74 + 0.1 * Math.sin(this.time * 9) : 0.05) + c.g * L * 0.95),
+        Math.min(1, k * (skin ? 0.2 : 0.03) + c.b * L * 0.8),
       );
     }
+  }
+
+  /** How strongly the agent is shown as in a drone's thermal camera (0..1, eased). */
+  get thermalLevel() {
+    return this.thermal;
   }
 
   /** Where a searching drone looks next: half the time near the agent's freshest tracks, else anywhere. */

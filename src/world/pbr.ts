@@ -2,8 +2,10 @@ import {
   Color3, ColorCurves, ImageProcessingConfiguration, Mesh, MultiMaterial, PBRMaterial, StandardMaterial, VertexBuffer, ShadowGenerator, type DirectionalLight, type HemisphericLight, type Material,
   type Scene,
 } from "@babylonjs/core";
+import type { RGB } from "./layout";
 import { camoTexture, type PbrLook, type SurfaceKind } from "./models";
 import { attachSurfaceTexture } from "./surfacePbr";
+import { attachRim } from "./rimPbr";
 
 /** Colour grading of the realistic mode (ColorCurves scale: -100..100). */
 const GRADE = { saturation: -10, highlights: 20, shadows: 12, tint: 18, exposure: 1.55 };
@@ -143,6 +145,11 @@ export class PbrMode {
     for (const [s, p] of this.swapped) {
       p.alpha = s.alpha;
       p.emissiveColor.copyFrom(s.emissiveColor);
+      // materials that change their colour in the game (the agent in the thermal look)
+      if ((s.metadata as { mirrorDiffuse?: boolean } | null)?.mirrorDiffuse) {
+        const d = s.diffuseColor;
+        p.albedoColor.set(toLinear(d.r), toLinear(d.g), toLinear(d.b));
+      }
     }
   }
 
@@ -194,6 +201,9 @@ export class PbrMode {
     const look = (m.metadata as { pbr?: PbrLook } | null)?.pbr;
     if (look?.color) p.albedoColor = new Color3(toLinear(look.color[0]), toLinear(look.color[1]), toLinear(look.color[2]));
     if (look?.camo) p.albedoTexture = camoTexture(this.scene);
+    // a rim light inside the surface (the soldiers' team colour)
+    const rim = (m.metadata as { rim?: RGB } | null)?.rim;
+    if (rim) attachRim(p, [toLinear(rim[0]), toLinear(rim[1]), toLinear(rim[2])]);
     const surface = (m.metadata as { surface?: SurfaceKind } | null)?.surface;
     if (surface) attachSurfaceTexture(p, surface);
     this.swapped.set(m, p);
