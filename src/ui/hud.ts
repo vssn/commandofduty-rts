@@ -186,6 +186,7 @@ export class Hud {
   }
 
   private agentTiles: { cloak: HTMLElement; charge: HTMLElement } | null = null;
+  private readonly sniperTile = document.getElementById("tile-sniper");
   private lastMission = "";
 
   /** Commandos: the agent's special abilities (cloak, demolition charge); the sniper shot is his standard attack. */
@@ -217,6 +218,19 @@ export class Hud {
     wipe(t.cloak, cloakLeft, COMMANDOS.cloak.cooldown, m.agent.cloaked ? `${Math.ceil(m.agent.cloakT)}` : cloakLeft > 0 ? String(Math.ceil(cloakLeft)) : "");
     t.cloak.classList.toggle("armed", m.agent.cloaked);
     wipe(t.charge, m.charges > 0 ? 0 : 1, 1, String(m.charges));
+    // sniper rifle: the ring fills while it reloads and turns green when the shot is ready
+    const sn = this.sniperTile;
+    if (sn) {
+      const cd = m.sniperCooldown;
+      const prog = 1 - Math.min(1, cd / COMMANDOS.sniper.cooldown);
+      sn.style.setProperty("--p", String(prog));
+      sn.querySelector(".snipe-ring")!.setAttribute("stroke-dashoffset", String(100 - prog * 100));
+      sn.classList.toggle("ready", cd <= 0);
+      const b = sn.querySelector<HTMLElement>(".badge")!;
+      const txt = cd > 0 ? String(Math.ceil(cd)) : "";
+      if (b.textContent !== txt) b.textContent = txt;
+      b.classList.toggle("show", cd > 0);
+    }
     t.charge.classList.toggle("poor", m.charges <= 0);
 
     const pips = Array.from({ length: COMMANDOS.targets }, (_, i) => `<span class="pip${i < m.destroyedOutposts ? " done" : ""}"></span>`).join("");

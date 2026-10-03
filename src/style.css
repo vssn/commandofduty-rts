@@ -828,3 +828,14 @@ body.gfx-real .menu-btn.primary {
   background: rgba(0, 0, 0, 0.55); color: #f3cf6c; font: 600 13px/1.4 ui-monospace, monospace; pointer-events: none;
 }
 #fps-counter[hidden] { display: none; }
+
+/* sniper readiness tile (commandos): crosshair inside a ring that fills while the rifle reloads */
+.sniper-tile { cursor: default; }
+.sniper-tile:hover .portrait { transform: none; }
+.sniper-tile .snipe-ring { stroke: #ffb347; } /* dash offset is set from the script (calc() in SVG properties is not supported everywhere) */
+.sniper-tile .snipe-cross { stroke: #ffb347; opacity: 0.5; }
+.sniper-tile .snipe-dot { fill: #ffb347; opacity: 0.5; }
+.sniper-tile.ready .snipe-ring { stroke: #7be07b; }
+.sniper-tile.ready .snipe-cross { stroke: #7be07b; opacity: 1; }
+.sniper-tile.ready .snipe-dot { fill: #ff4a3a; opacity: 1; }
+.sniper-tile.ready { border-color: #7be07b; }

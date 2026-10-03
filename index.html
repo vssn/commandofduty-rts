@@ -190,7 +190,7 @@
 
         <section class="panel mode-commandos-only">
           <h2>Agent</h2>
-          <div class="build-grid">
+          <div class="build-grid ability-grid">
             <button class="build-btn action-btn" id="btn-cloak">
               <svg class="portrait" viewBox="0 0 100 100" aria-hidden="true">
                 <defs><linearGradient id="agBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2230" /><stop offset="1" stop-color="#14160f" /></linearGradient></defs>
@@ -221,6 +221,23 @@
               <span class="build-name">Spreng&shy;ladung</span>
               <span class="badge"></span>
             </button>
+            <div class="build-btn action-btn sniper-tile" id="tile-sniper" title="Scharfschuss: Gegner anklicken oder antippen">
+              <svg class="portrait" viewBox="0 0 100 100" aria-hidden="true">
+                <defs><linearGradient id="snBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2230" /><stop offset="1" stop-color="#14160f" /></linearGradient></defs>
+                <rect width="100" height="100" fill="url(#snBg)" />
+                <circle cx="50" cy="46" r="31" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="5" />
+                <circle class="snipe-ring" cx="50" cy="46" r="31" fill="none" stroke-width="5" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" transform="rotate(-90 50 46)" />
+                <g class="snipe-cross" fill="none" stroke-width="2.4" stroke-linecap="round">
+                  <circle cx="50" cy="46" r="15" />
+                  <path d="M50 22 V36 M50 56 V70 M26 46 H40 M60 46 H74" />
+                </g>
+                <circle class="snipe-dot" cx="50" cy="46" r="2.6" />
+              </svg>
+              <span class="wipe"></span>
+              <span class="build-cost"></span>
+              <span class="build-name">Scharf&shy;schuss</span>
+              <span class="badge"></span>
+            </div>
           </div>
         </section>
 

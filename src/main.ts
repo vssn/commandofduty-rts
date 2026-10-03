@@ -173,7 +173,8 @@ hud.onAudioChange = syncAudioUi;
 // ------------------------------------------------------------------ graphics: classic / PBR
 const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
   new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops, realHedges,
-  // the base buildings and the outposts get their detailed models
+  // cars, tractors and trailers, the base buildings and the outposts get their detailed models
+  { enable: () => props.setDetail(true), disable: () => props.setDetail(false) },
   { enable: () => game.setBaseDetail(true), disable: () => game.setBaseDetail(false) },
   { enable: () => game.outposts.forEach((o) => o.setDetail(true)), disable: () => game.outposts.forEach((o) => o.setDetail(false)) },
   // the realistic ground draws the farm tracks and footpaths itself (irregular edges, ruts, gravel, trampled earth)
