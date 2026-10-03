@@ -448,8 +448,10 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
     m.rotation.y = i.rot;
     m.isPickable = false;
     m.freezeWorldMatrix();
+    // The templates are invisible, and an invisible mesh is skipped by the shadow pass together with
+    // its instances: the instances themselves must be shadow casters. (Fences are too thin to matter.)
+    if (!fences.includes(i.tpl)) shadows.addShadowCaster(m);
   }
-  for (const t of [...containers, cabin, garage, ...fences, ...cars, wagon, plough, ...tractors]) shadows.addShadowCaster(t);
 
   // the vehicles' detail of the realistic mode: built and placed on first use
   const detailOf = new Map<Mesh, (scene: Scene) => Mesh>();
@@ -468,13 +470,13 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
         if (!t) {
           t = build(scene);
           shared.set(build, t);
-          shadows.addShadowCaster(t);
         }
         const m = t.createInstance(t.name);
         m.position.set(i.x, i.y ?? terrain.heightAt(i.x, i.z), i.z);
         m.rotation.y = i.rot;
         m.isPickable = false;
         m.freezeWorldMatrix();
+        shadows.addShadowCaster(m);
         detail.push(m);
       }
     }

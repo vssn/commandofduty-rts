@@ -152,6 +152,9 @@ vec4 tsA0 = textureGrad(tsAlbedo, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0
 vec3 tsN0 = textureGrad(tsNormal, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0]}, tsDy * ${tiles[0]}).xyz;
 vec4 tsA1 = vec4(0.5), tsA2 = vec4(0.5), tsA3 = vec4(0.5), tsA4 = vec4(0.5);
 vec3 tsN1 = vec3(0.5, 0.5, 1.0), tsN2 = tsN1, tsN3 = tsN1, tsN4 = tsN1;
+// asphalt grain: the layer again at a finer scale (its stones catch the sun)
+vec4 tsA3f = vec4(0.5);
+vec3 tsN3f = tsN1;
 // mid-scale noise (a few metres) that makes the edges of the farm tracks irregular
 vec4 tsWob = vec4(0.5);
 if (tsRd.y < 3.0 || tsPd < 1.6) {
@@ -173,6 +176,9 @@ if (tsUse3) {
   vec2 tsGx = tsRotAs * tsDx * ${tiles[3]}, tsGy = tsRotAs * tsDy * ${tiles[3]};
   tsA3 = textureGrad(tsAlbedo, vec3(tsAsUv, 3.0), tsGx, tsGy);
   tsN3 = textureGrad(tsNormal, vec3(tsAsUv, 3.0), tsGx, tsGy).xyz;
+  vec2 tsFine = tsAsUv * 3.7 + vec2(0.37, 0.19);
+  tsA3f = textureGrad(tsAlbedo, vec3(tsFine, 3.0), tsGx * 3.7, tsGy * 3.7);
+  tsN3f = textureGrad(tsNormal, vec3(tsFine, 3.0), tsGx * 3.7, tsGy * 3.7).xyz;
 }
 if (tsUse4) {
   vec2 tsU = tsP * ${tiles[4]};
@@ -252,14 +258,20 @@ tsW = smoothstep(0.6 + tsAa.x, 0.6 - tsAa.x, tsRd.x);
 tsCol = mix(tsCol, tsLin(${vec3(ROAD_COLORS.curb)}) * tsDetail(tsA4, tsMean4), tsW);
 tsRough = mix(tsRough, tsA4.a, tsW); tsNm = mix(tsNm, tsN4, tsW);
 tsW = smoothstep(tsAa.x, -tsAa.x, tsRd.x);
-tsCol = mix(tsCol, tsLin(${vec3(ROAD_COLORS.asphalt)}) * tsDetail(tsA3, tsMean3), tsW);
-tsRough = mix(tsRough, tsA3.a, tsW); tsNm = mix(tsNm, tsN3, tsW);
+// the street: glossier than the other surfaces, with grains (bright stones of the aggregate) that
+// glint in the sun - a finer, sharper normal map and low roughness on the stones
+float tsGrain = smoothstep(0.42, 0.8, dot(tsA3f.rgb, vec3(0.33)) + (tsA3.r - 0.5) * 0.3);
+vec3 tsAsphaltC = tsLin(${vec3(ROAD_COLORS.asphalt)}) * tsDetail(tsA3, tsMean3) * (1.0 + tsGrain * 0.3);
+tsCol = mix(tsCol, tsAsphaltC, tsW);
+float tsAsRough = mix(tsA3.a * 0.7, 0.16, tsGrain);
+tsRough = mix(tsRough, tsAsRough, tsW);
+tsNm = mix(tsNm, mix(tsN3, tsN3f, 0.55), tsW);
 // static ambient occlusion: darker and cooler under foliage, darker and greyer between houses
 vec2 tsAo = tsPth.ba * tsIn;
 tsCol *= mix(vec3(1.0), vec3(0.45, 0.58, 0.42), tsAo.x);
 tsCol *= mix(vec3(1.0), vec3(0.62, 0.58, 0.56), tsAo.y);
 surfaceAlbedo = tsCol;
-tsRough = clamp(tsRough, 0.35, 1.0);
+tsRough = clamp(tsRough, 0.14, 1.0);
 vec3 tsNt = tsNm * 2.0 - 1.0;
 // tangent frame of the top projection (u = x, v = z), bent with the ground
 vec3 tsT = normalize(vec3(1.0, 0.0, 0.0) - normalW * normalW.x);
