@@ -1,7 +1,7 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
 import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type GameMode } from "./config";
-import { AudioSystem, MUSIC_LEVELS } from "./audio/audio";
+import { AudioSystem, MUSIC_LEVELS, VOLUME_LEVELS } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
@@ -139,28 +139,32 @@ game.canSee = null;
 // While the menu is open the battle is paused and the camera drifts slowly over the map.
 let inMenu = true;
 let menuT = 0;
-// music volume sliders (main menu and pause menu) and the effects switch of the pause menu
-const musicSliders = ["menu-music", "pause-music"].map((id) => document.getElementById(id) as HTMLInputElement);
-const pauseSfx = document.getElementById("pause-sfx")!;
+// volume sliders (main menu and pause menu): music, effects and announcer
+const volumeSliders = (pre: string) => ["menu", "pause"].map((m) => document.getElementById(`${m}-${pre}`) as HTMLInputElement);
+const setFill = (sl: HTMLInputElement, level: number, levels: number) => {
+  sl.value = String(level);
+  sl.style.setProperty("--fill", `${(level / (levels - 1)) * 100}%`);
+};
+const VOLUME_CONTROLS = [
+  { sliders: volumeSliders("music"), attr: "data-music-value", levels: MUSIC_LEVELS, get: () => audio.musicLevel, set: (v: number) => audio.setMusicLevel(v) },
+  { sliders: volumeSliders("sfx"), attr: "data-sfx-value", levels: VOLUME_LEVELS, get: () => audio.sfxLevel, set: (v: number) => audio.setSfxLevel(v) },
+  { sliders: volumeSliders("announcer"), attr: "data-announcer-value", levels: VOLUME_LEVELS, get: () => audio.announcerLevel, set: (v: number) => audio.setAnnouncerLevel(v) },
+];
 const syncAudioUi = () => {
-  for (const sl of musicSliders) {
-    sl.value = String(audio.musicLevel);
-    sl.style.setProperty("--fill", `${(audio.musicLevel / (MUSIC_LEVELS.length - 1)) * 100}%`);
+  for (const c of VOLUME_CONTROLS) {
+    for (const sl of c.sliders) setFill(sl, c.get(), c.levels.length);
+    for (const el of document.querySelectorAll<HTMLElement>(`[${c.attr}]`)) el.textContent = c.levels[c.get()].name;
   }
-  for (const el of document.querySelectorAll<HTMLElement>("[data-music-value]")) el.textContent = MUSIC_LEVELS[audio.musicLevel].name;
-  pauseSfx.textContent = `Effekte & Funk: ${audio.sfxOn ? "an" : "aus"}`;
 };
 syncAudioUi();
-for (const sl of musicSliders) {
-  sl.addEventListener("input", () => {
-    audio.setMusicLevel(Number(sl.value));
-    syncAudioUi();
-  });
+for (const c of VOLUME_CONTROLS) {
+  for (const sl of c.sliders) {
+    sl.addEventListener("input", () => {
+      c.set(Number(sl.value));
+      syncAudioUi();
+    });
+  }
 }
-pauseSfx.addEventListener("click", () => {
-  audio.setSfx(!audio.sfxOn);
-  syncAudioUi();
-});
 // the M key keeps the sliders in step
 hud.onAudioChange = syncAudioUi;
 
@@ -181,8 +185,13 @@ const syncGraphicsUi = () => {
   // the menus get a brushed-metal look in the realistic mode
   document.body.classList.toggle("gfx-real", pbr.active);
 };
+/** On touch devices the realistic mode renders at most 1.5 device pixels per CSS pixel (the ground's fragment shader is the load). */
+const PBR_TOUCH_MAX_DPR = 1.5;
+const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
 const setGraphics = (realistic: boolean) => {
   pbr.setEnabled(realistic);
+  const dpr = window.devicePixelRatio || 1;
+  engine.setHardwareScalingLevel(1 / (realistic && isTouchDevice ? Math.min(dpr, PBR_TOUCH_MAX_DPR) : dpr));
   try {
     localStorage.setItem(GRAPHICS_KEY, realistic ? "pbr" : "classic");
   } catch {
@@ -234,7 +243,7 @@ const toggleFullscreen = () => {
 const menuFullscreen = document.getElementById("menu-fullscreen")!;
 const syncFullscreen = () => {
   document.body.classList.toggle("fullscreen", isFullscreen());
-  menuFullscreen.textContent = isFullscreen() ? "Vollbild aus" : "Vollbild ein";
+  menuFullscreen.textContent = isFullscreen() ? "Vollbild ausschalten" : "Vollbild einschalten";
   engine.resize();
   overlay.resize();
 };
@@ -511,7 +520,41 @@ scene.onAfterRenderObservable.add(() => {
   hud.update(dt);
 });
 
-engine.runRenderLoop(() => scene.render());
+// optional FPS counter (setting is remembered)
+const fpsEl = document.getElementById("fps-counter")!;
+let showFps = false;
+try {
+  showFps = localStorage.getItem("cod.fps") === "1";
+} catch {
+  /* storage unavailable */
+}
+const syncFps = () => {
+  fpsEl.hidden = !showFps;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-fps]")) el.textContent = `FPS anzeigen: ${showFps ? "an" : "aus"}`;
+};
+syncFps();
+for (const el of document.querySelectorAll<HTMLElement>("[data-fps]")) {
+  el.addEventListener("click", () => {
+    showFps = !showFps;
+    try {
+      localStorage.setItem("cod.fps", showFps ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+    syncFps();
+  });
+}
+let fpsShown = 0;
+engine.runRenderLoop(() => {
+  scene.render();
+  if (showFps) {
+    const now = performance.now();
+    if (now - fpsShown > 500) {
+      fpsShown = now;
+      fpsEl.textContent = `${Math.round(engine.getFps())} FPS`;
+    }
+  }
+});
 window.addEventListener("resize", () => {
   engine.resize();
   overlay.resize();

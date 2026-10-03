@@ -57,6 +57,35 @@ export const MUSIC_LEVELS = [
 ];
 const DEFAULT_MUSIC_LEVEL = 3;
 
+/** Volume steps of the effects and announcer sliders (same labels as the music slider); "Voll" = original loudness. */
+export const VOLUME_LEVELS = [
+  { name: "Aus", gain: 0 },
+  { name: "Leise", gain: 0.2 },
+  { name: "Mittel", gain: 0.4 },
+  { name: "Laut", gain: 0.7 },
+  { name: "Voll", gain: 1 },
+];
+const DEFAULT_VOLUME_LEVEL = VOLUME_LEVELS.length - 1;
+
+/** Stored volume step; falls back to the old on/off switch `legacyKey` of the effects button. */
+function loadVolume(key: string, legacyKey = "cod.sfx"): number {
+  try {
+    const v = localStorage.getItem(key);
+    if (v !== null) return Math.min(VOLUME_LEVELS.length - 1, Math.max(0, Number(v) | 0));
+  } catch {
+    /* storage unavailable */
+  }
+  return load(legacyKey, true) ? DEFAULT_VOLUME_LEVEL : 0;
+}
+
+function saveVolume(key: string, level: number) {
+  try {
+    localStorage.setItem(key, String(level));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function loadLevel(): number {
   try {
     const v = localStorage.getItem("cod.musicLevel");
@@ -76,7 +105,10 @@ export class AudioSystem {
   musicLevel = loadLevel();
   /** Last audible step, restored when the music is switched back on (sidebar button, M key). */
   private lastMusicLevel = this.musicLevel || DEFAULT_MUSIC_LEVEL;
-  sfxOn = load("cod.sfx", true);
+  /** Effects volume step (see VOLUME_LEVELS); 0 = effects off. */
+  sfxLevel = loadVolume("cod.sfxLevel");
+  /** Announcer volume step (see VOLUME_LEVELS); 0 = no spoken announcements. */
+  announcerLevel = loadVolume("cod.announcerLevel");
   /** True while the main menu's background battle runs: the game makes no sound, only music plays. */
   quiet = false;
   private ctx: AudioContext | null = null;
@@ -149,7 +181,7 @@ export class AudioSystem {
     this.musicGain.gain.value = MUSIC_LEVELS[this.musicLevel].gain;
     this.musicGain.connect(comp);
     this.sfxGain = ctx.createGain();
-    this.sfxGain.gain.value = this.sfxOn ? 1 : 0;
+    this.sfxGain.gain.value = VOLUME_LEVELS[this.sfxLevel].gain;
     this.sfxGain.connect(comp);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -191,11 +223,24 @@ export class AudioSystem {
     else window.setTimeout(() => !this.musicOn && this.music?.stop(), 1500);
   }
 
-  setSfx(on: boolean) {
-    this.sfxOn = on;
-    save("cod.sfx", on);
-    if (this.ctx) this.sfxGain.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05);
-    if (!on && "speechSynthesis" in window) speechSynthesis.cancel();
+  get sfxOn(): boolean {
+    return this.sfxLevel > 0;
+  }
+
+  /** Effects volume step from the menu slider (0 = off). */
+  setSfxLevel(level: number) {
+    level = Math.min(VOLUME_LEVELS.length - 1, Math.max(0, Math.round(level)));
+    this.sfxLevel = level;
+    saveVolume("cod.sfxLevel", level);
+    if (this.ctx) this.sfxGain.gain.setTargetAtTime(VOLUME_LEVELS[level].gain, this.ctx.currentTime, 0.05);
+  }
+
+  /** Announcer volume step from the menu slider (0 = silent). */
+  setAnnouncerLevel(level: number) {
+    level = Math.min(VOLUME_LEVELS.length - 1, Math.max(0, Math.round(level)));
+    this.announcerLevel = level;
+    saveVolume("cod.announcerLevel", level);
+    if (level === 0 && "speechSynthesis" in window) speechSynthesis.cancel();
   }
 
   /** Short rifle crack; quieter with distance to the camera focus, panned left/right. */
@@ -647,7 +692,7 @@ export class AudioSystem {
 
   /** Radio chirp followed by a spoken message (Web Speech API, German voice if available). */
   announce(text: string, important = false) {
-    if (!this.sfxOn || !("speechSynthesis" in window)) return;
+    if (this.announcerLevel === 0 || !("speechSynthesis" in window)) return;
     const now = performance.now() / 1000;
     if (now - (this.lastSaid.get(text) ?? -Infinity) < REPEAT_GAP) return;
     if (!important && speechSynthesis.pending) return; // keep the radio from lagging behind the action
@@ -660,7 +705,7 @@ export class AudioSystem {
     if (this.voice) u.voice = this.voice;
     u.rate = 1.05;
     u.pitch = this.femaleVoice ? 1 : 1.5;
-    u.volume = ANNOUNCER_VOLUME;
+    u.volume = ANNOUNCER_VOLUME * VOLUME_LEVELS[this.announcerLevel].gain;
     speechSynthesis.speak(u);
   }
 

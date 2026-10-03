@@ -679,12 +679,9 @@ body:not(.touch-ui) .dpad { left: 24px; bottom: 24px; }
 .mission-info .clock { font-weight: 700; color: var(--accent); letter-spacing: 0.06em; }
 .mission-info .clock.urgent { color: var(--red); animation: cap-blink 1s steps(2) infinite; }
 
-/* fullscreen toggle, top right of the 3D view (menu and game) */
+/* fullscreen toggle, next to the menu button at the top left of the 3D view */
+#top-btns { position: absolute; top: 12px; left: 12px; z-index: 30; display: flex; gap: 8px; }
 #btn-fullscreen {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 30;
   width: 38px;
   height: 38px;
   display: grid;
@@ -739,10 +736,6 @@ body.in-menu #btn-fullscreen { display: none; }
 
 /* pause: menu button top left of the 3D view, dimmed overlay with the pause panel */
 #btn-pause {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 30;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -790,7 +783,9 @@ body.in-menu #btn-pause { display: none; }
 }
 .pause-box .menu-btn { width: 100%; text-align: left; }
 @media (max-width: 900px), (max-height: 500px) {
-  #btn-pause { top: 8px; left: 8px; height: 34px; }
+  #top-btns { top: 8px; left: 8px; }
+  #btn-pause { height: 34px; }
+  #btn-fullscreen { width: 34px; height: 34px; }
   #btn-pause span { display: none; }
   .pause-box { min-width: 0; width: min(88vw, 320px); padding: 18px 20px; gap: 8px; }
   .pause-title { font-size: 26px; }
@@ -823,3 +818,13 @@ body.gfx-real .menu-btn.primary {
   background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.14) 100%), var(--metal-streaks);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
 }
+
+/* hint below the graphics switch */
+.graphics-note { margin: -4px 4px 4px; font-size: 0.8em; line-height: 1.3; color: rgba(255, 255, 255, 0.55); text-align: left; }
+
+/* optional FPS counter */
+#fps-counter {
+  position: absolute; top: 8px; right: 8px; z-index: 5; padding: 2px 8px; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55); color: #f3cf6c; font: 600 13px/1.4 ui-monospace, monospace; pointer-events: none;
+}
+#fps-counter[hidden] { display: none; }
