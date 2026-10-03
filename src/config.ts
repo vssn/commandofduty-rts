@@ -155,7 +155,7 @@ export const COMMANDOS = {
    * `trackSight` and lose him after `lose` seconds out of view.
    * The agent's rifle hits one only with `hitChance`, but a shot always draws its attention.
    */
-  drones: { count: 2, altitude: 10.5, speed: 6.5, chase: 8.5, sight: 3.5, trackSight: 26, lose: 4, hitChance: 0.33, poolRadius: 3 },
+  drones: { count: 2, altitude: 10.5, speed: 6.5, chase: 8.5, sight: 4.5, trackSight: 26, lose: 4, hitChance: 0.25, poolRadius: 4.5 },
   /** Searchlight beams sweep around each outpost (never farther than a soldier sees); the lit spot has this radius. */
   searchlight: { poolRadius: 3.4, near: 9, far: 17, lock: 4 },
   /** Enemy forces: guards per outpost, foot patrols (3 men each) and patrolling jeeps. */

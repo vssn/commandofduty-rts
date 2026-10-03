@@ -133,6 +133,7 @@ export class CommandosMission {
     // no own base in this mode: the player's barracks and its sandbag compound are removed
     const own = g.playerBarracks;
     own.alive = false;
+    own.removed = true; // simply gone: no demolition (and no explosions to hear)
     own.selected = false;
     own.production.clear();
     own.mesh.setEnabled(false);
@@ -185,9 +186,30 @@ export class CommandosMission {
       });
       this.patrols.push({ units, route: r, next: 1, wait: Math.random() * 4, trackT: -1, onFoot: true });
     }
+    // jeeps patrol the road network: their waypoints lie on tracks and streets, and vehicle path
+    // finding keeps them on the roads in between
+    const roadPts: V2[] = [];
+    const lim = MAP_HALF - 10;
+    for (const rd of g.layout.roads) {
+      const len = Math.hypot(rd.b.x - rd.a.x, rd.b.z - rd.a.z);
+      for (let s = 0; s <= len; s += 20) {
+        const x = rd.a.x + ((rd.b.x - rd.a.x) * s) / len, z = rd.a.z + ((rd.b.z - rd.a.z) * s) / len;
+        if (Math.abs(x) < lim && Math.abs(z) < lim && !g.nav.isBlocked(x, z, 1)) roadPts.push({ x, z });
+      }
+    }
+    const roadRoute = (): V2[] => {
+      const pts = [...roadPts].sort(() => Math.random() - 0.5);
+      const r: V2[] = [];
+      for (const p of pts) {
+        if (r.length >= 5) break;
+        // spread the stops out over the map
+        if (r.every((q) => Math.hypot(q.x - p.x, q.z - p.z) > 45)) r.push(p);
+      }
+      return r.length >= 2 ? r : route(1, 4, 5);
+    };
     for (let i = 0; i < COMMANDOS.jeepPatrols; i++) {
-      const r = route(i * 5 + 1, 4, 5);
-      const p = g.nav.freePoint(r[0].x, r[0].z + 4, 1);
+      const r = roadRoute();
+      const p = g.nav.freePoint(r[0].x, r[0].z, 1);
       const jeep = g.spawnUnit("jeep", ENEMY, p.x, p.z);
       const gunner = g.spawnUnit("rifleman", ENEMY, p.x + 2, p.z);
       g.board(gunner, jeep);
@@ -691,7 +713,9 @@ export class CommandosMission {
       const wp = p.route[p.next];
       p.next = (p.next + 1) % p.route.length;
       p.wait = 3 + Math.random() * 4;
-      const jitter = { x: wp.x + (Math.random() - 0.5) * 6, z: wp.z + (Math.random() - 0.5) * 6 };
+      // foot patrols wander a little around their waypoint, jeeps stop right on the road
+      const j = p.onFoot ? 6 : 0;
+      const jitter = { x: wp.x + (Math.random() - 0.5) * j, z: wp.z + (Math.random() - 0.5) * j };
       g.commandMove(alive, g.nav.freePoint(jitter.x, jitter.z, alive[0].navLayer), true, false);
     }
   }

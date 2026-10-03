@@ -91,6 +91,11 @@ export class Game {
   cover: CoverMap | null = null;
   /** Called for every shot fired (used for sound). */
   onShot: ((x: number, z: number, kind: WeaponKind) => void) | null = null;
+  /**
+   * A bullet arrives at a jeep or a drone (used for sound): `hit` = metal impact, otherwise it
+   * whizzes past; `delay` = flight time of the bullet in seconds.
+   */
+  onArmourShot: ((x: number, z: number, hit: boolean, delay: number) => void) | null = null;
   /** Called when a grenade leaves the hand. */
   onThrow: ((x: number, z: number) => void) | null = null;
 
@@ -138,6 +143,7 @@ export class Game {
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) if (layout.nearestRoad(-MAP_HALF + i + 0.5, -MAP_HALF + j + 0.5).d < 0.2) this.roadGrid[i + j * n] = 1;
     }
+    nav.setRoads(this.roadGrid); // vehicles prefer roads and tracks
     this.outposts = layout.outposts.map((o) => new Outpost(o, scene, terrain, shadows));
     for (const o of layout.outposts) {
       if (o.kind === "tower" || o.kind === "bunker") nav.blockRect(o.x, o.z, 2, 2, o.rot, 0.5);
@@ -825,6 +831,10 @@ export class Game {
 
   addTracer(from: Unit, to: Target, hit: boolean, kind: WeaponKind) {
     this.onShot?.(from.x, from.z, kind);
+    if (to instanceof Unit && (to.type === "jeep" || to.type === "drone")) {
+      const flight = Math.hypot(to.x - from.x, to.z - from.z) / (kind === "sniper" ? 800 : 500);
+      this.onArmourShot?.(to.x, to.z, hit, 0.02 + flight);
+    }
     const spread = hit ? 0.3 : 1.6;
     let ax: number, ay: number, az: number;
     if (from.type === "mgnest") {

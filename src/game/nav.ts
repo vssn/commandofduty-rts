@@ -13,6 +13,8 @@ const CLEARANCE: Record<NavLayer, number> = { 0: 0.45, 1: 1.9 };
 const MARGIN: Record<NavLayer, number> = { 0: 0.5, 1: 0.8 };
 /** Extra path cost for a cell right next to an obstacle: A* prefers a little elbow room. */
 const NEAR_COST = 0.6;
+/** Vehicles: a road cell costs only this much, so jeeps keep to tracks and streets where they can. */
+const ROAD_COST = 0.4;
 
 /**
  * Uniform 1-unit grid over the playable area with A* path finding. Obstacles (buildings, tree
@@ -31,6 +33,26 @@ export class NavGrid {
   /** 1 where a free cell touches a blocked one (rebuilt lazily after obstacles change). */
   private readonly near: [Uint8Array, Uint8Array];
   private nearDirty = true;
+  /** 1 where a road or track is (same grid as the cells); vehicles prefer these. */
+  private roads: Uint8Array | null = null;
+
+  setRoads(grid: Uint8Array) {
+    this.roads = grid;
+  }
+
+  private onRoad(x: number, z: number): boolean {
+    if (!this.roads) return false;
+    const [i, j] = this.cellCoords(x, z);
+    return this.roads[i + j * this.n] === 1;
+  }
+
+  /** A vehicle's shortcut between two road points must stay on the road (no cutting across fields). */
+  private keepsRoad(ax: number, az: number, bx: number, bz: number, layer: NavLayer): boolean {
+    if (layer !== 1 || !this.roads || !this.onRoad(ax, az) || !this.onRoad(bx, bz)) return true;
+    const steps = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.7);
+    for (let s = 1; s < steps; s++) if (!this.onRoad(ax + ((bx - ax) * s) / steps, az + ((bz - az) * s) / steps)) return false;
+    return true;
+  }
   private readonly g: Float32Array;
   private readonly f: Float32Array;
   private readonly from: Int32Array;
@@ -223,7 +245,10 @@ export class NavGrid {
     tx = Math.min(Math.max(tx, -lim), lim);
     tz = Math.min(Math.max(tz, -lim), lim);
     if (this.isBlocked(tx, tz, layer)) ({ x: tx, z: tz } = this.freePoint(tx, tz, layer));
-    if (this.wideClear(sx, sz, tx, tz, layer)) return [{ x: tx, z: tz }];
+    if (this.wideClear(sx, sz, tx, tz, layer) && this.keepsRoad(sx, sz, tx, tz, layer)) return [{ x: tx, z: tz }];
+    const roads = layer === 1 ? this.roads : null;
+    // with cheaper road cells the estimate must shrink too, or the search would ignore the roads
+    const hw = roads ? HEURISTIC_WEIGHT * ROAD_COST : HEURISTIC_WEIGHT;
     if (this.nearDirty) this.rebuildNear();
     const near = this.near[layer];
 
@@ -235,7 +260,7 @@ export class NavGrid {
     const gi = goal % n, gj = Math.floor(goal / n);
     const h = (k: number) => {
       const dx = Math.abs((k % n) - gi), dz = Math.abs(Math.floor(k / n) - gj);
-      return (dx + dz + (SQRT2 - 2) * Math.min(dx, dz)) * HEURISTIC_WEIGHT;
+      return (dx + dz + (SQRT2 - 2) * Math.min(dx, dz)) * hw;
     };
 
     const sid = ++this.search;
@@ -293,7 +318,7 @@ export class NavGrid {
           const k = ni + nj * n;
           if (blocked[k] || this.closed[k] === sid) continue;
           if (di && dj && (blocked[ci + di + cj * n] || blocked[ci + (cj + dj) * n])) continue;
-          const g = this.g[cur] + (di && dj ? SQRT2 : 1) + (near[k] ? NEAR_COST : 0);
+          const g = this.g[cur] + (di && dj ? SQRT2 : 1) * (roads && roads[k] ? ROAD_COST : 1) + (near[k] ? NEAR_COST : 0);
           if (this.stamp[k] !== sid || g < this.g[k]) {
             this.stamp[k] = sid;
             this.g[k] = g;
@@ -321,7 +346,8 @@ export class NavGrid {
     const out: V2[] = [];
     let anchor = 0;
     for (let k = 1; k < pts.length; k++) {
-      if (k === pts.length - 1 || !this.wideClear(pts[anchor].x, pts[anchor].z, pts[k + 1].x, pts[k + 1].z, layer)) {
+      const a = pts[anchor], b = pts[k + 1];
+      if (k === pts.length - 1 || !this.wideClear(a.x, a.z, b.x, b.z, layer) || !this.keepsRoad(a.x, a.z, b.x, b.z, layer)) {
         out.push(pts[k]);
         anchor = k;
       }

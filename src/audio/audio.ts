@@ -86,6 +86,7 @@ export class AudioSystem {
   private music: MusicGenerator | null = null;
   private theme: MusicTheme = "menu";
   private recentShots: number[] = [];
+  private recentImpacts: number[] = [];
   private lastGrunt = 0;
   private lastTick = 0;
   private lastDrum = 0;
@@ -101,6 +102,7 @@ export class AudioSystem {
 
     game.onShot = (x, z, kind) => !this.quiet && (kind === "sniper" ? this.sniperShot(x, z) : this.shot(x, z, kind === "mg"));
     game.onThrow = (x, z) => !this.quiet && this.whoosh(x, z);
+    game.onArmourShot = (x, z, hit, delay) => !this.quiet && (hit ? this.metalHit(x, z, delay) : this.whiz(x, z, delay));
     game.effects.onExplosion = (x, z, size) => !this.quiet && this.explosion(x, z, size);
     // incoming artillery: the whistle starts shortly before the first shell lands
     game.artillery.onOrder = (_team, x, z) => !this.quiet && window.setTimeout(() => this.whistle(x, z), Math.max(0, ARTILLERY.delay - 1.5) * 1000);
@@ -207,6 +209,88 @@ export class AudioSystem {
     pan.pan.value = Math.max(-1, Math.min(1, (x - this.listener.x) / 50));
     pan.connect(this.sfxGain);
     return { level: l, pan };
+  }
+
+  /** Bullet striking metal (jeep, drone): a bright, inharmonic ping with a short clank. */
+  private metalHit(x: number, z: number, delay: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxOn) return;
+    const now = ctx.currentTime;
+    this.recentImpacts = this.recentImpacts.filter((t) => now - t < 0.15);
+    if (this.recentImpacts.length >= 3) return; // MG bursts: not every round gets its own ping
+    const sp = this.spatial(x, z, 0.075);
+    if (!sp) return;
+    this.recentImpacts.push(now);
+    const t = now + delay;
+    const base = 1400 + Math.random() * 900;
+    // a few inharmonic partials ring out like struck sheet metal
+    for (const [mult, lvl, dec] of [[1, 1, 0.24], [1.47, 0.6, 0.17], [2.09, 0.42, 0.12], [2.76, 0.28, 0.08]]) {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.setValueAtTime(base * mult, t);
+      o.frequency.exponentialRampToValueAtTime(base * mult * 0.97, t + dec);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(sp.level * lvl, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+      o.connect(g).connect(sp.pan);
+      o.start(t);
+      o.stop(t + dec + 0.02);
+    }
+    // the clank: a short bright noise click and a dull knock of the panel
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 2500;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(sp.level * 1.3, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+    n.connect(hp).connect(ng).connect(sp.pan);
+    n.start(t, Math.random() * 0.5);
+    n.stop(t + 0.05);
+    const knock = ctx.createOscillator();
+    knock.frequency.setValueAtTime(240, t);
+    knock.frequency.exponentialRampToValueAtTime(140, t + 0.06);
+    const kg = ctx.createGain();
+    kg.gain.setValueAtTime(sp.level * 0.9, t);
+    kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    knock.connect(kg).connect(sp.pan);
+    knock.start(t);
+    knock.stop(t + 0.08);
+  }
+
+  /** A bullet whizzing past: a narrow band of noise sweeping down in pitch and across the stereo field. */
+  private whiz(x: number, z: number, delay: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxOn) return;
+    const now = ctx.currentTime;
+    this.recentImpacts = this.recentImpacts.filter((t) => now - t < 0.15);
+    if (this.recentImpacts.length >= 3) return;
+    const sp = this.spatial(x, z, 0.06);
+    if (!sp) return;
+    this.recentImpacts.push(now);
+    const t = now + delay;
+    const dur = 0.17 + Math.random() * 0.05;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 7;
+    // Doppler: high while approaching, dropping as it passes
+    bp.frequency.setValueAtTime(4300 + Math.random() * 900, t);
+    bp.frequency.exponentialRampToValueAtTime(1200 + Math.random() * 300, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(sp.level * 2.2, t + dur * 0.45);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const p0 = sp.pan.pan.value;
+    sp.pan.pan.setValueAtTime(Math.max(-1, Math.min(1, p0 - side * 0.5)), t);
+    sp.pan.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, p0 + side * 0.5)), t + dur);
+    src.connect(bp).connect(g).connect(sp.pan);
+    src.start(t, Math.random() * 0.6);
+    src.stop(t + dur + 0.02);
   }
 
   /** Grenade explosion: noise burst with a deep sine thump and a rumbling tail. */

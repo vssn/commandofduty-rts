@@ -353,9 +353,9 @@ function startGame(mode: GameMode) {
   overlay.resize();
   if (game.commandos) {
     const a = game.commandos.agent;
-    cam.jumpTo(a.x, a.z + 6);
+    cam.flyIn(a.x, a.z + 6);
   } else {
-    cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
+    cam.flyIn(layout.playerBase.x, layout.playerBase.z + 14);
   }
   input.enabled = hud.enabled = true;
   fogRender.strength = 1;

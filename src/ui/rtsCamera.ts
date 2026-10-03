@@ -18,11 +18,31 @@ export class RtsCamera {
     this.camera.maxZ = 900;
   }
 
+  /** Running fly-in at the start of a game (see flyIn). */
+  private intro: { t: number; dur: number; fx: number; fz: number; tx: number; tz: number; fromDist: number; toDist: number } | null = null;
+
   get distance() {
     return this.dist;
   }
 
+  /**
+   * Opening shot of a game: the camera starts higher up and a little further back and glides in
+   * onto (x, z), braking smoothly at the end. Any zoom or scroll by the player takes over at once.
+   */
+  flyIn(x: number, z: number, dur = 2.4) {
+    this.jumpTo(x, z);
+    const tx = this.focus.x, tz = this.focus.z, toDist = this.targetDist;
+    this.jumpTo(tx, tz - 28);
+    this.intro = { t: 0, dur, fx: this.focus.x, fz: this.focus.z, tx, tz, fromDist: toDist * 2.1, toDist };
+    this.dist = toDist * 2.1;
+  }
+
   zoom(steps: number) {
+    if (this.intro) {
+      // the player zooms during the fly-in: stop it where it is
+      this.targetDist = this.dist;
+      this.intro = null;
+    }
     this.targetDist = Math.min(125, Math.max(32, this.targetDist * (1 + steps * 0.12)));
   }
 
@@ -31,6 +51,10 @@ export class RtsCamera {
   }
 
   jumpTo(x: number, z: number, snapHeight = true) {
+    if (this.intro) {
+      this.targetDist = this.dist;
+      this.intro = null;
+    }
     const lim = MAP_HALF - 6;
     this.focus.x = Math.min(Math.max(x, -lim), lim);
     this.focus.z = Math.min(Math.max(z, -lim - 10), lim - 2);
@@ -38,7 +62,18 @@ export class RtsCamera {
   }
 
   update(dt: number) {
-    this.dist += (this.targetDist - this.dist) * Math.min(1, dt * 8);
+    const intro = this.intro;
+    if (intro) {
+      intro.t += dt;
+      const u = Math.min(1, intro.t / intro.dur);
+      const k = 1 - Math.pow(1 - u, 3); // fast at first, braking towards the end
+      this.focus.x = intro.fx + (intro.tx - intro.fx) * k;
+      this.focus.z = intro.fz + (intro.tz - intro.fz) * k;
+      this.dist = intro.fromDist + (intro.toDist - intro.fromDist) * k;
+      if (u >= 1) this.intro = null;
+    } else {
+      this.dist += (this.targetDist - this.dist) * Math.min(1, dt * 8);
+    }
     const h = this.terrain.heightAt(this.focus.x, this.focus.z);
     this.focus.y += (h - this.focus.y) * Math.min(1, dt * 3);
     const p = this.pitch;

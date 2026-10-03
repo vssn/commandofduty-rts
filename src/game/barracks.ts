@@ -33,6 +33,8 @@ export class Barracks implements Target {
   readonly spawn: V2;
   rally: V2;
   private readonly startRally: V2;
+  /** Taken off the map without a fight (commandos: the player has no base) - no demolition. */
+  removed = false;
   /** Seconds since the barracks was destroyed. */
   private sinkT = 0;
   private blasts = 0;
@@ -65,6 +67,7 @@ export class Barracks implements Target {
     this.production.clear();
     this.rally = this.startRally;
     this.blasts = 0;
+    this.removed = false;
     this.mesh.setEnabled(true);
     this.ring.setEnabled(true);
     this.mesh.position.y = this.y;
@@ -74,6 +77,7 @@ export class Barracks implements Target {
   }
 
   update(dt: number, g: Game) {
+    if (this.removed) return;
     if (!this.alive) {
       // blown up: a chain of explosions, the walls shake, then the building caves in to a heap of rubble
       this.sinkT += dt;

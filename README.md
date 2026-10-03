@@ -13,7 +13,8 @@ npm run build    # Produktionsbuild nach dist/
 
 Beim Laden erscheint das Hauptmenü; die Kamera fliegt langsam über die Karte, auf der im Hintergrund eine
 KI-gegen-KI-Schlacht läuft – lautlos wie ein Hintergrundvideo (nur die Menümusik spielt, keine Meldungen), sie beginnt
-nach einem Sieg von vorn. Die Wahl eines Modus setzt das Schlachtfeld auf die Ausgangslage zurück. „Neues Spiel“
+nach einem Sieg von vorn. Die Wahl eines Modus setzt das Schlachtfeld auf die Ausgangslage zurück. Zum Spielstart fliegt die Kamera aus größerer Höhe herein
+und bremst sanft ab (Zoomen oder Scrollen übernimmt sofort). „Neues Spiel“
 öffnet die Modusauswahl mit drei großen Bildkacheln – **Eroberung** (Standardmodus mit Aufbau), **Gefecht** und
 **Commandos** –, deren
 Bilder beim Laden aus der Spielszene gerendert werden (`src/ui/modeArt.ts`): die befestigte Kaserne, ein Feuergefecht
@@ -37,7 +38,7 @@ Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. Werte: `SKIRMI
 Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an einer anderen, zufälligen Stelle abseits von
 Stellungen und Patrouillen startet (Mantel, Schirmmütze, Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
 nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
-zwischen den Stellungen und bemannte Geländewagen. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
+zwischen den Stellungen und bemannte Geländewagen, die das Wegenetz abfahren. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
 rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen, in 10 Minuten**;
 fällt der Agent oder läuft die Zeit ab (Uhr im Auftragsfeld, Warnung bei 1 Minute), ist die Mission gescheitert.
 
@@ -52,7 +53,7 @@ im Dunkeln früher, Alarm ruft Truppen aus 1,5-facher Entfernung, und zwei **Dro
 violettem Scheinwerfer, ~10 m Höhe) suchen das Gelände ab – bevorzugt nahe seiner frischen Spuren. Eine suchende Drohne
 entdeckt den ungetarnten Agenten nur, wenn ihr Lichtkegel ihn erfasst (oder er direkt unter ihr steht); dann hält sie ihn
 im Licht, er erscheint wie durch eine Wärmebildkamera (orange glühend), und sie ruft Truppen herbei, bis sie ihn einige
-Sekunden aus den Augen verliert. Drohnen schießen nicht. Ein Scharfschuss trifft sie mit 33 % – macht sie aber in jedem
+Sekunden aus den Augen verliert. Drohnen schießen nicht. Ein Scharfschuss trifft sie mit 25 % – macht sie aber in jedem
 Fall auf ihn aufmerksam. Jede Drohne wird von einem **Drohnenpiloten** an einer zufälligen Stellung gesteuert (kniend, mit
 Headset und Laptop, schwach von seinem Bildschirm beleuchtet); fällt der Pilot, stürzt seine Drohne ab.
 
@@ -155,7 +156,8 @@ Gebäude, Bäume, Hecken und die Aufbauten der Stellungen sind massiv. Die Wegfi
 `src/game/nav.ts`) plant mit zwei Ebenen: Infanterie passt durch Lücken zwischen Bäumen und Hecken, der breitere
 Geländewagen fährt um Wälder herum. Heckenlücken und Feldseiten ohne Hecke sind natürliche Durchgänge. Wege halten
 etwas Abstand zu Ecken (Abkürzungen werden mit Einheitenbreite geprüft, Felder direkt an Hindernissen kosten mehr).
-Bleibt eine Einheit trotzdem hängen, plant sie höchstens zweimal pro Befehl neu – Fahrzeuge setzen dafür erst ein Stück
+Fahrzeuge bevorzugen Straßen und Feldwege (Wegfelder kosten sie in der Wegsuche weniger, Kurven werden dort nicht
+querfeldein abgekürzt). Bleibt eine Einheit trotzdem hängen, plant sie höchstens zweimal pro Befehl neu – Fahrzeuge setzen dafür erst ein Stück
 zurück – und bleibt danach stehen. Vor engen Kurven bremsen Fahrzeuge ab.
 
 ## Kampf

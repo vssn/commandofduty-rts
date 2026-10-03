@@ -54,8 +54,11 @@ function glowMaterial(scene: Scene, name: string, color: RGB, alpha: number, sha
 
 /** Square patch of `r` around (0, 0) whose vertices can be draped over the terrain. */
 function patch(scene: Scene, name: string, r: number): Mesh {
-  const m = MeshBuilder.CreateGround(name, { width: r * 2, height: r * 2, subdivisions: 10, updatable: true }, scene);
+  // fine enough to follow slopes closely
+  const m = MeshBuilder.CreateGround(name, { width: r * 2, height: r * 2, subdivisions: 16, updatable: true }, scene);
   m.isPickable = false;
+  // light is drawn after the (also see-through) farm tracks, so a track never cuts through it
+  m.alphaIndex = 10;
   return m;
 }
 
@@ -65,7 +68,7 @@ function drape(m: Mesh, base: Float32Array | number[], terrain: Terrain, x: numb
   for (let i = 0; i < pos.length; i += 3) {
     pos[i] += x;
     pos[i + 2] += z;
-    pos[i + 1] = terrain.heightAt(pos[i], pos[i + 2]) + 0.12;
+    pos[i + 1] = terrain.heightAt(pos[i], pos[i + 2]) + 0.2;
   }
   m.updateVerticesData("position", pos);
   m.refreshBoundingInfo(); // otherwise it is culled at its old place
@@ -148,6 +151,7 @@ export function createStreetLights(scene: Scene, layout: MapLayout, terrain: Ter
     poolMesh.name = "lampPools";
     poolMesh.material = glowMaterial(scene, "lampPool", [1, 0.78, 0.45], 0.42);
     poolMesh.isPickable = false;
+    poolMesh.alphaIndex = 10;
     poolMesh.setEnabled(false);
   }
 
@@ -235,6 +239,7 @@ export class Searchlight {
     this.beam.rotation.x = -Math.PI / 2;
     this.beam.bakeCurrentTransformIntoVertices();
     this.beam.material = glowMaterial(scene, "slBeamMat", tint.beam, tint.beamAlpha, false);
+    this.beam.alphaIndex = 11;
     this.beam.parent = this.lamp;
     this.beam.isPickable = false;
     for (const m of [housing, glass]) m.isPickable = false;

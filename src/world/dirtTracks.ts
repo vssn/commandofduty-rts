@@ -219,6 +219,7 @@ function buildBands(scene: Scene, name: string, terrain: Terrain, onAsphalt: (x:
   mesh.material = m;
   mesh.receiveShadows = true;
   mesh.isPickable = false;
+  mesh.alphaIndex = 1; // before the light spots (see lighting.ts)
   mesh.freezeWorldMatrix();
   return mesh;
 }
