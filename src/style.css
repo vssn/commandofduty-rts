@@ -31,6 +31,7 @@ html, body {
 #app {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* phones: the visible height, without the browser's toolbars */
 }
 
 #viewport {
@@ -391,8 +392,13 @@ body.in-menu #overlay, body.in-menu #toast { visibility: hidden; }
   inset: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   padding: 0 7vw;
+  /* taller than the screen (phones in landscape, long settings): the menu scrolls */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background:
     linear-gradient(90deg, rgba(10, 11, 7, 0.92) 0%, rgba(10, 11, 7, 0.72) 38%, rgba(10, 11, 7, 0.1) 72%, transparent 100%),
     radial-gradient(ellipse at 70% 110%, rgba(0, 0, 0, 0.55), transparent 60%);
@@ -400,7 +406,7 @@ body.in-menu #overlay, body.in-menu #toast { visibility: hidden; }
 }
 body:not(.in-menu) #menu { opacity: 0; visibility: hidden; pointer-events: none; }
 
-.menu-panel { max-width: 460px; animation: menu-in 1.2s ease both; }
+.menu-panel { max-width: 460px; margin: auto 0; padding: 14px 0 max(20px, env(safe-area-inset-bottom)); animation: menu-in 1.2s ease both; }
 @keyframes menu-in { from { opacity: 0; transform: translateX(-24px); } }
 
 .menu-kicker {
@@ -757,12 +763,17 @@ body.in-menu #btn-pause { display: none; }
   position: absolute;
   inset: 0;
   z-index: 40;
-  display: grid;
-  place-items: center;
+  display: flex;
+  padding: 10px;
+  overflow-y: auto; /* a tall pause menu scrolls on small screens */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: rgba(8, 9, 5, 0.62);
   backdrop-filter: blur(2px);
 }
 #pause[hidden] { display: none; }
+#pause .pause-box { margin: auto; flex: none; }
 .pause-box {
   display: flex;
   flex-direction: column;
@@ -789,6 +800,15 @@ body.in-menu #btn-pause { display: none; }
   #btn-pause span { display: none; }
   .pause-box { min-width: 0; width: min(88vw, 320px); padding: 18px 20px; gap: 8px; }
   .pause-title { font-size: 26px; }
+}
+/* low screens (phones in landscape): the pause menu in two columns instead of one tall column */
+@media (max-height: 560px) {
+  .pause-box { display: grid; grid-template-columns: 1fr 1fr; width: min(94vw, 640px); padding: 12px 16px 14px; gap: 6px 10px; align-content: start; }
+  .pause-box > .menu-kicker, .pause-box > .pause-title, .pause-box > .graphics-note { grid-column: 1 / -1; }
+  .pause-box .menu-kicker { margin-bottom: 0; font-size: 12px; }
+  .pause-title { margin: 0 0 2px; font-size: 22px; }
+  .pause-box .menu-btn { padding: 7px 12px; font-size: 16px; }
+  .pause-box .graphics-note { margin: -2px 2px 2px; }
 }
 
 /* ------------------------------------------------------------------ realistic graphics: brushed metal
@@ -839,3 +859,30 @@ body.gfx-real .menu-btn.primary {
 .sniper-tile.ready .snipe-cross { stroke: #7be07b; opacity: 1; }
 .sniper-tile.ready .snipe-dot { fill: #ff4a3a; opacity: 1; }
 .sniper-tile.ready { border-color: #7be07b; }
+
+/* ---------------------------------------------------------------- main menu on low landscape screens
+   (phones with their browser toolbars, e.g. an iPhone SE): title and text on the left, the buttons
+   on the right, so everything incl. "Vollbild" is in reach; the settings in two columns */
+@media (max-height: 560px) and (orientation: landscape) {
+  body:not(.menu-choose):not(.menu-settings-open) .menu-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 4vw;
+    align-items: center;
+    max-width: 880px;
+  }
+  body:not(.menu-choose):not(.menu-settings-open) .menu-kicker,
+  body:not(.menu-choose):not(.menu-settings-open) .menu-title,
+  body:not(.menu-choose):not(.menu-settings-open) .menu-brief { grid-column: 1; }
+  body:not(.menu-choose):not(.menu-settings-open) #menu-main { grid-column: 2; grid-row: 1 / span 3; }
+  body:not(.menu-choose):not(.menu-settings-open) #menu-help { grid-column: 1 / -1; margin-top: 10px; }
+  .menu-kicker { font-size: 12px; margin-bottom: 6px; }
+  .menu-nav { gap: 8px; width: 100%; }
+  #menu-main .menu-btn { width: 100%; min-width: 0; }
+  /* settings: the whole panel is just the settings, in two columns */
+  body.menu-settings-open .menu-kicker, body.menu-settings-open .menu-title, body.menu-settings-open .menu-brief { display: none; }
+  body.menu-settings-open #menu-settings .menu-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; max-width: 760px; }
+  body.menu-settings-open #menu-settings .menu-btn { min-width: 0; width: 100%; padding: 7px 12px; font-size: 16px; }
+  body.menu-settings-open #menu-settings .graphics-note { grid-column: 1 / -1; margin: -2px 2px 0; }
+  body.menu-settings-open #menu-settings .menu-sub { margin: 0 0 6px; }
+}

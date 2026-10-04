@@ -435,6 +435,7 @@ const showModes = (on: boolean) => {
   menuMain.hidden = on;
   menuModes.hidden = !on;
   menuSettings.hidden = true;
+  document.body.classList.remove("menu-settings-open");
   document.body.classList.toggle("menu-choose", on);
   if (on) document.getElementById("menu-help")!.hidden = true;
 };
@@ -442,6 +443,7 @@ const showModes = (on: boolean) => {
 const showSettings = (on: boolean) => {
   menuMain.hidden = on;
   menuSettings.hidden = !on;
+  document.body.classList.toggle("menu-settings-open", on);
   if (on) document.getElementById("menu-help")!.hidden = true;
 };
 document.getElementById("menu-new")!.addEventListener("click", () => showModes(true));
