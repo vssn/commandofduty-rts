@@ -1,11 +1,18 @@
 import { MAP_HALF, OUTPOSTS, type OutpostKind } from "../config";
-import { rng } from "../util/noise";
+import { rng, smoothstep, valueNoise } from "../util/noise";
 
 export interface V2 { x: number; z: number }
 export type RGB = [number, number, number];
 
 export interface Road { a: V2; b: V2; w: number; kind: "asphalt" | "dirt" }
 export interface Field { cx: number; cz: number; hw: number; hd: number; rot: number; base: RGB; stripe: RGB; sw: number }
+/**
+ * A meadow: grassland that is used - cut short, left for hay, grazed or left wild. They vary the big
+ * green areas: each has its own blade length (`height` 0 mown .. 1 tall), tone (`tone` 0 dry .. 1
+ * lush) and, for the wild ones, flowers.
+ */
+export type MeadowKind = "mown" | "pasture" | "hay" | "wild";
+export interface Meadow { cx: number; cz: number; hw: number; hd: number; rot: number; kind: MeadowKind; height: number; tone: number }
 export interface Forest { x: number; z: number; r: number; conifer: number }
 export interface Suburb { x: number; z: number; rot: number; r: number }
 export interface OutpostSpec { kind: OutpostKind; x: number; z: number; rot: number }
@@ -122,6 +129,7 @@ export class MapLayout {
   /** Street lamps along the village streets; `rot` turns the lamp arm over the road. */
   readonly streetLights: { x: number; z: number; rot: number }[] = [];
   readonly fields: Field[] = [];
+  readonly meadows: Meadow[] = [];
   readonly houses: HouseSpec[] = [];
 
   constructor(seed = 1337) {
@@ -129,6 +137,7 @@ export class MapLayout {
     this.suburbs.forEach((s, i) => this.buildSuburb(s, i, r));
     this.buildCountryRoads();
     this.buildFields(r);
+    this.buildMeadows(r);
   }
 
   private buildSuburb(s: Suburb, index: number, r: () => number) {
@@ -235,6 +244,44 @@ export class MapLayout {
       const stripe: RGB = [Math.min(1, base[0] * k), Math.min(1, base[1] * k), Math.min(1, base[2] * k)];
       this.fields.push({ cx, cz, hw, hd, rot, base, stripe, sw: 3.2 + r() * 1.2 });
     }
+  }
+
+  /** Large meadows on open ground, apart from everything else (and from each other). */
+  private buildMeadows(r: () => number) {
+    const kinds: [MeadowKind, number, number][] = [["hay", 0.92, 0.35], ["pasture", 0.42, 0.65], ["wild", 0.72, 0.55], ["mown", 0.08, 0.85], ["hay", 0.85, 0.2], ["pasture", 0.5, 0.45]];
+    const bases = [this.playerBase, this.enemyBase];
+    for (let tries = 0; tries < 3000 && this.meadows.length < 16; tries++) {
+      const hw = 8 + r() * 8, hd = 7 + r() * 6;
+      const ext = Math.hypot(hw, hd);
+      const cx = (r() * 2 - 1) * (MAP_HALF - 14), cz = (r() * 2 - 1) * (MAP_HALF - 14);
+      const rot = r() * Math.PI;
+      if (bases.some((b) => Math.hypot(cx - b.x, cz - b.z) < 24 + ext * 0.6)) continue;
+      if (this.suburbs.some((s) => Math.hypot(cx - s.x, cz - s.z) < s.r + ext * 0.5)) continue;
+      if (this.forests.some((f) => Math.hypot(cx - f.x, cz - f.z) < f.r + ext * 0.45)) continue;
+      if (this.nearOutpost(cx, cz, ext * 0.6 + 3)) continue;
+      if (this.nearestRoad(cx, cz).d < 3) continue; // (tufts keep clear of the roads themselves)
+      const cand = { cx, cz, hw, hd, rot };
+      if (this.fields.some((f) => rectsOverlap(cand, f, 1))) continue;
+      if (this.meadows.some((m) => rectsOverlap(cand, m, 2))) continue;
+      const [kind, height, tone] = kinds[this.meadows.length % kinds.length];
+      this.meadows.push({ cx, cz, hw, hd, rot, kind, height: Math.min(1, Math.max(0, height + (r() - 0.5) * 0.2)), tone: Math.min(1, Math.max(0, tone + (r() - 0.5) * 0.3)) });
+    }
+  }
+
+  /** The meadow at a point and how fully it covers it (0..1: a ragged, rounded edge). Null outside. */
+  meadowAt(x: number, z: number): { m: Meadow; cover: number } | null {
+    for (const m of this.meadows) {
+      if (Math.abs(x - m.cx) > 24 || Math.abs(z - m.cz) > 24) continue;
+      const l = toLocal(m.cx, m.cz, m.rot, x, z);
+      const ax = Math.abs(l.x) / m.hw, az = Math.abs(l.z) / m.hd;
+      if (ax > 1.2 || az > 1.2) continue;
+      // a rounded rectangle; the edge distance (in metres) wobbles with noise so it looks grown, not drawn
+      const d = Math.pow(Math.pow(ax, 3) + Math.pow(az, 3), 1 / 3);
+      const edge = (1 - d) * Math.min(m.hw, m.hd) + (valueNoise(x * 0.25, z * 0.25, 31) - 0.5) * 5;
+      const cover = smoothstep(0, 3.5, edge);
+      if (cover > 0.01) return { m, cover };
+    }
+    return null;
   }
 
   /** Signed distance to the nearest road edge (negative = on the road). Asphalt wins over dirt. */

@@ -17,6 +17,7 @@ import { Minimap } from "./ui/minimap";
 import { Overlay } from "./ui/overlay";
 import { RtsCamera } from "./ui/rtsCamera";
 import { createCrops } from "./world/crops";
+import { createMeadowGrass } from "./world/meadows";
 import { COMPOUND } from "./world/fortification";
 import { createHedges } from "./world/hedges";
 import { createEnvironment } from "./world/environment";
@@ -28,10 +29,26 @@ import { createDirtTracks } from "./world/dirtTracks";
 import { MuzzleFlashes } from "./game/muzzleFlash";
 import { FogRenderer } from "./world/fogRender";
 import { PbrMode } from "./world/pbr";
-import { RealisticTerrain } from "./world/terrainPbr";
+import { preloadGroundTextures, RealisticTerrain } from "./world/terrainPbr";
+import { preloadSurfaceTextures } from "./world/surfacePbr";
 import { RealisticCrops, RealisticHedges, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
+
+// ------------------------------------------------------------------ staged start-up
+// The world is built in steps with a break between them, so the browser can draw (the loading bar
+// on the black page) and never freezes for long: engine, then the map and its objects, then the
+// game, the interface, and - while the menu is already showing - the realistic mode's extras.
+const bootBar = document.getElementById("boot-bar");
+const setBoot = (p: number) => bootBar && (bootBar.style.width = `${Math.round(p * 100)}%`);
+/** A break for the browser: one frame (or at most a moment, e.g. in a background tab). */
+const tick = () =>
+  new Promise<void>((resolve) => {
+    let done = false;
+    const go = () => !done && ((done = true), resolve());
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 80);
+  });
 
 installDefaultCursor();
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -44,16 +61,22 @@ const env = createEnvironment(scene);
 const layout = new MapLayout();
 const terrain = new Terrain(scene, layout);
 const nav = new NavGrid();
+setBoot(0.18);
+await tick(); // the map is there
 const realHedges = new RealisticHedges(scene, env.shadows);
 const hedges = createHedges(scene, layout, terrain, env.shadows, realHedges);
 // the realistic graphics mode has its own field plants and trees, placed exactly like the classic ones
 const realCrops = new RealisticCrops(scene, env.shadows);
 createCrops(scene, layout, terrain, realCrops);
+// meadows (hay, wild, pasture): grass of different lengths on the large green areas
+createMeadowGrass(scene, layout, terrain, realCrops);
 createHouses(scene, layout, terrain, env.shadows, nav);
 const realTrees = new RealisticTrees(scene, env.shadows);
 const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);
 // street lamps stand in every mode; they are only switched on for the night mission
 const streetLights = createStreetLights(scene, layout, terrain, env.shadows, nav);
+setBoot(0.4);
+await tick(); // houses, trees, crops, hedges
 // trees and hedges are solid: nobody walks or drives through them. The tree radius covers the low
 // canopy, so soldiers don't poke their heads through the foliage; jeeps can't enter the woods at all.
 for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF) nav.blockCircle(t.x, t.z, 0.9);
@@ -64,9 +87,13 @@ const props = createProps(scene, layout, terrain, env.shadows, nav);
 const birds = new Birds(scene, terrain, trees);
 // farm tracks with ruts, a grassy middle strip and puddles
 const tracks = createDirtTracks(scene, layout, terrain, nav);
+setBoot(0.58);
+await tick(); // props and tracks
 // muzzle flashes that light up the surroundings in the night mission
 const muzzle = new MuzzleFlashes(scene, terrain);
 const game = new Game(scene, terrain, nav, layout, env.shadows);
+setBoot(0.72);
+await tick(); // units, bases, outposts
 // fire fights in the fog stay hidden, as for the tracers
 game.onMuzzle = (x, y, z, kind) => (!game.canSee || game.canSee(x, z)) && muzzle.flash(x, y, z, kind);
 game.cover = new CoverMap(
@@ -101,6 +128,8 @@ for (const p of props) if (p.height >= 2.4) fog.blockRect(p.x, p.z, p.hw, p.hd, 
 game.sightBonusOf = (u) => fog.sightBonus(u);
 game.canSee = (x, z) => fog.isVisible(x, z);
 
+setBoot(0.82);
+await tick(); // fog of war
 const cam = new RtsCamera(scene, terrain);
 scene.activeCamera = cam.camera;
 cam.jumpTo(layout.playerBase.x, layout.playerBase.z + 14);
@@ -120,6 +149,8 @@ hud.locate = (o) => {
   const r = overlay.canvas.getBoundingClientRect();
   return { x: r.left + Math.min(Math.max(p.x, 0), r.width), y: r.top + Math.min(Math.max(p.y, 0), r.height) };
 };
+setBoot(0.92);
+await tick(); // interface
 renderPortraits(engine).then((images) => hud.setPortraits(images), (e) => console.warn("portraits failed", e));
 let ai = new EnemyAI(game);
 
@@ -559,8 +590,43 @@ for (const el of document.querySelectorAll<HTMLElement>("[data-fps]")) {
   });
 }
 let fpsShown = 0;
+// the page stays black until the first frames are drawn and the fonts are in, then it fades in
+// (see the inline style in index.html); a timeout makes sure it always shows up
+/**
+ * With the menu already showing: prepares what the realistic mode needs, one piece per frame, so
+ * switching to it later does not stall - the ground and surface textures (generated and decoded in
+ * slices), then the detail models of the outposts, the bases and the vehicles (built, but hidden).
+ */
+async function prewarmRealistic() {
+  await tick();
+  preloadGroundTextures(scene);
+  await tick();
+  preloadSurfaceTextures(scene);
+  // (build the detail models, then leave them as they were: shown when the realistic mode is on)
+  for (const o of game.outposts) {
+    await tick();
+    o.setDetail(true);
+    o.setDetail(pbr.active);
+  }
+  await tick();
+  game.setBaseDetail(true);
+  game.setBaseDetail(pbr.active);
+  await tick();
+  props.setDetail(true);
+  props.setDetail(pbr.active);
+}
+let pageShown = false, framesDrawn = 0;
+const showPage = () => {
+  if (pageShown) return;
+  pageShown = true;
+  setBoot(1);
+  document.documentElement.classList.add("ready");
+  void prewarmRealistic();
+};
+window.setTimeout(showPage, 8000);
 engine.runRenderLoop(() => {
   scene.render();
+  if (!pageShown && ++framesDrawn === 3) void document.fonts.ready.then(showPage);
   if (showFps) {
     const now = performance.now();
     if (now - fpsShown > 500) {
@@ -577,3 +643,4 @@ document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
 Object.assign(window, { game, scene, cam, audio, ai, fog, pbr, startGame, returnToMenu });
+

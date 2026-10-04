@@ -12,7 +12,7 @@ export interface TextureLayers { albedo: RawTexture2DArray; normal: RawTexture2D
 const SIZE = 1024;
 
 /** Layers generated in code instead of loaded from photos (by their path). */
-const PROCEDURAL: Record<string, (size: number) => LayerPixels> = { "terrain/lawn": lawnLayer, "terrain/meadow": meadowLayer };
+const PROCEDURAL: Record<string, (size: number) => Promise<LayerPixels>> = { "terrain/lawn": lawnLayer, "terrain/meadow": meadowLayer };
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -39,9 +39,10 @@ export async function loadTextureLayers(scene: Scene, paths: readonly string[]):
   const means: Color3[] = [];
   const sources = await Promise.all(paths.map((p) =>
     PROCEDURAL[p] ? null : Promise.all(["diff", "rough", "nor_gl"].map((m) => loadImage(`${base}${p}_${m}_1k.jpg`)))));
-  sources.forEach((imgs, i) => {
+  for (let i = 0; i < sources.length; i++) {
+    const imgs = sources[i];
     const o = i * layer;
-    const gen = imgs ? null : PROCEDURAL[paths[i]](SIZE);
+    const gen = imgs ? null : await PROCEDURAL[paths[i]](SIZE);
     const d = gen ? gen.diff : pixels(imgs![0]);
     albedo.set(d, o);
     let r = 0, g = 0, b = 0;
@@ -55,7 +56,8 @@ export async function loadTextureLayers(scene: Scene, paths: readonly string[]):
     const rg = gen ? gen.rough : pixels(imgs![1]);
     for (let k = 0; k < layer; k += 4) albedo[o + k + 3] = rg[k];
     normal.set(gen ? gen.nor : pixels(imgs![2]), o);
-  });
+    await new Promise<void>((res) => setTimeout(res, 0)); // one layer per slice
+  }
   const arr = (data: Uint8Array, name: string) => {
     const t = new RawTexture2DArray(data, SIZE, SIZE, paths.length, Constants.TEXTUREFORMAT_RGBA, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
     t.name = name;

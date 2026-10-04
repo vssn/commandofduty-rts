@@ -96,6 +96,14 @@ function createGrainTexture(scene: Scene): DynamicTexture {
 interface FlatZone { x: number; z: number; r: number; f: number; h: number }
 
 /** Kind of painted surface (for the realistic ground's texture layers); 0 = natural ground. */
+/** Natural colours of the meadow kinds (mown, grazed, hay, wild). */
+const MEADOW_COLORS: Record<string, RGB> = {
+  mown: [0.41, 0.52, 0.24],
+  pasture: [0.43, 0.48, 0.25],
+  hay: [0.64, 0.62, 0.28],
+  wild: [0.52, 0.54, 0.28],
+};
+
 export const Surface = { Natural: 0, Dirt: 1, Field: 2, Asphalt: 3, Gravel: 4 } as const;
 export type Surface = (typeof Surface)[keyof typeof Surface];
 
@@ -239,6 +247,17 @@ export class Terrain {
     if (h > 30 && z > MAP_HALF - 10) mix(out, out, SNOW, smoothstep(34, 52, h + nz * 6) * (1 - cliff * 0.6));
     if (h < -6) mix(out, out, DEPTH_HAZE, smoothstep(-6, -55, h) * 0.85);
 
+    // meadows: each kind has its own colour, its tone its own variation (the realistic ground and
+    // the classic one both start from this natural colour)
+    const md = L.meadowAt(x, z);
+    if (md) {
+      const m = md.m;
+      const col = MEADOW_COLORS[m.kind];
+      mix(out, out, col, md.cover * (0.55 + 0.3 * valueNoise(x * 0.6, z * 0.6, 77)));
+      // lush ones greener, dry ones more golden
+      const t = (m.tone - 0.5) * 0.35 * md.cover;
+      out[0] *= 1 - t * (t < 0 ? 0.8 : 0.35); out[1] *= 1 + t * (t < 0 ? 0.5 : 0.18); out[2] *= 1 - t * 0.2;
+    }
     for (const s of L.suburbs) {
       const d = Math.hypot(x - s.x, z - s.z);
       if (d < s.r - 2) return mix(out, out, LAWN, smoothstep(s.r - 2, s.r - 6, d) * 0.85);

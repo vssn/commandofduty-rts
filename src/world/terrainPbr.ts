@@ -3,7 +3,7 @@ import {
   type AbstractEngine, type Material, type MaterialDefines, type Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import { ROAD_RANGE, type Terrain } from "./terrain";
-import { bakeOcclusion, bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
+import { bakeMeadowMap, bakeOcclusion, bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
 import type { MapLayout, V2 } from "./layout";
 import { loadTextureLayers, type TextureLayers } from "./textureLayers";
 
@@ -29,6 +29,11 @@ const vec3 = (c: readonly number[]) => `vec3(${c.map((v) => v.toFixed(3)).join("
 
 let layersPromise: Promise<TextureLayers> | null = null;
 
+/** Starts loading and generating the ground textures in the background (the realistic mode then finds them ready). */
+export function preloadGroundTextures(scene: Scene) {
+  layersPromise ??= loadTextureLayers(scene, LAYERS.map((l) => `terrain/${l.name}`));
+}
+
 /**
  * Blends the texture layers over the ground in the PBR shader: the baked masks decide where roads,
  * fields and pads lie (smooth curves instead of triangle edges), the slope where rock shows. Each
@@ -44,6 +49,7 @@ class TerrainSplatPlugin extends MaterialPluginBase {
     private readonly kind: RawTexture,
     private readonly roads: RawTexture,
     private readonly paths: RawTexture,
+    private readonly meadow: RawTexture,
     private readonly half: number,
   ) {
     super(material, "TerrainSplat", 210, { TERRAINSPLAT: false });
@@ -67,11 +73,11 @@ class TerrainSplatPlugin extends MaterialPluginBase {
   isReadyForSubMesh(): boolean {
     const l = this.layers;
     if (!l) return true;
-    return l.albedo.isReady() && l.normal.isReady() && this.decal.isReady() && this.kind.isReady() && this.roads.isReady() && this.paths.isReady();
+    return l.albedo.isReady() && l.normal.isReady() && this.decal.isReady() && this.kind.isReady() && this.roads.isReady() && this.paths.isReady() && this.meadow.isReady();
   }
 
   getSamplers(samplers: string[]) {
-    samplers.push("tsAlbedo", "tsNormal", "tsDecal", "tsKind", "tsRoads", "tsPaths");
+    samplers.push("tsAlbedo", "tsNormal", "tsDecal", "tsKind", "tsRoads", "tsPaths", "tsMeadow");
   }
 
   getUniforms() {
@@ -98,6 +104,7 @@ uniform float tsHalf;
     ubo.setTexture("tsKind", this.kind);
     ubo.setTexture("tsRoads", this.roads);
     ubo.setTexture("tsPaths", this.paths);
+    ubo.setTexture("tsMeadow", this.meadow);
   }
 
   getCustomCode(shaderType: string) {
@@ -111,6 +118,7 @@ uniform sampler2D tsDecal;
 uniform sampler2D tsKind;
 uniform sampler2D tsRoads;
 uniform sampler2D tsPaths;
+uniform sampler2D tsMeadow;
 vec3 tsLin(vec3 c) { return pow(c, vec3(2.2)); }
 /** Detail of a layer relative to its mean colour (1 = unchanged), slightly toned down. */
 vec3 tsDetail(vec4 a, vec3 mean) { return mix(vec3(1.0), tsLin(a.rgb) / max(mean, vec3(0.002)), 0.9); }
@@ -150,6 +158,17 @@ bool tsUse3 = tsDec.a * tsK.b > 0.003 || tsRd.x < tsAa.x + 0.02;
 bool tsUse4 = tsDec.a * tsK.a > 0.003 || tsRd.x < 0.62 + tsAa.x || tsRd.y < 1.0;
 vec4 tsA0 = textureGrad(tsAlbedo, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0]}, tsDy * ${tiles[0]});
 vec3 tsN0 = textureGrad(tsNormal, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0]}, tsDy * ${tiles[0]}).xyz;
+// meadows: the blades' length follows the meadow's height class - the grass texture is read at a
+// coarser (tall) or finer (mown) scale
+vec4 tsMd = texture(tsMeadow, tsUv) * tsIn;
+float tsMdW = tsMd.r;
+if (tsMdW > 0.02) {
+  float tsSc = mix(1.8, 0.36, tsMd.g);
+  vec2 tsMu = tsP * ${tiles[0]} * tsSc;
+  vec2 tsMdx = tsDx * ${tiles[0]} * tsSc, tsMdy = tsDy * ${tiles[0]} * tsSc;
+  tsA0 = mix(tsA0, textureGrad(tsAlbedo, vec3(tsMu, 0.0), tsMdx, tsMdy), tsMdW);
+  tsN0 = mix(tsN0, textureGrad(tsNormal, vec3(tsMu, 0.0), tsMdx, tsMdy).xyz, tsMdW);
+}
 vec4 tsA1 = vec4(0.5), tsA2 = vec4(0.5), tsA3 = vec4(0.5), tsA4 = vec4(0.5);
 vec3 tsN1 = vec3(0.5, 0.5, 1.0), tsN2 = tsN1, tsN3 = tsN1, tsN4 = tsN1;
 // asphalt grain: the layer again at a finer scale (its stones catch the sun)
@@ -206,10 +225,28 @@ vec4 tsA0m = textureGrad(tsAlbedo, vec3(tsRotM * tsP * 0.043, 0.0), tsRotM * tsD
 vec3 tsGrass = tsDetail(tsA0, tsMean0) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.6);
 // a fresher, sunnier meadow green than the map's base colour
 tsGrass *= vec3(1.04, 1.16, 0.78);
+float tsFlW = 0.0;
+vec3 tsFlC = vec3(0.0);
+if (tsMdW > 0.02) {
+  // tone: lush meadows deeper green, dry ones golden
+  // (lush ones stay close to a natural, slightly olive green: a little less colour, no extra green boost)
+  tsGrass *= mix(vec3(1.0), mix(vec3(1.25, 1.03, 0.6), vec3(0.98, 0.96, 0.86), tsMd.a), tsMdW);
+  tsGrass = mix(tsGrass, vec3(dot(tsGrass, vec3(0.333))) * vec3(1.02, 1.0, 0.9), 0.22 * tsMd.a * tsMdW);
+  // mown: light and dark stripes
+  float tsMown = (1.0 - smoothstep(0.15, 0.4, tsMd.g)) * tsMdW;
+  tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(0.62, 0.78)) * 1.9);
+  // flowers: small light dots, mostly white, some yellow
+  vec2 tsCell = floor(tsP * 6.0);
+  float tsHs = fract(sin(dot(tsCell, vec2(12.9898, 78.233))) * 43758.5453);
+  vec2 tsFp = fract(tsP * 6.0) - 0.5 - (vec2(fract(tsHs * 7.0), fract(tsHs * 13.0)) - 0.5) * 0.5;
+  tsFlW = smoothstep(0.16, 0.07, length(tsFp)) * step(1.0 - tsMd.b * 0.14, tsHs) * tsMdW;
+  tsFlC = mix(vec3(0.62, 0.6, 0.52), vec3(0.62, 0.45, 0.08), step(0.5, fract(tsHs * 5.0)));
+}
 // natural ground (grass or rock) under the painted surfaces
 vec3 tsNat = mix(tsGrass, tsDetail(tsA5, tsMean5), tsRock);
 vec3 tsPaint = tsK.r * tsDetail(tsA1, tsMean1) + tsK.g * tsDetail(tsA2, tsMean2) + tsK.b * tsDetail(tsA3, tsMean3) + tsK.a * tsDetail(tsA4, tsMean4);
 vec3 tsCol = mix(surfaceAlbedo * tsNat, tsLin(tsDec.rgb) * tsPaint, tsDec.a);
+tsCol = mix(tsCol, tsFlC, tsFlW * (1.0 - tsDec.a));
 float tsRough = mix(mix(tsA0.a, tsA5.a, tsRock), dot(tsK, vec4(tsA1.a, tsA2.a, tsA3.a, tsA4.a)), tsDec.a);
 vec3 tsNm = mix(mix(tsN0, tsN5, tsRock), tsK.r * tsN1 + tsK.g * tsN2 + tsK.b * tsN3 + tsK.a * tsN4, tsDec.a);
 float tsJag = (tsA0m.g - 0.5) * 0.5; // a little irregularity for the worn verges
@@ -298,7 +335,7 @@ export class RealisticTerrain {
   private plugin: TerrainSplatPlugin | null = null;
   private classic: { material: Material | null; normals: Float32Array; colors: Float32Array } | null = null;
   private ground: { normals: Float32Array; colors: Float32Array } | null = null;
-  private masks: { decal: RawTexture; kind: RawTexture; roads: RawTexture; paths: RawTexture; half: number } | null = null;
+  private masks: { decal: RawTexture; kind: RawTexture; roads: RawTexture; paths: RawTexture; meadow: RawTexture; half: number } | null = null;
   private arrays: TextureLayers | null = null;
 
   constructor(private readonly scene: Scene, private readonly terrain: Terrain, private readonly footpaths: () => PathLine[],
@@ -326,13 +363,13 @@ export class RealisticTerrain {
     this.ground ??= this.terrain.realisticGround();
     if (!this.masks) {
       const m = this.terrain.bakeSurfaces();
-      const tex = (data: Uint8Array, name: string) => {
-        const t = RawTexture.CreateRGBATexture(data, m.res, m.res, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
+      const tex = (data: Uint8Array, name: string, res = m.res) => {
+        const t = RawTexture.CreateRGBATexture(data, res, res, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
         t.name = name;
         t.wrapU = t.wrapV = Texture.CLAMP_ADDRESSMODE;
         return t;
       };
-      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(this.bakePaths(m.res, m.half), "groundPaths"), half: m.half };
+      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(this.bakePaths(m.res, m.half), "groundPaths"), meadow: tex(bakeMeadowMap(this.occluders().layout, 512, m.half), "groundMeadows", 512), half: m.half };
     }
     mesh.setVerticesData(VertexBuffer.NormalKind, this.ground.normals);
     mesh.setVerticesData(VertexBuffer.ColorKind, this.ground.colors);
@@ -342,7 +379,7 @@ export class RealisticTerrain {
     mat.metallic = 0;
     mat.roughness = 0.9;
     mat.backFaceCulling = false;
-    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.half);
+    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.half);
     this.material = mat;
     mesh.material = mat;
 

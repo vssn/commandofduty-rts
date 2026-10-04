@@ -1,5 +1,10 @@
 import { rng } from "../util/noise";
 
+/** Gives the browser a turn (the generation below is split into slices of a few milliseconds). */
+const yieldNow = () => new Promise<void>((r) => setTimeout(r, 0));
+/** Calls it every so often inside long loops: `if (now() - t > 7) { await yieldNow(); t = now(); }`. */
+const now = () => performance.now();
+
 /** One generated texture layer: albedo, roughness (in r) and tangent-space normals (OpenGL), RGBA each. */
 export interface LayerPixels { diff: Uint8ClampedArray; rough: Uint8ClampedArray; nor: Uint8ClampedArray }
 
@@ -9,7 +14,7 @@ export interface LayerPixels { diff: Uint8ClampedArray; rough: Uint8ClampedArray
  * are drawn into a height map as well, from which the normals come; tips are a little less rough.
  * The tile wraps seamlessly. `size` is the edge length in pixels (the shader maps it to about a metre).
  */
-export function lawnLayer(size: number): LayerPixels {
+export async function lawnLayer(size: number): Promise<LayerPixels> {
   const r = rng(4242);
   const mk = () => {
     const c = document.createElement("canvas");
@@ -64,7 +69,12 @@ export function lawnLayer(size: number): LayerPixels {
     [46, 82, 30], [58, 98, 36], [72, 114, 42], [88, 128, 48], [104, 140, 54], [124, 152, 62], [96, 118, 50],
   ];
   col.lineCap = hgt.lineCap = "round";
+  let slice = now();
   for (let i = 0; i < blades; i++) {
+    if (now() - slice > 7) {
+      await yieldNow();
+      slice = now();
+    }
     const x = r() * size, y = r() * size;
     const a = r() * Math.PI * 2;
     const len = 4 + r() * r() * 10;
@@ -101,7 +111,12 @@ export function lawnLayer(size: number): LayerPixels {
   const nor = new Uint8ClampedArray(size * size * 4);
   const rough = new Uint8ClampedArray(size * size * 4);
   const strength = 3.2;
+  let rowT = now();
   for (let y = 0; y < size; y++) {
+    if (now() - rowT > 7) {
+      await yieldNow();
+      rowT = now();
+    }
     for (let x = 0; x < size; x++) {
       const nx = (h(x - 1, y) - h(x + 1, y)) * strength;
       const ny = (h(x, y + 1) - h(x, y - 1)) * strength;
@@ -125,7 +140,7 @@ export function lawnLayer(size: number): LayerPixels {
  * a few bare spots. Blades are also drawn into a height map for the normals. Wraps seamlessly;
  * the shader maps the tile to about three metres.
  */
-export function meadowLayer(size: number): LayerPixels {
+export async function meadowLayer(size: number): Promise<LayerPixels> {
   const r = rng(777);
   const mk = () => {
     const c = document.createElement("canvas");
@@ -182,7 +197,12 @@ export function meadowLayer(size: number): LayerPixels {
   ];
   col.lineCap = hgt.lineCap = "round";
   const tufts = Math.round((size * size) / 260);
+  let slice = now();
   for (let t = 0; t < tufts; t++) {
+    if (now() - slice > 7) {
+      await yieldNow();
+      slice = now();
+    }
     const cx = r() * size, cy = r() * size;
     const base = flow(cx, cy);
     // brighter tufts stand up into the light, darker ones lie in the hollows
@@ -240,7 +260,12 @@ export function meadowLayer(size: number): LayerPixels {
   const nor = new Uint8ClampedArray(size * size * 4);
   const rough = new Uint8ClampedArray(size * size * 4);
   const strength = 2.6;
+  let rowT = now();
   for (let y = 0; y < size; y++) {
+    if (now() - rowT > 7) {
+      await yieldNow();
+      rowT = now();
+    }
     for (let x = 0; x < size; x++) {
       const nx = (h(x - 1, y) - h(x + 1, y)) * strength;
       const ny = (h(x, y + 1) - h(x, y - 1)) * strength;

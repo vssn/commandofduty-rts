@@ -99,3 +99,33 @@ export function bakeOcclusion(data: Uint8Array, res: number, half: number, trees
     data[k * 4 + 3] = Math.round(village[k] * 255);
   }
 }
+
+/**
+ * Bakes the meadows for the realistic ground (r = how fully a meadow covers the texel, g = blade
+ * length 0 mown .. 1 tall, b = flowers, a = tone 0 dry .. 1 lush). The shader reads the lawn texture
+ * at a coarser or finer scale from it, tints the grass and sprinkles flowers.
+ */
+export function bakeMeadowMap(layout: MapLayout, res: number, half: number): Uint8Array {
+  const data = new Uint8Array(res * res * 4);
+  const step = (half * 2) / res;
+  const flowers: Record<string, number> = { mown: 0.1, pasture: 0.55, hay: 0.3, wild: 1 };
+  for (const m of layout.meadows) {
+    const reach = Math.hypot(m.hw, m.hd) + 4;
+    const i0 = Math.max(0, Math.floor((m.cx - reach + half) / step)), i1 = Math.min(res - 1, Math.ceil((m.cx + reach + half) / step));
+    const j0 = Math.max(0, Math.floor((m.cz - reach + half) / step)), j1 = Math.min(res - 1, Math.ceil((m.cz + reach + half) / step));
+    for (let j = j0; j <= j1; j++) {
+      const z = -half + (j + 0.5) * step;
+      for (let i = i0; i <= i1; i++) {
+        const x = -half + (i + 0.5) * step;
+        const at = layout.meadowAt(x, z);
+        if (!at || at.m !== m) continue;
+        const o = (i + j * res) * 4;
+        data[o] = Math.round(at.cover * 255);
+        data[o + 1] = Math.round(m.height * 255);
+        data[o + 2] = Math.round(flowers[m.kind] * 255);
+        data[o + 3] = Math.round(m.tone * 255);
+      }
+    }
+  }
+  return data;
+}

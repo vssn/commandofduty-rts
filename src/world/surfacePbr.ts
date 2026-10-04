@@ -21,6 +21,11 @@ const SURFACES: Record<SurfaceKind, { path: string; layer: number; tile: number;
 const ORDER = (Object.keys(SURFACES) as SurfaceKind[]).sort((a, b) => SURFACES[a].layer - SURFACES[b].layer);
 
 let layersPromise: Promise<TextureLayers> | null = null;
+
+/** Starts loading the surface textures (wood, cloth, metal, ...) in the background. */
+export function preloadSurfaceTextures(scene: Scene) {
+  layersPromise ??= loadTextureLayers(scene, ORDER.map((k) => SURFACES[k].path));
+}
 let layers: TextureLayers | null = null;
 /** Plugins waiting for the textures. */
 const waiting = new Set<SurfaceTexturePlugin>();

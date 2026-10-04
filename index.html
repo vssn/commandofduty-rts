@@ -6,11 +6,24 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Command of Duty</title>
+    <!-- black from the first moment; the page fades in once the styles, the fonts and the first frame are there -->
+    <style>
+      html, body { margin: 0; background: #000; }
+      html:not(.ready), html:not(.ready) body { background: #000 !important; } /* also over the stylesheet's own background */
+      #app, #rotate-hint { opacity: 0; visibility: hidden; }
+      html.ready #app, html.ready #rotate-hint { opacity: 1; visibility: visible; transition: opacity 0.9s ease; }
+      html:not(.ready) .menu-panel { animation-play-state: paused; }
+      /* loading progress: a thin gold line on the black page, gone when the menu fades in */
+      #boot { position: fixed; left: 50%; bottom: 14vh; width: min(260px, 50vw); height: 3px; margin-left: calc(min(260px, 50vw) / -2); background: rgba(255, 255, 255, 0.08); z-index: 200; transition: opacity 0.5s ease; }
+      #boot-bar { display: block; height: 100%; width: 4%; background: #e9b53c; transition: width 0.35s ease; }
+      html.ready #boot { opacity: 0; pointer-events: none; }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" rel="stylesheet" />
   </head>
   <body class="in-menu">
+    <div id="boot"><span id="boot-bar"></span></div>
     <div id="app">
       <main id="viewport">
         <canvas id="game"></canvas>
