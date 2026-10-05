@@ -31,6 +31,7 @@ import { MuzzleFlashes } from "./game/muzzleFlash";
 import { FogRenderer } from "./world/fogRender";
 import { PbrMode } from "./world/pbr";
 import { preloadGroundTextures, RealisticTerrain } from "./world/terrainPbr";
+import { setSpotLights } from "./world/spotPbr";
 import { preloadSurfaceTextures } from "./world/surfacePbr";
 import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
@@ -217,6 +218,8 @@ const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
   // the realistic ground draws the farm tracks and footpaths itself (irregular edges, ruts, gravel, trampled earth)
   { enable: () => { tracks.trackBands.setEnabled(false); tracks.pathBands.setEnabled(false); }, disable: () => { tracks.trackBands.setEnabled(true); tracks.pathBands.setEnabled(true); } },
   { enable: () => game.effects.real.enable(), disable: () => game.effects.real.disable() },
+  // the combat sounds: layered, with the speed of sound, air absorption and echo
+  { enable: () => audio.setRealistic(true), disable: () => audio.setRealistic(false) },
 ]);
 /** Day / night for the environment and - after it - the PBR lighting. */
 function setNight(on: boolean) {
@@ -519,10 +522,20 @@ artDone.then(
   (e) => console.warn("mode art failed", e),
 );
 
+let spotsOn = false;
 let dt = 0;
 scene.onBeforeRenderObservable.add(() => {
   dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   pbr.update();
+  // night mission, realistic mode: the nearest lights also light the trees and houses
+  if (pbr.active && game.commandos) {
+    const e = game.commandos.agent;
+    setSpotLights(game.commandos.lightSources(e.x, e.z));
+    spotsOn = true;
+  } else if (spotsOn) {
+    setSpotLights([]);
+    spotsOn = false;
+  }
   audio.update(dt, !paused && !hud.bannerShown);
   if (!paused && !hud.bannerShown) {
     birds.update(dt);

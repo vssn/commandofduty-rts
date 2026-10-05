@@ -120,6 +120,9 @@ export class AudioSystem {
   private musicGain!: GainNode;
   private sfxGain!: GainNode;
   private noise!: AudioBuffer;
+  /** Realistic mode: combat sounds in layers, with the speed of sound, air absorption and an echo of the surroundings. */
+  realistic = false;
+  private reverbIn: GainNode | null = null;
   private music: MusicGenerator | null = null;
   private theme: MusicTheme = "menu";
   private recentShots: number[] = [];
@@ -195,6 +198,33 @@ export class AudioSystem {
 
     this.music = new MusicGenerator(ctx, this.musicGain, this.noise, this.theme);
     if (this.musicOn) this.music.start();
+
+    // the echo of the surroundings (houses, trees, hills): a generated room, ~2 s, dark in its tail
+    const rate = ctx.sampleRate, len = Math.floor(rate * 2.2);
+    const ir = ctx.createBuffer(2, len, rate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      let lpState = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / rate;
+        // the high frequencies die out faster than the low ones
+        const k = Math.min(0.97, 0.15 + t * 0.9);
+        lpState = lpState * k + (Math.random() * 2 - 1) * (1 - k);
+        d[i] = lpState * Math.exp(-t * 3.1) * (t < 0.004 ? 0 : 1);
+      }
+      for (const [at, a] of [[0.011, 0.5], [0.027, 0.38], [0.043, 0.3], [0.071, 0.22]]) d[Math.floor((at + c * 0.004) * rate)] += a;
+    }
+    const conv = ctx.createConvolver();
+    conv.buffer = ir;
+    this.reverbIn = ctx.createGain();
+    const wet = ctx.createGain();
+    wet.gain.value = 0.5;
+    this.reverbIn.connect(conv).connect(wet).connect(this.sfxGain);
+  }
+
+  /** Realistic combat sounds on or off (the realistic graphics mode switches it). */
+  setRealistic(on: boolean) {
+    this.realistic = on;
   }
 
   /** Menu music or the soundtrack of the chosen mode (cross-fades if already playing). */
@@ -265,6 +295,7 @@ export class AudioSystem {
   private metalHit(x: number, z: number, delay: number) {
     const ctx = this.ctx;
     if (!ctx || !this.sfxOn) return;
+    if (this.realistic) return this.realMetalHit(x, z, delay);
     const now = ctx.currentTime;
     this.recentImpacts = this.recentImpacts.filter((t) => now - t < 0.15);
     if (this.recentImpacts.length >= 3) return; // MG bursts: not every round gets its own ping
@@ -347,6 +378,7 @@ export class AudioSystem {
   private explosion(x: number, z: number, size: number) {
     const ctx = this.ctx;
     if (!ctx || !this.sfxOn) return;
+    if (this.realistic) return this.realExplosion(x, z, size);
     const s = this.spatial(x, z, 0.22 * Math.min(1.5, size), 160);
     if (!s) return;
     const t = ctx.currentTime;
@@ -377,6 +409,7 @@ export class AudioSystem {
   private sniperShot(x: number, z: number) {
     const ctx = this.ctx;
     if (!ctx || !this.sfxOn) return;
+    if (this.realistic) return this.realShot(x, z, "sniper");
     for (const [delay, level] of [[0, 0.16], [0.18, 0.04], [0.36, 0.015]]) {
       const s = this.spatial(x, z, level, 160);
       if (!s) continue;
@@ -472,6 +505,7 @@ export class AudioSystem {
     const level = (mg ? 0.09 : 0.07) * Math.pow(Math.max(0, 1 - d / 110), 1.5);
     if (level < 0.004) return;
     this.recentShots.push(now);
+    if (this.realistic) return this.realShot(x, z, mg ? "mg" : "rifle");
 
     const t = now + Math.random() * 0.03;
     const pan = ctx.createStereoPanner();
@@ -973,6 +1007,151 @@ export class AudioSystem {
     const v = { level, pan, nodes };
     this.droneVoices.set(owner, v);
     return v;
+  }
+
+  // ---------------------------------------------------------------- realistic combat sounds
+
+  /**
+   * An output for a sound at (x, z): arrives late by the speed of sound (343 m/s), loses its high
+   * frequencies with distance (air absorption), is panned, and sends part of itself into the echo of
+   * the surroundings (more the farther away). Null if too far to be heard.
+   */
+  private realBus(x: number, z: number, level: number, range: number, send: number, maxCut = 15000): { t0: number; out: GainNode; level: number } | null {
+    const ctx = this.ctx!;
+    const ear = this.ear();
+    const d = Math.hypot(x - ear.x, z - ear.z);
+    const l = level * Math.pow(Math.max(0, 1 - d / range), 1.4);
+    if (l < 0.003) return null;
+    const out = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.min(maxCut, Math.max(700, 15000 * Math.exp(-d / 75)));
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, (x - ear.x) / 50));
+    out.connect(lp).connect(pan).connect(this.sfxGain);
+    if (this.reverbIn && send > 0) {
+      const sg = ctx.createGain();
+      sg.gain.value = send * (0.45 + 0.55 * Math.min(1, d / 70));
+      lp.connect(sg).connect(this.reverbIn);
+    }
+    window.setTimeout(() => out.disconnect(), (Math.min(0.9, d / 343) + 3.5) * 1000);
+    return { t0: ctx.currentTime + Math.min(0.9, d / 343), out, level: l };
+  }
+
+  /** A burst of filtered noise: start time, length, filter, peak level, how fast it dies (seconds to silence). */
+  private noiseBurst(out: AudioNode, t: number, dur: number, type: BiquadFilterType, freq: number, q: number, level: number, attack = 0.001) {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(out);
+    src.start(t, Math.random() * 0.8);
+    src.stop(t + dur + 0.02);
+  }
+
+  /** A sine that glides from `f0` to `f1`. */
+  private tone(out: AudioNode, t: number, dur: number, f0: number, f1: number, level: number, attack = 0.002) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(10, f1), t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  /**
+   * A gun shot in layers: the sharp crack of the muzzle blast, the body of the report, the low thump of
+   * the pressure wave and the tail that rolls off over the countryside - the heavier the weapon, the
+   * longer and deeper. Detuned a little each time, so no two shots sound alike.
+   */
+  private realShot(x: number, z: number, kind: "rifle" | "mg" | "sniper") {
+    const heavy = kind === "sniper" ? 1 : kind === "mg" ? 0.55 : 0.4;
+    const bus = this.realBus(x, z, kind === "sniper" ? 0.24 : kind === "mg" ? 0.1 : 0.085, kind === "sniper" ? 300 : 220, kind === "sniper" ? 0.9 : 0.55);
+    if (!bus) return;
+    const { out, level } = bus;
+    const t = bus.t0 + Math.random() * 0.008;
+    const v = 0.85 + Math.random() * 0.3; // this shot's own colour
+    this.noiseBurst(out, t, 0.022, "highpass", 1800 * v, 0.7, level * 1.1, 0.0006); // crack
+    this.noiseBurst(out, t, 0.06 + heavy * 0.05, "bandpass", (kind === "mg" ? 700 : kind === "sniper" ? 800 : 1200) * v, 0.8, level * 0.9, 0.001); // report
+    this.tone(out, t, 0.09 + heavy * 0.2, 150 * v - heavy * 40, 42, level * (1.1 + heavy), 0.002); // pressure thump
+    this.noiseBurst(out, t + 0.012, 0.28 + heavy * 0.9, "lowpass", 650 + heavy * 300, 0.5, level * (0.3 + heavy * 0.3), 0.01); // tail
+  }
+
+  /**
+   * An explosion: a crack, the deep boom with a sub-bass pressure wave, a rumble that rolls away, and
+   * debris pattering down afterwards - bigger blasts boom longer. A long echo of the surroundings.
+   */
+  private realExplosion(x: number, z: number, size: number) {
+    const s = Math.min(2.4, Math.max(0.8, size));
+    // dull: everything above ~1.8 kHz is cut off, so nothing rings like metal
+    const bus = this.realBus(x, z, 0.32 * Math.min(1.5, s), 280, 1, 1800);
+    if (!bus) return;
+    const { out, level } = bus;
+    const t = bus.t0;
+    this.noiseBurst(out, t, 0.09, "bandpass", 320, 0.5, level * 1.0, 0.006); // a soft thud of the blast, not a crack
+    this.tone(out, t, 1.0 + s * 0.55, 66, 20, level * 2.5, 0.014); // boom
+    this.tone(out, t, 0.7 + s * 0.45, 38, 18, level * 1.8, 0.02); // pressure wave
+    // rumble: noise whose cut-off falls from a muffled roar to a growl
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.Q.value = 0.4;
+    lp.frequency.setValueAtTime(1100, t);
+    lp.frequency.exponentialRampToValueAtTime(90, t + 1.8 + s * 0.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(level * 1.3, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2 + s * 0.6);
+    src.connect(lp).connect(g).connect(out);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + 2.3 + s * 0.6);
+    // earth and debris coming down: dull thuds, no ticking
+    const n = Math.round(7 + s * 5);
+    for (let i = 0; i < n; i++) {
+      const at = t + 0.3 + Math.pow(Math.random(), 0.8) * (1.2 + s * 0.3);
+      this.noiseBurst(out, at, 0.04 + Math.random() * 0.05, "lowpass", 380 + Math.random() * 520, 0.6, level * (0.3 - (i / n) * 0.2) * Math.random(), 0.004);
+    }
+  }
+
+  /**
+   * A bullet striking sheet metal: a sharp tick of the impact, the panel ringing in a few inharmonic
+   * modes of a random size, a dull thud of the body behind it, and now and then a ricochet whining away.
+   */
+  private realMetalHit(x: number, z: number, delay: number) {
+    const ctx = this.ctx!;
+    const now = ctx.currentTime;
+    this.recentImpacts = this.recentImpacts.filter((t) => now - t < 0.15);
+    if (this.recentImpacts.length >= 3) return;
+    const bus = this.realBus(x, z, 0.1, 170, 0.3);
+    if (!bus) return;
+    this.recentImpacts.push(now);
+    const { out, level } = bus;
+    const t = bus.t0 + delay;
+    const base = 800 + Math.random() * 1700;
+    this.noiseBurst(out, t, 0.014, "highpass", 3500, 0.7, level * 1.5, 0.0005); // the tick
+    for (const [mult, lvl, dec] of [[1, 1, 0.38], [1.52, 0.7, 0.24], [2.31, 0.5, 0.16], [3.1, 0.32, 0.1]]) {
+      const j = 0.97 + Math.random() * 0.06;
+      this.tone(out, t, dec * (0.75 + Math.random() * 0.5), base * mult * j, base * mult * j * 0.985, level * lvl * 0.8, 0.0015);
+    }
+    this.tone(out, t, 0.09, 280 + Math.random() * 90, 120, level * 1.1, 0.002); // the dull thud of the body
+    this.noiseBurst(out, t, 0.05, "lowpass", 700, 0.7, level * 0.6, 0.002);
+    if (Math.random() < 0.35) this.tone(out, t + 0.01, 0.2, 3300 + Math.random() * 600, 1000, level * 0.4, 0.004); // ricochet
   }
 
 }

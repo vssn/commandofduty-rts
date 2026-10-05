@@ -6,6 +6,7 @@ import type { RGB } from "./layout";
 import { camoTexture, type PbrLook, type SurfaceKind } from "./models";
 import { attachSurfaceTexture } from "./surfacePbr";
 import { attachRim } from "./rimPbr";
+import { attachSpotLights } from "./spotPbr";
 
 /** Colour grading of the realistic mode (ColorCurves scale: -100..100). */
 const GRADE = { saturation: -18, highlights: 50, shadows: 12, tint: 18, exposure: 1.55 };
@@ -201,6 +202,8 @@ export class PbrMode {
     const look = (m.metadata as { pbr?: PbrLook } | null)?.pbr;
     if (look?.color) p.albedoColor = new Color3(toLinear(look.color[0]), toLinear(look.color[1]), toLinear(look.color[2]));
     if (look?.camo) p.albedoTexture = camoTexture(this.scene);
+    // searchlights, drone lights and street lamps light the scenery as well
+    attachSpotLights(p);
     // a rim light inside the surface (the soldiers' team colour)
     const rim = (m.metadata as { rim?: RGB } | null)?.rim;
     if (rim) attachRim(p, [toLinear(rim[0]), toLinear(rim[1]), toLinear(rim[2])]);

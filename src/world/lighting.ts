@@ -1,7 +1,8 @@
 import {
-  Color3, Constants, DynamicTexture, Mesh, MeshBuilder, StandardMaterial, Texture, TransformNode, Vector3, type InstancedMesh, type Scene,
+  Color3, Constants, DynamicTexture, Mesh, MeshBuilder, StandardMaterial, Texture, TransformNode, Vector3, VertexData, type InstancedMesh, type Scene,
   type ShadowGenerator,
 } from "@babylonjs/core";
+import { smoothstep } from "../util/noise";
 import type { NavGrid } from "../game/nav";
 import type { MapLayout, RGB } from "./layout";
 import { mat } from "./models";
@@ -101,6 +102,93 @@ function drape(m: Mesh, base: Float32Array | number[], terrain: Terrain, x: numb
   }
   m.updateVerticesData("position", pos);
   m.refreshBoundingInfo(); // otherwise it is culled at its old place
+}
+
+/** Stretch of the searchlight's lit spot (in units of its radius): its wide end, its tip (the end towards the lamp) and how narrow that tip is. */
+const EGG = { near: 1.3, far: 1.1, tip: 0.42 };
+const EGG_SECTORS = 44, EGG_RINGS = 12;
+/** How much darker the spot gets towards its wide end (0 = not at all). */
+const EGG_DARK = 0.8;
+/** Ratio between the texture's edge and the rim of the spot (the ring texture's bright rim lies at 0.77). */
+const EGG_REACH = 1 / 0.77;
+
+/** Lateral scale of the lit spot at distance u (in radii) along its axis: wide near the lamp, narrowing to a tip. */
+function eggWidth(u: number): number {
+  // (the power makes the sides bulge: the full width is reached early, then it rounds off into the tip)
+  return EGG.tip + (1 - EGG.tip) * Math.pow(smoothstep(-1.1, 0.45, u), 0.62);
+}
+
+/**
+ * Where a point (u, v) - along and across the axis from the spot's centre towards the lamp, in radii -
+ * lies in the spot: 1 is its edge, less is inside. Drawn and detection use the same shape.
+ */
+function eggRho(u: number, v: number): number {
+  const a = u / (u > 0 ? EGG.near : EGG.far);
+  const b = v / eggWidth(u);
+  return Math.hypot(a, b);
+}
+
+/**
+ * A polar mesh (centre, rings, sectors) with radial texture coordinates: the radial glow and rim textures
+ * then follow the shape of the spot, which is not a circle. Its vertices are placed by `placeEgg`.
+ */
+function eggMesh(scene: Scene, name: string): Mesh {
+  const pos: number[] = [0, 0, 0], uv: number[] = [0.5, 0.5], idx: number[] = [];
+  for (let i = 1; i <= EGG_RINGS; i++) {
+    for (let j = 0; j < EGG_SECTORS; j++) {
+      const th = (j / EGG_SECTORS) * Math.PI * 2, f = i / EGG_RINGS;
+      pos.push(0, 0, 0);
+      uv.push(0.5 + 0.5 * f * Math.cos(th), 0.5 + 0.5 * f * Math.sin(th));
+    }
+  }
+  const at = (i: number, j: number) => 1 + (i - 1) * EGG_SECTORS + (j % EGG_SECTORS);
+  for (let j = 0; j < EGG_SECTORS; j++) idx.push(0, at(1, j + 1), at(1, j));
+  for (let i = 1; i < EGG_RINGS; i++) {
+    for (let j = 0; j < EGG_SECTORS; j++) idx.push(at(i, j), at(i, j + 1), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j));
+  }
+  const m = new Mesh(name, scene);
+  const vd = new VertexData();
+  vd.positions = pos;
+  vd.uvs = uv;
+  vd.indices = idx;
+  vd.normals = pos.map((_, k) => (k % 3 === 1 ? 1 : 0));
+  vd.colors = new Array((pos.length / 3) * 4).fill(1);
+  vd.applyToMesh(m, true);
+  m.hasVertexAlpha = true; // (the spot is a little darker towards its wide end, see placeEgg)
+  m.isPickable = false;
+  m.alphaIndex = 10;
+  return m;
+}
+
+/** Lays the spot at (cx, cz) over the ground: its wide end towards (dirX, dirZ), the direction away from the lamp. */
+function placeEgg(m: Mesh, terrain: Terrain, cx: number, cz: number, dirX: number, dirZ: number, radius: number) {
+  const pos = m.getVerticesData("position")!;
+  const col = m.getVerticesData("color")!;
+  const px = -dirZ, pz = dirX;
+  let k = 3;
+  let c = 4;
+  for (let i = 1; i <= EGG_RINGS; i++) {
+    const rho = (i / EGG_RINGS) * EGG_REACH;
+    for (let j = 0; j < EGG_SECTORS; j++) {
+      const th = (j / EGG_SECTORS) * Math.PI * 2;
+      const a = rho * Math.cos(th), b = rho * Math.sin(th);
+      const u = a * (a > 0 ? EGG.near : EGG.far);
+      const v = b * eggWidth(u);
+      const x = cx + (dirX * u + px * v) * radius, z = cz + (dirZ * u + pz * v) * radius;
+      pos[k] = x;
+      pos[k + 1] = terrain.heightAt(x, z) + 0.2;
+      pos[k + 2] = z;
+      k += 3;
+      // brightest at the tip (towards the lamp), a little darker out to the wide end
+      col[c + 3] = 1 - EGG_DARK * smoothstep(-0.9, 1.2, u);
+      c += 4;
+    }
+  }
+  pos[0] = cx; pos[1] = terrain.heightAt(cx, cz) + 0.2; pos[2] = cz;
+  col[3] = 1 - EGG_DARK * smoothstep(-0.9, 1.2, 0);
+  m.updateVerticesData("position", pos);
+  m.updateVerticesData("color", col);
+  m.refreshBoundingInfo();
 }
 
 /** A soft glow on the ground at (x, z) (e.g. the screen light around a drone pilot). */
@@ -210,7 +298,9 @@ export class Searchlight {
   private readonly stand: TransformNode;
   private readonly beam: Mesh;
   private readonly pool: Mesh;
-  private readonly poolBase: Float32Array;
+  /** Unit vector from the lamp across the lit spot (its wide end points that way, its tip towards the lamp). */
+  private dirX = 1;
+  private dirZ = 0;
   private readonly edge: Mesh;
   private readonly target = new Vector3();
   private static readonly HEAD = 2.3;
@@ -283,11 +373,12 @@ export class Searchlight {
     this.beam.isPickable = false;
     for (const m of [housing, glass]) m.isPickable = false;
 
-    this.pool = patch(scene, "slPool", radius * 1.3);
+    // the lit spot is not round: a cone-shaped egg, wide towards the lamp and running out into a tip
+    // (the soft glow fades out to its edge), with the bright rim along its outline
+    this.pool = eggMesh(scene, "slPool");
     this.pool.material = glowMaterial(scene, "slPoolMat", tint.pool, tint.poolAlpha);
-    this.poolBase = Float32Array.from(this.pool.getVerticesData("position")!);
     // the crisp rim of the lit spot, projected onto the ground
-    this.edge = patch(scene, "slEdge", radius * 1.3);
+    this.edge = eggMesh(scene, "slEdge");
     this.edge.material = glowMaterial(scene, "slEdgeMat", tint.pool, Math.min(1, tint.poolAlpha + 0.1), ringTexture(scene));
     this.edge.alphaIndex = 11;
   }
@@ -314,6 +405,14 @@ export class Searchlight {
     this.lamp.position.set(x, y, z);
   }
 
+  /** Whether (x, z) is inside the lit spot (the same cone-shaped egg that is drawn). */
+  contains(x: number, z: number): boolean {
+    const dx = x - this.tx, dz = z - this.tz;
+    const u = (dx * this.dirX + dz * this.dirZ) / this.radius;
+    const v = (-dx * this.dirZ + dz * this.dirX) / this.radius;
+    return eggRho(u, v) < 1;
+  }
+
   aim(tx: number, tz: number) {
     this.tx = tx;
     this.tz = tz;
@@ -323,7 +422,13 @@ export class Searchlight {
     const lp = this.lamp.position;
     const len = Math.hypot(tx - lp.x, ty - lp.y, tz - lp.z);
     this.beam.scaling.set(1, 1, len);
-    drape(this.pool, this.poolBase, this.terrain, tx, tz);
-    drape(this.edge, this.poolBase, this.terrain, tx, tz);
+    const dx = lp.x - tx, dz = lp.z - tz, dl = Math.hypot(dx, dz);
+    if (dl > 0.5) {
+      // the wide end faces away from the lamp (it lies far out), the tip runs towards the lamp
+      this.dirX = -dx / dl;
+      this.dirZ = -dz / dl;
+    }
+    placeEgg(this.pool, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius);
+    placeEgg(this.edge, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius);
   }
 }

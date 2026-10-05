@@ -4,6 +4,7 @@ import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../con
 import { COMPOUND } from "../world/fortification";
 import { toWorld, type V2 } from "../world/layout";
 import { createGlowSpot, Searchlight } from "../world/lighting";
+import { MAX_SPOTS, type SpotLight } from "../world/spotPbr";
 import { createChargeMesh, mat } from "../world/models";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
@@ -734,11 +735,29 @@ export class CommandosMission {
     }
   }
 
+  /**
+   * The lights that also light the scenery in the realistic mode (trees, houses, vehicles): the lit spots
+   * of the searchlights and drones and the street lamps, the nearest few to (x, z).
+   */
+  lightSources(x: number, z: number): SpotLight[] {
+    const h = (px: number, pz: number) => this.game.terrain.heightAt(px, pz);
+    const all: SpotLight[] = [];
+    for (const b of this.beams) {
+      if (!b.post.destroyed) all.push({ x: b.light.tx, y: h(b.light.tx, b.light.tz) + 3, z: b.light.tz, radius: b.light.radius * 8, color: [0.75, 0.82, 1], intensity: 3 });
+    }
+    for (const d of this.drones) {
+      if (!d.down) all.push({ x: d.light.tx, y: h(d.light.tx, d.light.tz) + 3, z: d.light.tz, radius: d.light.radius * 7, color: [0.85, 0.88, 1], intensity: 3 });
+    }
+    for (const p of this.streetPools) all.push({ x: p.x, y: h(p.x, p.z) + 4.2, z: p.z, radius: p.r * 5, color: [1, 0.78, 0.45], intensity: 2 });
+    all.sort((a, c) => Math.hypot(a.x - x, a.z - z) - Math.hypot(c.x - x, c.z - z));
+    return all.slice(0, MAX_SPOTS);
+  }
+
   /** Whether (x, z) lies in the light of a street lamp or a searchlight beam. */
   isLit(x: number, z: number): boolean {
     if (this.streetPools.some((p) => Math.hypot(p.x - x, p.z - z) < p.r)) return true;
-    if (this.drones.some((d) => !d.down && Math.hypot(d.light.tx - x, d.light.tz - z) < d.light.radius)) return true;
-    return this.beams.some((b) => !b.post.destroyed && Math.hypot(b.light.tx - x, b.light.tz - z) < b.light.radius);
+    if (this.drones.some((d) => !d.down && d.light.contains(x, z))) return true;
+    return this.beams.some((b) => !b.post.destroyed && b.light.contains(x, z));
   }
 
   /** The agent walks over a cache and takes the charges in it. */
@@ -768,7 +787,7 @@ export class CommandosMission {
         continue;
       }
       const inReach = Math.hypot(a.x - b.light.x, a.z - b.light.z) <= reach;
-      const lit = a.alive && !a.cloaked && inReach && Math.hypot(b.light.tx - a.x, b.light.tz - a.z) < b.light.radius;
+      const lit = a.alive && !a.cloaked && inReach && b.light.contains(a.x, a.z);
       if (lit) b.lockT = L.lock;
       b.lockT -= dt;
       let tx: number, tz: number;
@@ -913,7 +932,7 @@ export class CommandosMission {
       }
       const dist = Math.hypot(a.x - u.x, a.z - u.z);
       // searching, it only finds him in its light (or right below it); once on him it holds on longer
-      const inLight = Math.hypot(a.x - d.light.tx, a.z - d.light.tz) < d.light.radius;
+      const inLight = d.light.contains(a.x, a.z);
       const sees = a.alive && !a.cloaked && (d.mode === "track" ? dist < D.trackSight : inLight || dist < D.sight);
       if (sees) {
         d.mode = "track";
