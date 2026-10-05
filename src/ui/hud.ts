@@ -28,6 +28,7 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   structureLost: "Befestigung zerstört",
   cacheFound: "Versteck geplündert – 3 Sprengsätze aufgenommen",
   timeWarning: "Nur noch eine Minute!",
+  extraction: "Alle Ziele zerstört – zum Extraktionspunkt (blauer Rauch, Minimap)!",
   dronesLaunched: "Der Feind ist alarmiert – zwei Drohnen suchen das Gelände ab",
   droneDown: "Drohne ausgeschaltet",
 };
@@ -237,7 +238,10 @@ export class Hud {
     const left = Math.ceil(m.timeLeft);
     const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
     const open = m.caches.filter((c) => !c.taken).length;
-    const html = `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>` +
+    const goal = m.extraction
+      ? `<strong>Extraktionspunkt erreichen</strong><span class="pips">${pips}</span><span>Blauer Rauch – auf der Minimap markiert</span>`
+      : `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>`;
+    const html = goal +
       `<span class="clock${left <= 60 ? " urgent" : ""}">Zeit: ${clock}</span>` +
       `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
       `<span>${open ? `Verstecke mit Sprengstoff (Minimap): ${open}` : "Alle Verstecke geleert"}</span>` +
@@ -281,7 +285,7 @@ export class Hud {
     const texts = {
       base: ["Die feindliche Kaserne wurde zerstört.", "Unsere Kaserne ist gefallen."],
       skirmish: ["Der Feind wurde aufgerieben.", "Unsere Truppen wurden aufgerieben."],
-      commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern.", "Der Agent ist gefallen. Auftrag gescheitert."],
+      commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern, der Agent ist ausgeflogen.", "Der Agent ist gefallen. Auftrag gescheitert."],
     };
     $("banner-text").textContent = mode === "commandos" && result === "lose" && this.game.commandos?.timeUp
       ? "Die Zeit ist abgelaufen. Auftrag gescheitert."

@@ -98,10 +98,25 @@ nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wac
 zwischen den Stellungen und bemannte Geländewagen, die das Wegenetz abfahren. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
 rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen, in 10 Minuten**;
 fällt der Agent oder läuft die Zeit ab (Uhr im Auftragsfeld, Warnung bei 1 Minute), ist die Mission gescheitert.
+Ist die letzte Stellung gesprengt, folgt das letzte Ziel: **den Extraktionspunkt erreichen** (die Uhr läuft weiter). Er
+liegt an einem zufälligen, abgelegenen Ort (fern von Stellungen, Orten, Wäldern und vom Agenten, auf freier Fläche), ist
+mit einer blauen Rauchfackel markiert (Rauchsäule, Funken, blauer Lichtschein) und auf der Minimap als blauer, pulsierender
+Punkt „E“ eingetragen. Erreicht der Agent ihn, spielt die Schluss-Cinematic (`src/game/extraction.ts`): Ein
+Transporthubschrauber mit Tandemrotor und Heckrampe kommt hoch über das Karteninnere heran (nie über die Randberge),
+bleibt über dem Landeplatz stehen und sinkt senkrecht ab, wobei er sich in Landerichtung dreht; er setzt im Rotorabwind
+auf (Staub, Landescheinwerfer), die blaue Fackel brennt seitlich abseits. Die Rampe steht die ganze Zeit offen. Der Agent
+geht rückwärts (mit rückwärts laufender Schrittbewegung), das Gewehr auf die Distanz gerichtet und sichernd über das
+Gelände schwenkend, die Rampe hinauf und verschwindet im Innenraum – gefilmt aus der Sicht des Feindes, von einer Kamera,
+die flach über dem Boden vor ihm langsam zur Seite gleitet. Dann steigt der Hubschrauber senkrecht auf, dreht über die
+Karte und fliegt davon, gesehen von einer fest am Rumpf montierten Außenkamera, die an der Seite entlang nach vorn
+blickt – dann ist die Mission gewonnen.
 
 **Absprung (Cutscene):** Die Mission beginnt damit, dass der Agent im Wingsuit aus einer mondbeschienenen Wolkendecke
 herausfällt (Wolkenballen als Billboards, die ihn anfangs einhüllen und danach als Kulisse über ihm hängen); die Arme
-sind im Flug gestreckt und gespannt, nur die Hände zittern im Luftstrom. Nach der Landung wirft er den Anzug ab, geht in
+sind im Flug gestreckt und gespannt, nur die Hände zittern im Luftstrom. Der Wingsuit-Flug ist steil (rund 40°, waagerecht so schnell,
+dass er genau dort ankommt, wo sich der Schirm öffnet); er öffnet den Schirm erst tief, in etwa 50 m Höhe, und gleitet
+nur kurz. Die Höhe über Grund sinkt dabei stetig, ohne Sprünge über Hügeln, und die Kamera folgt einer geglätteten
+Flugrichtung – so gibt die Szene wenig von der Umgebung preis und ist nach knapp 30 s vorbei. Nach der Landung wirft er den Anzug ab, geht in
 die Hocke, nimmt das Gewehr auf, prüft es (Verschluss, Sicherung) und richtet sich auf (`src/game/dropCutscene.ts`, überspringbar mit
 Esc/Leertaste/Enter oder „Überspringen“). Die Hocke ist auch eine Idle-Animation des Agenten: Steht er eine Weile, geht
 er etwa alle 18 s für einige Sekunden in die Hocke und sieht dabei sein Gewehr durch. Die ersten Einstellungen filmen ihn leicht von unten mit
@@ -346,7 +361,8 @@ src/
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
     dropCutscene.ts   Absprung-Cutscene der Commandos-Mission (Wingsuit, Fallschirm, Briefing, Landung)
-    droneCutscene.ts  Drohnen-Cinematic (Sprengung, Pilot läuft aus, kniet, startet die Drohne, violetter Lichtschein)
+    extraction.ts     Extraktion: Wahl des Punkts, blaue Rauchfackel, Hubschrauber, Schluss-Cinematic
+    droneCutscene.ts  Drohnen-Cinematic (Sprengung – die Wachen fallen sichtbar –, Pilot läuft aus, kniet, startet die Drohne, violetter Lichtschein)
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)

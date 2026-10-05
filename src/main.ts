@@ -6,6 +6,7 @@ import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
 import { DropCutscene } from "./game/dropCutscene";
 import { DroneCutscene } from "./game/droneCutscene";
+import { ExtractionCutscene } from "./game/extraction";
 import type { Charge } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
 import { CoverMap } from "./game/cover";
@@ -397,7 +398,9 @@ let drop: DropCutscene | null = null;
 /** The cutscene before the second outpost goes up (the drone pilot). */
 let drone2: DroneCutscene | null = null;
 /** The cutscene that is running now, if any. */
-const cine = () => (drop?.active ? drop : drone2?.active ? drone2 : null);
+/** The closing cutscene: the agent is flown out from the extraction point. */
+let extract: ExtractionCutscene | null = null;
+const cine = () => (drop?.active ? drop : drone2?.active ? drone2 : extract?.active ? extract : null);
 const cutsceneOn = () => !!cine();
 
 /** The second outpost is about to blow up: the cutscene takes over and sets the charge off itself. */
@@ -420,6 +423,26 @@ function startDroneCinematic(c: Charge) {
   Object.assign(window, { drone2 });
 }
 
+/** The agent has reached the extraction point: the helicopter picks him up, then the mission is won. */
+function startExtractionCinematic(at: { x: number; z: number }) {
+  document.body.classList.add("cutscene");
+  engine.resize();
+  overlay.resize();
+  input.reset();
+  input.enabled = hud.enabled = false;
+  fogRender.strength = 0;
+  extract = new ExtractionCutscene(game, audio, cam.camera, at, () => {
+    document.body.classList.remove("cutscene");
+    engine.resize();
+    overlay.resize();
+    cam.jumpTo(at.x, at.z);
+    fogRender.strength = 1;
+    hud.enabled = true;
+    game.commandos?.complete();
+  });
+  Object.assign(window, { extract });
+}
+
 /**
  * Ends the current game and goes back to the main menu without reloading the page (fullscreen,
  * audio and settings stay): the mission is cleared away, night and fog reset, and the silent
@@ -433,6 +456,8 @@ function returnToMenu() {
   drop = null;
   drone2?.dispose();
   drone2 = null;
+  extract?.dispose();
+  extract = null;
   if (game.commandos) {
     game.commandos.dispose();
     setNight(false);
@@ -470,6 +495,8 @@ function startGame(mode: GameMode) {
   drop = null;
   drone2?.dispose();
   drone2 = null;
+  extract?.dispose();
+  extract = null;
   game.reset();
   ai = new EnemyAI(game);
   game.canSee = (x, z) => fog.isVisible(x, z);
@@ -489,6 +516,7 @@ function startGame(mode: GameMode) {
     mission.streetPools = streetLights.pools;
     game.commandos = mission;
     mission.onSecondBlast = startDroneCinematic;
+    mission.onExtraction = startExtractionCinematic;
     const b = game.playerBarracks; // removed in this mode: nothing blocks the view there any more
     fog.clearRect(b.x, b.z, 7, 5, b.rot);
     document.body.classList.add("mode-commandos");

@@ -349,6 +349,8 @@ export class DroneCutscene {
     if (!this.active || this.finished) return;
     this.t += dt;
     this.act(dt);
+    // the world stands still, but whoever the blast caught falls: their death plays out on screen
+    if (this.blasted) for (const u of this.game.units) if (!u.alive && !u.removed) u.update(dt, this.game);
     this.cameraFor(dt);
     this.light2(dt);
     if (this.t >= T.end && !this.skipping) this.finish();

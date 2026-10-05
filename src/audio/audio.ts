@@ -20,6 +20,7 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   timeWarning: "Noch eine Minute",
   dronesLaunched: "Feindliche Drohnen gestartet",
   droneDown: "Drohne ausgeschaltet",
+  extraction: "Alle Ziele zerstört. Erreichen Sie den Extraktionspunkt.",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
   win: "Mission erfüllt",
@@ -159,7 +160,7 @@ export class AudioSystem {
       } else if (ev === "outpostLost") {
         if (team === PLAYER) this.announce(data?.outpost.kind === "radar" ? "Radar ausgefallen" : "Stellung verloren");
       } else if (team === PLAYER && ANNOUNCE[ev]) {
-        this.announce(ANNOUNCE[ev]!, ev === "win" || ev === "lose");
+        this.announce(ANNOUNCE[ev]!, ev === "win" || ev === "lose" || ev === "extraction");
       }
     });
 
@@ -790,6 +791,59 @@ export class AudioSystem {
     if (level <= 0) {
       this.cineDrone = null;
       window.setTimeout(() => { for (const n of v.nodes) n.stop(); v.level.disconnect(); }, 900);
+    }
+  }
+
+  private heli: { out: GainNode; nodes: AudioScheduledSourceNode[] } | null = null;
+
+  /**
+   * The extraction helicopter: a deep, filtered roar beaten into the rotor's thump (blade slap,
+   * ~5 per second) with a faint turbine whine on top. `level` 0..1 (0 stops it).
+   */
+  heliRotor(level: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.heli) {
+      if (level <= 0) return;
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      out.connect(this.sfxGain);
+      // the roar, chopped by the blades
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const low = ctx.createBiquadFilter();
+      low.type = "lowpass";
+      low.frequency.value = 340;
+      const slap = ctx.createGain();
+      slap.gain.value = 0.55;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 5.2;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.45;
+      lfo.connect(depth).connect(slap.gain);
+      src.connect(low).connect(slap).connect(out);
+      // a deep throb under it
+      const throb = ctx.createOscillator();
+      throb.type = "triangle";
+      throb.frequency.value = 42;
+      const throbGain = ctx.createGain();
+      throbGain.gain.value = 0.18;
+      throb.connect(throbGain).connect(slap);
+      // turbine whine
+      const whine = ctx.createOscillator();
+      whine.frequency.value = 820;
+      const whineGain = ctx.createGain();
+      whineGain.gain.value = 0.012;
+      whine.connect(whineGain).connect(out);
+      for (const n of [src, lfo, throb, whine]) n.start();
+      this.heli = { out, nodes: [src, lfo, throb, whine] };
+    }
+    const h = this.heli;
+    h.out.gain.setTargetAtTime(level * 0.6, ctx.currentTime, 0.25);
+    if (level <= 0) {
+      this.heli = null;
+      window.setTimeout(() => { for (const n of h.nodes) n.stop(); h.out.disconnect(); }, 1500);
     }
   }
 

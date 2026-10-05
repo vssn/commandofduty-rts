@@ -6,6 +6,7 @@ import { toWorld, type V2 } from "../world/layout";
 import { createGlowSpot, Searchlight } from "../world/lighting";
 import { MAX_SPOTS, type SpotLight } from "../world/spotPbr";
 import { createChargeMesh, mat } from "../world/models";
+import { EXTRACT_RADIUS, ExtractionFlare, pickExtractionPoint } from "./extraction";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
 import { Unit } from "./unit";
@@ -298,6 +299,8 @@ export class CommandosMission {
   /** Removes everything the mission added to the scene (back to the main menu). */
   dispose() {
     const g = this.game;
+    this.flare?.dispose();
+    this.flare = null;
     for (const b of this.beams) {
       b.light.dispose();
       g.nav.structure(b.light.x, b.light.z, 0.4, 0.4, 0, [0, 1], -1);
@@ -653,8 +656,13 @@ export class CommandosMission {
       g.result = "lose";
       g.emit("lose", PLAYER);
     } else if (this.destroyedOutposts >= COMMANDOS.targets) {
-      g.result = "win";
-      g.emit("win", PLAYER);
+      // last objective: get out alive - reach the extraction point
+      if (!this.extraction) this.startExtraction();
+      else if (!this.extracting && Math.hypot(a.x - this.extraction.x, a.z - this.extraction.z) <= EXTRACT_RADIUS) {
+        this.extracting = true;
+        if (this.onExtraction) this.onExtraction(this.extraction);
+        else this.complete();
+      }
     }
   }
 
@@ -716,6 +724,30 @@ export class CommandosMission {
   /** Called with the charge that is about to destroy the second outpost (see updateCharges). */
   onSecondBlast: ((c: Charge) => void) | null = null;
 
+  /** The last objective, once every target is down: the extraction point the agent must reach. */
+  extraction: { x: number; z: number } | null = null;
+  private flare: ExtractionFlare | null = null;
+  /** The agent has reached the extraction point (the cutscene takes over). */
+  extracting = false;
+  /** Called when the agent reaches the extraction point; the mission is won once it calls `complete()`. */
+  onExtraction: ((at: { x: number; z: number }) => void) | null = null;
+
+  /** All targets down: a blue smoke flare marks a remote extraction point. */
+  private startExtraction() {
+    const a = this.agent;
+    this.extraction = pickExtractionPoint(this.game, a);
+    this.flare = new ExtractionFlare(this.game.scene, this.game.terrain, this.extraction.x, this.extraction.z);
+    this.game.emit("extraction", PLAYER);
+  }
+
+  /** The agent is out: mission accomplished. */
+  complete() {
+    const g = this.game;
+    if (g.result) return;
+    g.result = "win";
+    g.emit("win", PLAYER);
+  }
+
   /** Sets a planted charge off. `sparing`: the agent is out of reach of the blast (for the cutscene, where he could not run). */
   detonate(c: Charge, sparing = false) {
     const g = this.game, a = this.agent;
@@ -724,7 +756,10 @@ export class CommandosMission {
     c.mesh.dispose();
     const ax = a.x, az = a.z;
     if (sparing) a.x = a.z = 1e5;
-    g.effects.explode(c.x, c.z, COMMANDOS.charges.damage, COMMANDOS.charges.radius, null, 2.4);
+    // an outpost goes up with a much bigger blast: it reaches everyone on guard there, up to its edge
+    const outpost = c.target instanceof Unit ? null : c.target;
+    const reach = outpost ? Math.max(COMMANDOS.charges.radius, outpost.radius + 2.5) : COMMANDOS.charges.radius;
+    g.effects.explode(c.x, c.z, COMMANDOS.charges.damage, reach, null, outpost ? 3.4 : 2.4);
     a.x = ax;
     a.z = az;
     if (c.target instanceof Unit) {

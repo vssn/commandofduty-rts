@@ -231,6 +231,8 @@ export class MapLayout {
       const ext = Math.hypot(hw, hd);
       const cx = (r() * 2 - 1) * (MAP_HALF - 10), cz = (r() * 2 - 1) * (MAP_HALF - 10);
       const rot = baseAng + (r() - 0.5) * 0.25 + (r() < 0.3 ? Math.PI / 2 : 0);
+      // the whole field (and the hedge around it) keeps a passable strip to the edge of the map
+      if (Math.abs(cx) + ext > MAP_HALF - 9 || Math.abs(cz) + ext > MAP_HALF - 9) continue;
       if (bases.some((b) => Math.hypot(cx - b.x, cz - b.z) < 22 + ext)) continue;
       if (this.suburbs.some((s) => Math.hypot(cx - s.x, cz - s.z) < s.r + ext * 0.8)) continue;
       if (this.forests.some((f) => Math.hypot(cx - f.x, cz - f.z) < f.r + ext * 0.75)) continue;

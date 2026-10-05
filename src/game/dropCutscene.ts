@@ -3,7 +3,7 @@ import {
   type FreeCamera, type Scene,
 } from "@babylonjs/core";
 import type { AudioSystem } from "../audio/audio";
-import { COMMANDOS } from "../config";
+import { COMMANDOS, MAP_HALF } from "../config";
 import { rng, smoothstep, valueNoise } from "../util/noise";
 import { HIP_X, HIP_Y, mat, SHOULDER_Y } from "../world/models";
 import { SQUAT } from "./views";
@@ -22,10 +22,15 @@ import type { SoldierView } from "./views";
 
 /** Seconds into the scene. */
 const T = {
-  aEnd: 8.5, open: 9.0, bEnd: 11.5, flare: 26.3, touch: 28.5, still: 29.5, unclip: 30.6, shed: 31.3,
+  // a long free fall and a low opening: only a short glide under the canopy, so less of the land
+  // around is given away (and the scene is quicker)
+  aEnd: 10.0, open: 10.5, bEnd: 12.5, flare: 17.3, touch: 19.5, still: 20.5, unclip: 21.6, shed: 22.3,
   // out of the suit he drops into a crouch, takes up his rifle and checks it, then rises
-  crouch: 32.0, rifle: 32.9, check: 33.5, rise: 35.7, end: 37.6,
+  crouch: 23.0, rifle: 23.9, check: 24.5, rise: 26.7, end: 28.6,
 };
+/** Height of the feet when the canopy opens (and once it has slowed him down). */
+const OPEN_ALT = 50;
+const CANOPY_ALT = 42;
 /** Height of the feet above the landing spot at the start of the fall. */
 const START_ALT = 235;
 const FADE = 0.8;
@@ -40,20 +45,24 @@ const crouchW = (t: number) => ease(T.crouch, T.crouch + 0.7, t) * (1 - ease(T.r
 /** 1 while looking the rifle over in the crouch. */
 const checkW = (t: number) => ease(T.check, T.check + 0.5, t) * (1 - ease(T.rise - 0.7, T.rise, t));
 
-/** Relative speed along the flight path: fast in the fall, slow under the canopy, almost still on touchdown. */
+/**
+ * Horizontal speed along the flight path (units/s): the wingsuit glides steeply (about 40 degrees
+ * at a sink of ~18.5/s), the canopy slows him to a gentle glide, almost still on touchdown.
+ */
+const FLY_SPEED = 22, CHUTE_SPEED = 9;
 function speed(t: number): number {
-  if (t < T.aEnd) return 1;
-  if (t < T.bEnd) return lerp(1, 0.42, ease(T.aEnd, T.bEnd, t));
-  if (t < 26) return 0.42;
-  if (t < T.touch) return lerp(0.42, 0.14, ease(26, T.touch, t));
-  return lerp(0.14, 0, ease(T.touch, T.touch + 0.9, t));
+  if (t < T.aEnd) return FLY_SPEED;
+  if (t < T.bEnd) return lerp(FLY_SPEED, CHUTE_SPEED, ease(T.aEnd, T.bEnd, t));
+  if (t < T.touch - 2.5) return CHUTE_SPEED;
+  if (t < T.touch) return lerp(CHUTE_SPEED, 3, ease(T.touch - 2.5, T.touch, t));
+  return lerp(3, 0, ease(T.touch, T.touch + 0.9, t));
 }
 
 /** Height above the landing spot (feet). */
 function altitude(t: number): number {
-  if (t < T.aEnd) return lerp(START_ALT, 108, t / T.aEnd);
-  if (t < T.bEnd) return lerp(108, 92, (t - T.aEnd) / (T.bEnd - T.aEnd));
-  if (t < T.touch) return 92 * Math.pow(1 - (t - T.bEnd) / (T.touch - T.bEnd), 1.15);
+  if (t < T.aEnd) return lerp(START_ALT, OPEN_ALT, t / T.aEnd);
+  if (t < T.bEnd) return lerp(OPEN_ALT, CANOPY_ALT, (t - T.aEnd) / (T.bEnd - T.aEnd));
+  if (t < T.touch) return CANOPY_ALT * Math.pow(1 - (t - T.bEnd) / (T.touch - T.bEnd), 1.15);
   return 0;
 }
 
@@ -332,6 +341,8 @@ export class DropCutscene {
   private readonly cum: number[] = [];
   private readonly total: number;
   private readonly fTab: number[] = [];
+  /** Lowest allowed height of the feet over time (same steps as fTab). */
+  private readonly floorTab: number[] = [];
   private readonly land: Vector3;
   private readonly landDir: Vector3;
   private readonly y0: number;
@@ -371,6 +382,7 @@ export class DropCutscene {
   private readonly camPos = new Vector3();
   private readonly camLook = new Vector3();
   private camFov = 0.42;
+  private camPsi: number | null = null;
   private camInit = false;
   private readonly baseFov: number;
 
@@ -435,18 +447,41 @@ export class DropCutscene {
       this.fTab.push(acc);
     }
     for (let i = 0; i < this.fTab.length; i++) this.fTab[i] /= acc;
-    const shareBeforeC = this.fTab[Math.round(T.bEnd / dtT)];
-    // path before the first outpost: as long as the shares of the fall demand
-    let along = 0;
-    for (let i = 1; i < way.length; i++) along += Vector3.Distance(way[i - 1], way[i]);
-    const ext = (along * shareBeforeC) / (1 - shareBeforeC);
-    const d0 = way.length > 1 ? way[0].subtract(way[1]).normalize() : toL.scale(-1);
+    // the path is exactly as long as he flies at these speeds: waypoints too far out are dropped,
+    // a path too short is extended back from its start
+    const len = (w: Vector3[]) => w.reduce((sum, p, i) => (i ? sum + Vector3.Distance(w[i - 1], p) : 0), 0);
+    while (way.length > 2 && len(way.slice(1)) >= acc) way.shift();
+    const along = len(way);
+    const ext = Math.max(0, acc - along);
+    // extended back from the first waypoint - turned if need be so the flight starts over the map
+    // (not over the mountains at its edge)
+    const back = way.length > 1 ? way[0].subtract(way[1]).normalize() : toL.scale(-1);
+    const inside = (v: Vector3) => Math.abs(v.x) < MAP_HALF - 8 && Math.abs(v.z) < MAP_HALF - 8;
+    let d0 = back;
+    for (const turn of [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5]) {
+      const a0 = Math.atan2(back.x, back.z) + turn;
+      const cand = new Vector3(Math.sin(a0), 0, Math.cos(a0));
+      if (inside(way[0].add(cand.scale(ext))) && inside(way[0].add(cand.scale(ext * 0.5)))) {
+        d0 = cand;
+        break;
+      }
+    }
     const start = way[0].add(d0.scale(ext));
     const all = [start, way[0].add(d0.scale(ext * 0.5)), ...way];
     this.pts = Curve3.CreateCatmullRomSpline(all, 24, false).getPoints();
     this.cum.push(0);
     for (let i = 1; i < this.pts.length; i++) this.cum.push(this.cum[i - 1] + Vector3.Distance(this.pts[i - 1], this.pts[i]));
     this.total = this.cum[this.cum.length - 1];
+    // the lowest the feet may be at each moment: clear of the ground below, and never lower than
+    // what lies ahead (a running maximum from the landing backwards) - so the descent never jumps up
+    const p = new Vector3();
+    for (let i = this.fTab.length - 1, next = -Infinity; i >= 0; i--) {
+      const t = i * dtT;
+      this.at(this.fTab[i] * this.total, p);
+      const clear = Math.min(10, altitude(t) * 0.8);
+      next = Math.max(next, this.terrain.heightAt(p.x, p.z) + clear);
+      this.floorTab[i] = next;
+    }
 
     // ---- the figure: the agent's own parts, posed by hand
     this.fly = new TransformNode("dropFly", sc);
@@ -698,8 +733,10 @@ export class DropCutscene {
   private position(t: number, out = new Vector3()): Vector3 {
     this.at(this.share(Math.min(t, T.still + 0.5)) * this.total, out);
     const alt = altitude(t);
-    const ground = this.terrain.heightAt(out.x, out.z);
-    const feet = Math.max(this.y0 + alt, ground + Math.min(10, alt * 0.8));
+    const i = Math.min(this.floorTab.length - 1, Math.max(0, t / 0.02));
+    const i0 = Math.floor(i), i1 = Math.min(this.floorTab.length - 1, i0 + 1);
+    const floor = lerp(this.floorTab[i0], this.floorTab[i1], i - i0);
+    const feet = Math.max(this.y0 + alt, floor);
     out.y = feet + HIP_Y;
     return out;
   }
@@ -1112,7 +1149,12 @@ export class DropCutscene {
 
   private cameraFor(t: number, dt: number) {
     const p = this.position(t);
-    const psi = this.fly.rotation.y;
+    // the camera follows a smoothed flight direction: in the bends of the path it would otherwise
+    // swing far round (it circles him at a distance)
+    if (this.camPsi === null) this.camPsi = this.fly.rotation.y;
+    const turn = Math.atan2(Math.sin(this.fly.rotation.y - this.camPsi), Math.cos(this.fly.rotation.y - this.camPsi));
+    this.camPsi += turn * Math.min(1, dt * 0.9);
+    const psi = this.camPsi;
     const f = new Vector3(Math.sin(psi), 0, Math.cos(psi));
     const r = new Vector3(f.z, 0, -f.x);
     const up = Vector3.Up();
@@ -1123,8 +1165,10 @@ export class DropCutscene {
     // beyond the map's edge) stays out of the frame
     const phi = lerp(0.5, 2.7, ease(0, 6.5, t));
     const dist = lerp(16, 26, ease(0, 7, t));
-    const A = p.add(f.scale(Math.cos(phi) * dist)).add(r.scale(Math.sin(phi) * dist)).subtract(up.scale(lerp(4.5, 6.5, ease(0, 6, t))));
-    const aLook = p.add(f.scale(1.2)).add(up.scale(0.4));
+    // (as he gets lower the camera rises to his height, so it never scrapes over the hills below)
+    const below = lerp(4.5, 6.5, ease(0, 6, t)) * ease(45, 110, altitude(t)) - 2 * (1 - ease(45, 110, altitude(t)));
+    const A = p.add(f.scale(Math.cos(phi) * dist)).add(r.scale(Math.sin(phi) * dist)).subtract(up.scale(below));
+    const aLook = p.add(f.scale(0.5)).subtract(up.scale(0.25)); // on his body (he lies flat in the air)
     // B: from behind and below while the canopy opens above him, still against the sky
     const B = p.subtract(f.scale(30)).add(r.scale(11)).subtract(up.scale(3));
     const bLook = p.add(up.scale(4.5));
@@ -1147,7 +1191,8 @@ export class DropCutscene {
     look = lerpV(lerpV(lerpV(aLook, bLook, ab), cLook, bc), lerpV(dLook1, dLook2, dd), cd);
     // long lens (narrow field) in the sky, wider once the land below is the subject
     fov = lerp(lerp(lerp(0.42, 0.5, ab), 0.85, bc), lerp(0.7, 0.66, dd), cd);
-    k = t < T.aEnd ? 14 : t < T.bEnd + 2 ? 6 : 2.6;
+    // smooth: the chase follows closely, the moves between shots are slow sweeps
+    k = t < T.aEnd - 0.5 ? 7 : t < T.bEnd + 3 ? 3 : 2.6;
     if (cd > 0.05) k = 3.5;
     if (this.shake > 0) {
       const s = this.shake * 0.35;
@@ -1158,7 +1203,9 @@ export class DropCutscene {
     const w = this.camInit ? 1 - Math.exp(-k * dt) : 1;
     this.camInit = true;
     Vector3.LerpToRef(this.camPos, pos, w, this.camPos);
-    Vector3.LerpToRef(this.camLook, look, w, this.camLook);
+    // the aim stays on him: in the fast fall a lagging aim would leave him at the bottom of the frame
+    const wLook = w >= 1 ? 1 : 1 - Math.exp(-(t < T.aEnd ? 40 : k * 1.5) * dt);
+    Vector3.LerpToRef(this.camLook, look, wLook, this.camLook);
     this.camFov += (fov - this.camFov) * w;
     this.camera.position.copyFrom(this.camPos);
     this.camera.setTarget(this.camLook);
@@ -1190,12 +1237,12 @@ export class DropCutscene {
     });
     // no voice (or it never starts): subtitles follow the clock
     if (t > 2.2 && (!this.speech || (this.spoken < 0 && t > 6))) {
-      const starts = [2.4, 9.5, 19];
+      const starts = [2.4, 9.0, 16];
       let i = -1;
       starts.forEach((s, n) => { if (t >= s) i = n; });
       this.subtitle(i);
     }
-    if (t > 31) this.subtitle(-1);
+    if (t > T.end - 2) this.subtitle(-1);
 
     this.place(t);
     this.pose(t);

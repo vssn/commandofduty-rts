@@ -170,8 +170,9 @@ export class SoldierView implements UnitView {
     return { torso: this.torso, arms: this.arms, head: this.head, legL: this.legL, legR: this.legR, shinL: this.shinL, shinR: this.shinR, shadow: this.shadow.mesh };
   }
 
+  /** `moved` < 0: the distance was walked backwards (the steps run the other way). */
   sync(u: Unit, dt: number, moved: number) {
-    const walking = u.moving && moved > 0.001;
+    const walking = u.moving && Math.abs(moved) > 0.001;
     // walk cycle advances with distance so the feet don't slide; uphill = short, quick steps,
     // downhill = longer strides
     const grade = Math.max(-0.6, Math.min(0.6, u.grade));

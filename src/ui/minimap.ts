@@ -226,6 +226,29 @@ export class Minimap {
       ctx.lineTo(x + 6, y - 1);
       ctx.stroke();
     }
+    // commandos: the extraction point, once open (blue smoke: a pulsing blue ring with a flare)
+    const ex = this.game.commandos?.extraction;
+    if (ex) {
+      const [x, y] = this.map(ex.x, ex.z);
+      const pp = 0.5 + 0.5 * Math.sin(performance.now() / 200);
+      ctx.strokeStyle = `rgba(110, 170, 255, ${0.4 + pp * 0.55})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 9 + pp * 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#5fa0ff";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("E", x, y + 0.5);
+    }
     for (const u of this.game.units) {
       if (!u.alive || u.vehicle || u.fogHidden) continue;
       const [x, y] = this.map(u.x, u.z);
