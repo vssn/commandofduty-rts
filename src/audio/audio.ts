@@ -748,6 +748,156 @@ export class AudioSystem {
     speechSynthesis.speak(u);
   }
 
+  /**
+   * The mission briefing of the drop cutscene: radio chirp, then the lines one after the other.
+   * `onLine(i)` fires when line i starts. False if nothing can be spoken (announcer off, no speech).
+   */
+  briefing(lines: string[], onLine: (i: number) => void): boolean {
+    if (this.announcerLevel === 0 || !("speechSynthesis" in window)) return false;
+    speechSynthesis.cancel();
+    this.chirp();
+    lines.forEach((text, i) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "de-DE";
+      if (this.voice) u.voice = this.voice;
+      u.rate = 1;
+      u.pitch = this.femaleVoice ? 1 : 1.5;
+      u.volume = ANNOUNCER_VOLUME * VOLUME_LEVELS[this.announcerLevel].gain;
+      u.onstart = () => onLine(i);
+      speechSynthesis.speak(u);
+    });
+    return true;
+  }
+
+  stopSpeech() {
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
+
+  private cineDrone: { level: GainNode; pan: StereoPannerNode; nodes: AudioScheduledSourceNode[] } | null = null;
+
+  /** The motor buzz of the drone in the drone cutscene: `level` 0..1 (0 stops it). */
+  droneBuzz(level: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.cineDrone) {
+      if (level <= 0) return;
+      const key = {};
+      this.cineDrone = this.startDroneVoice(key);
+      this.droneVoices.delete(key); // (not managed by the mission's ambience)
+    }
+    const v = this.cineDrone;
+    v.level.gain.setTargetAtTime(level * 0.22, ctx.currentTime, 0.12);
+    if (level <= 0) {
+      this.cineDrone = null;
+      window.setTimeout(() => { for (const n of v.nodes) n.stop(); v.level.disconnect(); }, 900);
+    }
+  }
+
+  /** A folded drone is spread out: plastic clicks and a short servo whirr. */
+  droneUnfold() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    for (const at of [0, 0.35, 0.7, 1.0]) {
+      this.noiseBurst(this.sfxGain, t + at, 0.03, "highpass", 2400, 0.8, 0.22, 0.0008);
+      this.tone(this.sfxGain, t + at, 0.05, 1400, 800, 0.08, 0.0008);
+    }
+    this.tone(this.sfxGain, t + 0.1, 0.9, 380, 900, 0.05, 0.1);
+  }
+
+  private wind: { gain: GainNode; band: BiquadFilterNode; src: AudioBufferSourceNode } | null = null;
+
+  /**
+   * Rushing air of the drop cutscene: `level` 0..1 is its loudness, `pitch` 0..1 how high it is.
+   * Heard as by the agent under his headset: the ear cups take away the hiss, what is left is a
+   * muffled roar - and it backs off further while the operator speaks.
+   */
+  windSet(level: number, pitch: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.wind) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const band = ctx.createBiquadFilter();
+      band.type = "bandpass";
+      band.Q.value = 0.6;
+      // the ear cups: a steep cut above ~550 Hz
+      const cups = ctx.createBiquadFilter();
+      cups.type = "lowpass";
+      cups.frequency.value = 550;
+      cups.Q.value = 0.5;
+      const cups2 = ctx.createBiquadFilter();
+      cups2.type = "lowpass";
+      cups2.frequency.value = 700;
+      cups2.Q.value = 0.5;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(band).connect(cups).connect(cups2).connect(gain).connect(this.sfxGain);
+      src.start();
+      this.wind = { gain, band, src };
+    }
+    const t = ctx.currentTime;
+    const talking = "speechSynthesis" in window && speechSynthesis.speaking;
+    this.wind.gain.gain.setTargetAtTime(level * (talking ? 0.3 : 0.5), t, talking ? 0.25 : 0.4);
+    this.wind.band.frequency.setTargetAtTime(150 + pitch * 380, t, 0.08);
+  }
+
+  windStop() {
+    const w = this.wind;
+    if (!w || !this.ctx) return;
+    this.wind = null;
+    w.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.25);
+    window.setTimeout(() => { w.src.stop(); w.src.disconnect(); w.gain.disconnect(); }, 1500);
+  }
+
+  /** The canopy snaps open: a soft whump, the cloth cracking taut and flapping for a moment. */
+  chuteOpen() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(this.sfxGain, t, 0.5, 90, 38, 0.5, 0.01);
+    this.noiseBurst(this.sfxGain, t, 0.35, "bandpass", 420, 0.6, 0.45, 0.02);
+    this.noiseBurst(this.sfxGain, t + 0.08, 0.1, "highpass", 2200, 0.7, 0.25, 0.003);
+    for (let i = 0; i < 7; i++) this.noiseBurst(this.sfxGain, t + 0.3 + i * (0.09 + i * 0.012), 0.07, "bandpass", 600 + Math.random() * 500, 0.8, 0.16 * (1 - i / 8), 0.004);
+  }
+
+  /** Boots on the ground: a dull thud and a short rustle of cloth. */
+  landThud() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(this.sfxGain, t, 0.28, 110, 42, 0.45, 0.004);
+    this.noiseBurst(this.sfxGain, t, 0.16, "lowpass", 700, 0.6, 0.35, 0.004);
+    this.noiseBurst(this.sfxGain, t + 0.05, 0.4, "bandpass", 1500, 0.5, 0.12, 0.05);
+  }
+
+  /** Cloth sliding and rustling (the canopy settling, the suit coming off). */
+  clothRustle(len = 0.9) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    // a few long, soft, overlapping swishes of fabric (short bursts would sound like clicking)
+    const n = Math.max(2, Math.round(len * 4));
+    for (let i = 0; i < n; i++) this.noiseBurst(this.sfxGain, t + (i / n) * len, 0.22 + Math.random() * 0.2, "bandpass", 500 + Math.random() * 700, 0.5, 0.035 + Math.random() * 0.03, 0.07);
+  }
+
+  /** Readying the rifle: sling, bolt back and forward, safety. */
+  rifleReady() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const click = (at: number, f: number, v: number) => {
+      this.noiseBurst(this.sfxGain, at, 0.03, "highpass", 2600, 0.8, 0.3 * v, 0.0008);
+      this.tone(this.sfxGain, at, 0.06, f, f * 0.55, 0.16 * v, 0.0008);
+    };
+    this.noiseBurst(this.sfxGain, t, 0.22, "bandpass", 900, 0.6, 0.12, 0.04); // sling
+    click(t + 0.35, 1900, 1); // bolt back
+    click(t + 0.52, 1500, 1.1); // bolt home
+    this.noiseBurst(this.sfxGain, t + 0.52, 0.12, "lowpass", 500, 0.5, 0.2, 0.002);
+    click(t + 0.95, 2400, 0.6); // safety off
+  }
+
   private chirp() {
     const ctx = this.ctx;
     if (!ctx) return;

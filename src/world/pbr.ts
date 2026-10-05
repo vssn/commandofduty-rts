@@ -36,6 +36,18 @@ interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: numbe
  * Kept as they are: unlit / self-illuminated materials (lights, glows, markers) and the puddles'
  * fake sky reflection.
  */
+/**
+ * The plain glow of a classic material. With a Fresnel-shaded glow (a sheen at the edges) the
+ * classic emissive colour is only a factor; the PBR copy gets what shows facing the viewer (its
+ * edges come from the rim light, see `rim` in the material's metadata).
+ */
+function emissiveOf(m: StandardMaterial, out: Color3): Color3 {
+  const f = m.emissiveFresnelParameters;
+  out.copyFrom(m.emissiveColor);
+  if (f?.isEnabled) out.multiplyInPlace(f.rightColor);
+  return out;
+}
+
 export class PbrMode {
   active = false;
   private readonly swapped = new Map<StandardMaterial, PBRMaterial>();
@@ -145,7 +157,7 @@ export class PbrMode {
     }
     for (const [s, p] of this.swapped) {
       p.alpha = s.alpha;
-      p.emissiveColor.copyFrom(s.emissiveColor);
+      emissiveOf(s, p.emissiveColor);
       // materials that change their colour in the game (the agent in the thermal look)
       if ((s.metadata as { mirrorDiffuse?: boolean } | null)?.mirrorDiffuse) {
         const d = s.diffuseColor;
@@ -187,7 +199,7 @@ export class PbrMode {
     p.bumpTexture = m.bumpTexture;
     p.metallic = (m.metadata as { metal?: number } | null)?.metal ?? 0;
     p.roughness = (m.metadata as { rough?: number } | null)?.rough ?? 0.85;
-    p.emissiveColor = m.emissiveColor.clone();
+    p.emissiveColor = emissiveOf(m, new Color3());
     p.alpha = m.alpha;
     p.transparencyMode = m.transparencyMode;
     p.alphaCutOff = m.alphaCutOff;

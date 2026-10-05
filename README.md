@@ -93,11 +93,30 @@ schickt die KI sie nicht wieder hinein. Werte: `SKIRMISH` und `ARTILLERY` in `sr
 ## Spielmodus „Commandos“
 
 Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an einer anderen, zufälligen Stelle abseits von
-Stellungen und Patrouillen startet (Mantel, Schirmmütze, Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
+Stellungen und Patrouillen startet (athletische Figur im eng anliegenden Kampfanzug mit Brustweste, Holster, Knieschonern, Handschuhen, Wollmütze und Headset, schallgedämpftes Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
 nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
 zwischen den Stellungen und bemannte Geländewagen, die das Wegenetz abfahren. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
 rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen, in 10 Minuten**;
 fällt der Agent oder läuft die Zeit ab (Uhr im Auftragsfeld, Warnung bei 1 Minute), ist die Mission gescheitert.
+
+**Absprung (Cutscene):** Die Mission beginnt damit, dass der Agent im Wingsuit aus einer mondbeschienenen Wolkendecke
+herausfällt (Wolkenballen als Billboards, die ihn anfangs einhüllen und danach als Kulisse über ihm hängen); die Arme
+sind im Flug gestreckt und gespannt, nur die Hände zittern im Luftstrom. Nach der Landung wirft er den Anzug ab, geht in
+die Hocke, nimmt das Gewehr auf, prüft es (Verschluss, Sicherung) und richtet sich auf (`src/game/dropCutscene.ts`, überspringbar mit
+Esc/Leertaste/Enter oder „Überspringen“). Die Hocke ist auch eine Idle-Animation des Agenten: Steht er eine Weile, geht
+er etwa alle 18 s für einige Sekunden in die Hocke und sieht dabei sein Gewehr durch. Die ersten Einstellungen filmen ihn leicht von unten mit
+Teleobjektiv (enger Bildwinkel aus großer Entfernung), so dass er vor dem Nachthimmel steht und das Land jenseits der
+Karte nicht ins Bild kommt; erst über den Stellungen öffnet sich der Blick. Der Fahrtwind klingt gedämpft wie unter einem
+Headset und tritt zurück, solange die Einsatzzentrale spricht. Wingsuit und Schirm sind so dunkel wie der Kampfanzug des Agenten, mit nur noch leichtem Schimmer (der Schirm steht
+nachts als dunkle Silhouette vor dem Himmel, auch die Leinen sind dunkel); beide sind aus beschichtetem Nylon: Glanzlichter, ein kühler Schimmer an den Kanten
+(Fresnel bzw. schwaches Randlicht im PBR-Modus) und ein Glanzstreifen zur Vorderkante des Schirms geben den Anschein
+einer Reflexion. Der Anzug hat Stoffstruktur (Luftkammern, Nähte, verstärkte Vorderkante, Reflexstreifen), die Arme haben
+im Flug natürliche Länge; nach der Landung bleibt er als zerknüllter, leerer Overall mit Flughäuten im Gras liegen,
+daneben der Packsack mit Gurten. Der Fallschirm ist ein Gleitschirm (Flächenkappe mit neun Luftkammern, Profil, offenen
+Einlässen an der Vorderkante) an 16 Leinen – je vier Gruppen pro Seite an Vorder- und Hinterkante. Die Leinen einer Seite
+laufen über der Schulter in einem Verbindungsglied mit Manschette zusammen, von dort führen ein vorderer und ein hinterer
+Tragegurt zum Gurtzeug (Schultergurte, Brustgurt mit Schnalle, Hüftgurt, Beinschlaufen), das er mit dem Anzug ablegt; nach der Landung sinkt er ein und liegt als zerknitterter Stoffhaufen hinter dem Agenten,
+die Leinen in losen Bögen über den Boden bis zu der Stelle, an der er sie ausgeklinkt hat.
 
 **Nacht:** Der Einsatz spielt bei Mondlicht. Im Dunkeln bemerkt der Feind den Agenten erst auf gut die halbe Entfernung
 (×0,55), im Licht einer Straßenlaterne dagegen früher (×1,25). Die Laternen stehen in jedem Modus entlang der Dorfstraßen,
@@ -112,7 +131,8 @@ entdeckt den ungetarnten Agenten nur, wenn ihr Lichtkegel ihn erfasst (oder er d
 im Licht, er erscheint wie durch eine Wärmebildkamera (orange glühend), und sie ruft Truppen herbei, bis sie ihn einige
 Sekunden aus den Augen verliert. Drohnen schießen nicht. Ein Scharfschuss trifft sie mit 25 % – macht sie aber in jedem
 Fall auf ihn aufmerksam. Jede Drohne wird von einem **Drohnenpiloten** an einer zufälligen Stellung gesteuert (kniend, mit
-Headset und Laptop, schwach von seinem Bildschirm beleuchtet); fällt der Pilot, stürzt seine Drohne ab.
+dem Laptop vor sich am Boden, schwach von seinem Bildschirm beleuchtet; Integralhelm mit FPV-Brille statt Gesicht, aus dem
+Rucksack ragen vier abgespreizte, dicke Antennen wie bei einem Router; den Laptop stellt er erst ab, wenn er kniet); fällt der Pilot, stürzt seine Drohne ab.
 
 **Sprengstoff:** Der Agent startet ohne Sprengsätze. Vier **Verstecke** mit je 3 Sprengsätzen liegen zufällig an
 Waldrändern (abseits der Stellungen); sie sind auf der Minimap und im Gelände gelb markiert und werden durch Betreten geleert.
@@ -325,6 +345,8 @@ src/
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
+    dropCutscene.ts   Absprung-Cutscene der Commandos-Mission (Wingsuit, Fallschirm, Briefing, Landung)
+    droneCutscene.ts  Drohnen-Cinematic (Sprengung, Pilot läuft aus, kniet, startet die Drohne, violetter Lichtschein)
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)

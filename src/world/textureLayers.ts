@@ -9,7 +9,8 @@ import { lawnLayer, meadowLayer, type LayerPixels } from "./lawnTexture";
  */
 export interface TextureLayers { albedo: RawTexture2DArray; normal: RawTexture2DArray; means: Color3[] }
 
-const SIZE = 1024;
+/** Phones and tablets get a quarter of the data (half the resolution): a shorter upload, less memory, and the ground is drawn small there anyway. */
+const SIZE = window.matchMedia("(pointer: coarse)").matches ? 512 : 1024;
 
 /** Layers generated in code instead of loaded from photos (by their path). */
 const PROCEDURAL: Record<string, (size: number) => Promise<LayerPixels>> = { "terrain/lawn": lawnLayer, "terrain/meadow": meadowLayer };

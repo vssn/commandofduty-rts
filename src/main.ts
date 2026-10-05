@@ -4,6 +4,9 @@ import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type GameMode } from "./config";
 import { AudioSystem, MUSIC_LEVELS, VOLUME_LEVELS } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
+import { DropCutscene } from "./game/dropCutscene";
+import { DroneCutscene } from "./game/droneCutscene";
+import type { Charge } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
 import { CoverMap } from "./game/cover";
 import { Game } from "./game/game";
@@ -377,11 +380,45 @@ quitBtn.addEventListener("click", () => {
 // capture phase: runs before the game's own key handling; a pending targeting mode is cancelled
 // there first, otherwise Escape opens / closes the pause menu
 window.addEventListener("keydown", (e) => {
+  if (cutsceneOn() && (e.key === "Escape" || e.key === " " || e.key === "Enter")) {
+    e.stopPropagation();
+    e.preventDefault();
+    cine()!.skip();
+    return;
+  }
   if (e.key !== "Escape" || inMenu) return;
   if (!paused && input.targeting) return;
   e.stopPropagation();
   setPaused(!paused);
 }, { capture: true });
+
+/** The opening cutscene of a commandos mission (running, or finished with its leftovers on the ground). */
+let drop: DropCutscene | null = null;
+/** The cutscene before the second outpost goes up (the drone pilot). */
+let drone2: DroneCutscene | null = null;
+/** The cutscene that is running now, if any. */
+const cine = () => (drop?.active ? drop : drone2?.active ? drone2 : null);
+const cutsceneOn = () => !!cine();
+
+/** The second outpost is about to blow up: the cutscene takes over and sets the charge off itself. */
+function startDroneCinematic(c: Charge) {
+  document.body.classList.add("cutscene");
+  engine.resize();
+  overlay.resize();
+  input.reset();
+  input.enabled = hud.enabled = false;
+  fogRender.strength = 0;
+  drone2 = new DroneCutscene(game, audio, cam.camera, c, () => {
+    document.body.classList.remove("cutscene");
+    engine.resize();
+    overlay.resize();
+    const a = game.commandos!.agent;
+    cam.flyIn(a.x, a.z + 6);
+    input.enabled = hud.enabled = true;
+    fogRender.strength = 1;
+  });
+  Object.assign(window, { drone2 });
+}
 
 /**
  * Ends the current game and goes back to the main menu without reloading the page (fullscreen,
@@ -391,7 +428,11 @@ window.addEventListener("keydown", (e) => {
 function returnToMenu() {
   paused = false;
   pauseEl.hidden = true;
-  document.body.classList.remove("paused", "mode-skirmish", "mode-commandos");
+  document.body.classList.remove("paused", "mode-skirmish", "mode-commandos", "cutscene");
+  drop?.dispose();
+  drop = null;
+  drone2?.dispose();
+  drone2 = null;
   if (game.commandos) {
     game.commandos.dispose();
     setNight(false);
@@ -425,6 +466,10 @@ hud.onRestart = returnToMenu;
 /** Leaves the menu and starts a battle in the chosen mode. */
 function startGame(mode: GameMode) {
   // clear away the background battle: every mode starts from the opening position
+  drop?.dispose();
+  drop = null;
+  drone2?.dispose();
+  drone2 = null;
   game.reset();
   ai = new EnemyAI(game);
   game.canSee = (x, z) => fog.isVisible(x, z);
@@ -443,6 +488,7 @@ function startGame(mode: GameMode) {
     tracks.setNight(true);
     mission.streetPools = streetLights.pools;
     game.commandos = mission;
+    mission.onSecondBlast = startDroneCinematic;
     const b = game.playerBarracks; // removed in this mode: nothing blocks the view there any more
     fog.clearRect(b.x, b.z, 7, 5, b.rot);
     document.body.classList.add("mode-commandos");
@@ -453,11 +499,25 @@ function startGame(mode: GameMode) {
   engine.resize();
   overlay.resize();
   if (game.commandos) {
+    // the mission opens with the drop cutscene; the game itself starts when it is over
     const a = game.commandos.agent;
-    cam.flyIn(a.x, a.z + 6);
-  } else {
-    cam.flyIn(layout.playerBase.x, layout.playerBase.z + 14);
+    document.body.classList.add("cutscene");
+    engine.resize();
+    overlay.resize();
+    fogRender.strength = 0;
+    drop = new DropCutscene(game, audio, cam.camera, () => {
+      document.body.classList.remove("cutscene");
+      engine.resize();
+      overlay.resize();
+      cam.flyIn(a.x, a.z + 6);
+      input.enabled = hud.enabled = true;
+      fogRender.strength = 1;
+      hud.toast(`Sprenge ${COMMANDOS.targets} feindliche Stellungen – bleib unentdeckt`);
+    });
+    Object.assign(window, { drop });
+    return;
   }
+  cam.flyIn(layout.playerBase.x, layout.playerBase.z + 14);
   input.enabled = hud.enabled = true;
   fogRender.strength = 1;
   const intro = {
@@ -562,6 +622,13 @@ scene.onBeforeRenderObservable.add(() => {
     }
     return;
   }
+  if (cutsceneOn()) {
+    // the drop cutscene: the world stands still, only the cutscene's camera and figure move
+    const c = cine()!;
+    c.update(dt);
+    env.followFocus(c.focus);
+    return;
+  }
   if (paused || hud.bannerShown) {
     // frozen (pause menu or victory / defeat dialog): the picture stays, nothing moves
     if (hud.bannerShown) input.enabled = false;
@@ -578,7 +645,7 @@ scene.onBeforeRenderObservable.add(() => {
   fogRender.update();
 });
 scene.onAfterRenderObservable.add(() => {
-  if (inMenu) return;
+  if (inMenu || cutsceneOn()) return;
   overlay.capture();
   overlay.draw(game);
   minimap.draw();

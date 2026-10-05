@@ -96,6 +96,19 @@ class BlobShadow {
 /** Hip height when kneeling on one knee (thigh upright, knee just above the ground). */
 const KNEE_HIP = -KNEE.y + 0.07;
 
+/**
+ * Squat (the agent's crouch): both thighs forward and nearly level, shins folded back, heels near
+ * the seat. `drop` is how far the hips sink (from the leg lengths: thigh to the knee, shin with the
+ * boot ~0.6), `lean` the upper body's forward lean that keeps the balance over the feet.
+ */
+export const SQUAT = (() => {
+  const thigh = -1.35, shin = 2.1, lean = 0.38;
+  const L1 = -KNEE.y, L2 = 0.41 * 1.45;
+  const standing = L1 + L2;
+  const drop = standing - (L1 * Math.cos(thigh) + L2 * Math.cos(thigh + shin));
+  return { thigh, shin, lean, drop };
+})();
+
 /** Soldier figure built from instances; body/legs/upper body are animated separately. */
 export class SoldierView implements UnitView {
   readonly root: TransformNode;
@@ -109,6 +122,8 @@ export class SoldierView implements UnitView {
   private readonly torso: TransformNode;
   /** Grenadiers only: the right arm with the grenade. */
   private readonly throwArm: InstancedMesh | null;
+  /** Drone pilots only: laptop and controller case, on the ground while he kneels. */
+  private readonly kit: InstancedMesh | null = null;
   private phase = Math.random() * 10;
   /** 1 while engaging a target (weapon shouldered), 0 otherwise. */
   private aimW = 0;
@@ -125,6 +140,8 @@ export class SoldierView implements UnitView {
   private treatT = 0;
   /** Medic idling: 1 while kneeling to check his kit. */
   private gearW = 0;
+  /** Agent idling: 1 while crouching (and checking his rifle down there). */
+  private squatW = 0;
   private readonly shadow: BlobShadow;
 
   constructor(scene: Scene, tpl: SoldierTemplates, name: string, blob: Mesh) {
@@ -140,6 +157,17 @@ export class SoldierView implements UnitView {
     ({ arms: this.arms, head: this.head, throwArm: this.throwArm } = buildUpper(tpl, this.torso));
     ({ thigh: this.legL, shin: this.shinL } = buildLeg(tpl, this.root, -HIP_X));
     ({ thigh: this.legR, shin: this.shinR } = buildLeg(tpl, this.root, HIP_X));
+    if (tpl.kit) {
+      this.kit = tpl.kit.createInstance("kit");
+      this.kit.parent = this.root;
+      this.kit.isPickable = false;
+      this.kit.setEnabled(false);
+    }
+  }
+
+  /** The moving parts, for scenes that pose the figure by hand (the drop cutscene). */
+  get parts() {
+    return { torso: this.torso, arms: this.arms, head: this.head, legL: this.legL, legR: this.legR, shinL: this.shinL, shinR: this.shinR, shadow: this.shadow.mesh };
   }
 
   sync(u: Unit, dt: number, moved: number) {
@@ -161,9 +189,20 @@ export class SoldierView implements UnitView {
       gear = smoothstep(9, 9.8, gc) * (1 - smoothstep(13.2, 14, gc));
     }
     this.gearW += (gear - this.gearW) * Math.min(1, dt * 4);
+    // agent idling: every ~18 s he drops into a crouch for a while and checks his rifle there
+    let squat = 0, squatCheck = 0;
+    if (u.type === "agent" && this.idleW > 0.9) {
+      const sc = (this.idleT + this.seed * 7) % 18;
+      squat = smoothstep(6, 6.7, sc) * (1 - smoothstep(12.6, 13.4, sc));
+      squatCheck = smoothstep(7.4, 7.9, sc) * (1 - smoothstep(10.6, 11.2, sc));
+    }
+    this.squatW += (squat - this.squatW) * Math.min(1, dt * 5);
+    const sq = this.squatW;
     this.kneelW += (Math.max(u.stance === "kneel" ? 1 : 0, gear) - this.kneelW) * blend;
     this.proneW += ((u.stance === "prone" ? 1 : 0) - this.proneW) * blend;
     const k = this.kneelW, p = this.proneW;
+    // the pilot's laptop is set down once he kneels (and packed away when he gets up)
+    this.kit?.setEnabled(k > 0.85 && u.stance === "kneel");
     // walk: the knee flexes while the leg swings forward and straightens as the foot plants
     // (positive x rotation = backwards; the left thigh moves forward while cos(phase) < 0)
     const w = this.stride * (1 - k);
@@ -181,17 +220,18 @@ export class SoldierView implements UnitView {
     if (idle) this.idleT += dt;
     const iw = this.idleW, it = this.idleT;
     const shift = Math.sin(it * 0.45 + this.seed);
-    this.legL.rotation.x = swing * (1 - k) - 1.45 * k;
-    this.shinL.rotation.x = kneeL + 1.45 * k + iw * Math.max(0, shift) * 0.22;
-    this.legR.rotation.x = -swing * (1 - k) + 0.12 * k;
-    this.shinR.rotation.x = kneeR + 1.45 * k + iw * Math.max(0, -shift) * 0.22;
+    const lerpS = (a: number, b: number) => a + (b - a) * sq;
+    this.legL.rotation.x = lerpS(swing * (1 - k) - 1.45 * k, SQUAT.thigh);
+    this.shinL.rotation.x = lerpS(kneeL + 1.45 * k + iw * Math.max(0, shift) * 0.22, SQUAT.shin);
+    this.legR.rotation.x = lerpS(-swing * (1 - k) + 0.12 * k, SQUAT.thigh - 0.08);
+    this.shinR.rotation.x = lerpS(kneeR + 1.45 * k + iw * Math.max(0, -shift) * 0.22, SQUAT.shin + 0.06);
     // body bob, slightly lower overall so the planted foot touches the ground; on slopes the body
     // rides a little higher so the uphill foot doesn't sink into the hill
     const bob = ((Math.abs(Math.cos(this.phase)) - 0.6) * 0.1 - 0.04 + Math.abs(grade) * 0.4) * this.stride;
     const drop = (HIP_Y - KNEE_HIP) * k; // hips drop to kneeling height
     const back = u.recoil * 0.12 + p * 1.25;
     const sh = Math.sin(u.heading), ch = Math.cos(u.heading);
-    this.root.position.set(u.x - sh * back, u.y + bob - drop + p * 0.28, u.z - ch * back);
+    this.root.position.set(u.x - sh * back, u.y + bob - drop - SQUAT.drop * sq + p * 0.28, u.z - ch * back);
     // grenade throw (see THROW)
     const throwing = u.throwT < THROW.duration;
     const tt = u.throwT;
@@ -208,7 +248,7 @@ export class SoldierView implements UnitView {
     // shoulders turn against the hips; the head stays level and looks ahead
     const run = this.stride * (1 - k) * (1 - p);
     const lean = run * (0.2 + Math.max(0, grade) * 0.25);
-    this.torso.rotation.set(lean, -Math.sin(this.phase) * 0.07 * run, 0);
+    this.torso.rotation.set(lean + SQUAT.lean * sq, -Math.sin(this.phase) * 0.07 * run, 0);
 
     // weapon: shouldered when engaging, carried across the chest when walking, lowered and angled
     // when standing around. Every ~12 s an idle soldier briefly checks his weapon.
@@ -231,10 +271,13 @@ export class SoldierView implements UnitView {
     const armFwd = freeArms ? this.stride * 0.1 * busy : 0;
     // elbows out a little more the faster the swing
     const armRoll = freeArms ? Math.abs(swing) * 0.12 * busy : 0;
+    // crouching agent: the rifle across the knees, now and then raised and rolled to look it over
+    const sqc = squatCheck * sq;
     this.arms.rotation.set(
-      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat - armSwing - armFwd,
-      carry * (-0.28 - iw * 0.12) + check * 0.2,
-      carry * 0.1 - armRoll,
+      -p * 1.2 + throwLean + (throwing ? curve(tt, THROW.freeArm) : 0) + carry * (0.3 + iw * 0.32) - check * 0.45 + breath * 2 - treat - armSwing - armFwd
+        - SQUAT.lean * sq * 0.6 - sqc * (0.55 + Math.sin(it * 1.3) * 0.08),
+      carry * (-0.28 - iw * 0.12) + check * 0.2 + sqc * 0.15,
+      carry * 0.1 - armRoll + sqc * (0.5 + Math.sin(it * 0.9) * 0.15),
     );
     this.arms.position.y = SHOULDER_Y - HIP_Y + breath;
     if (this.throwArm) {
@@ -252,7 +295,11 @@ export class SoldierView implements UnitView {
     const medic = u.type === "medic";
     const scan = medic ? look * 1.35 : look;
     const screenLook = u.type === "pilot" ? 0.4 : 0; // eyes on his screen
-    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5 + screenLook - lean * 0.6, scan * iw * (1 - this.gearW) * (screenLook ? 0.2 : 1), 0);
+    this.head.rotation.set(
+      -p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5 + screenLook - lean * 0.6 - SQUAT.lean * sq * 0.7 + sqc * 0.45,
+      scan * iw * (1 - this.gearW) * (1 - sqc) * (screenLook ? 0.2 : 1) + sqc * 0.2,
+      0,
+    );
     if (medic) this.root.rotation.y += look * 0.3 * iw * (1 - this.gearW);
     this.head.position.y = SHOULDER_Y - HIP_Y + breath;
     // round shadow; stretched along the body when lying down, a bit wider when kneeling

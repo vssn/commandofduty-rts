@@ -886,3 +886,34 @@ body.gfx-real .menu-btn.primary {
   body.menu-settings-open #menu-settings .graphics-note { grid-column: 1 / -1; margin: -2px 2px 0; }
   body.menu-settings-open #menu-settings .menu-sub { margin: 0 0 6px; }
 }
+
+/* opening cutscene of the commandos mission (letterbox bars, subtitles, skip button, fade) */
+#cutscene { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+#cutscene[hidden] { display: none; }
+#cutscene .cut-bar, #cut-sub, #cut-skip { display: none; }
+body.cutscene #cutscene .cut-bar { display: block; position: absolute; left: 0; right: 0; height: 11%; background: #000; }
+body.cutscene #cutscene .cut-bar.top { top: 0; }
+body.cutscene #cutscene .cut-bar.bottom { bottom: 0; }
+body.cutscene #cut-sub {
+  display: block; position: absolute; left: 50%; bottom: 14%; width: min(820px, 88%);
+  transform: translateX(-50%); text-align: center; font-size: clamp(14px, 2.2vw, 20px); line-height: 1.4;
+  color: #eef0e2; text-shadow: 0 1px 4px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.35s ease;
+}
+body.cutscene #cut-sub.show { opacity: 1; }
+body.cutscene #cut-skip {
+  display: block; position: absolute; right: 16px; bottom: calc(5.5% - 14px); pointer-events: auto; cursor: pointer;
+  background: rgba(12, 13, 8, 0.7); color: var(--accent); border: 1px solid var(--line); padding: 5px 14px;
+  font: inherit; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase;
+}
+#cut-fade { position: absolute; inset: 0; background: #000; opacity: 1; }
+body.cutscene #sidebar, body.cutscene #overlay, body.cutscene #toast, body.cutscene #touch-ui, body.cutscene #btn-pause { display: none; }
+
+/* drone cutscene: the violet light of the drone floods the picture */
+#cut-tint, #cut-flood { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+#cut-tint { background: rgb(120, 50, 215); mix-blend-mode: color; }
+#cut-flood { background: radial-gradient(circle at 50% 50%, rgb(215, 170, 255) 0%, rgb(125, 55, 215) 55%, rgb(70, 20, 150) 100%); }
+#cut-flare {
+  position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; opacity: 0; pointer-events: none;
+  transform: translate(-50%, -50%); mix-blend-mode: screen;
+  background: radial-gradient(circle, rgba(248, 232, 255, 1) 0%, rgba(196, 130, 255, 0.9) 22%, rgba(125, 55, 225, 0.45) 52%, rgba(80, 20, 160, 0) 74%);
+}

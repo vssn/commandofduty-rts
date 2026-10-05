@@ -180,6 +180,11 @@ export interface SoldierTemplates {
   body: Mesh; arms: Mesh; head: Mesh; leg: Mesh; shin: Mesh;
   /** Grenadier only: the right (throwing) arm with the grenade, origin at the right shoulder. */
   throwArm?: Mesh;
+  /**
+   * Drone pilot only: his laptop and controller case, set down on the ground in front of his knees
+   * (shown only while he kneels; origin at the feet like the body).
+   */
+  kit?: Mesh;
 }
 
 /** Right shoulder joint (scaled) where the grenadier's throwing arm pivots. */
@@ -309,14 +314,34 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     tube(h[0] + side.x * 0.05, h[1] + side.y * 0.05, h[2] + side.z * 0.05, h[0] + side.x * 0.03 + dir.x * 0.05, h[1] + side.y * 0.03 + dir.y * 0.05, h[2] + side.z * 0.03 + dir.z * 0.05, 0.015, 0.012, skin);
   };
 
-  /** Face (the head ball sits at y 1.69): eyes with brows, nose, lips, chin, ears and a jaw line. */
-  const faceDetail = () => {
+  /**
+   * Face (the head ball sits at y 1.69): eyes with brows, nose, lips, chin, ears and a jaw line.
+   * `natural`: the agent's less cartoonish face - small dark eyes under heavier brows, cheekbones,
+   * a straighter nose and a stubble shadow along the jaw.
+   */
+  const faceDetail = (natural = false) => {
     if (LOW_DETAIL) {
       box(0.03, 0.055, 0.045, 0, 1.69, 0.138, [0.8, 0.62, 0.5]); // just the nose
       return;
     }
     const brow: RGB = [0.22, 0.16, 0.1];
     const shade: RGB = [0.8, 0.62, 0.5];
+    if (natural) {
+      const stubble: RGB = [0.72, 0.58, 0.48];
+      ball(0.098, 0, 1.635, 0.03, stubble, 0.7); // jaw with a stubble shadow, set back into the head
+      ball(0.034, 0, 1.603, 0.093, stubble); // chin
+      for (const x of [-1, 1]) {
+        ball(0.032, x * 0.133, 1.685, 0.0, skin, 1.25); // ears
+        ball(0.026, x * 0.068, 1.683, 0.098, skin, 0.7); // cheekbones
+        ball(0.011, x * 0.048, 1.708, 0.124, [0.92, 0.9, 0.86], 0.8); // eyes, small
+        ball(0.0075, x * 0.048, 1.708, 0.133, [0.12, 0.1, 0.08]);
+        box(0.055, 0.014, 0.02, x * 0.05, 1.728, 0.125, brow).rotation.z = -x * 0.08; // brows
+      }
+      box(0.024, 0.06, 0.04, 0, 1.685, 0.137, shade); // nose
+      box(0.03, 0.012, 0.028, 0, 1.656, 0.146, shade);
+      box(0.05, 0.01, 0.012, 0, 1.628, 0.134, [0.6, 0.42, 0.38]); // lips
+      return;
+    }
     ball(0.1, 0, 1.64, 0.05, skin, 0.75); // jaw
     ball(0.04, 0, 1.607, 0.105, skin); // chin
     for (const x of [-1, 1]) {
@@ -341,44 +366,94 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     return m;
   };
 
-  /** Agent: scoped rifle, coat sleeves with team armband, peaked cap, dark trousers and tall boots. */
+  // ---- agent: an athletic commando in a close-fitting dark combat suit. The shape of the body shows:
+  // broad shoulders and chest, a narrow waist, modelled arms and legs; over it only a slim chest rig,
+  // a belt with holster and knife, gloves, knee pads, boots, a watch cap and a radio headset.
+  const suit: RGB = [0.29, 0.3, 0.27];
+  const suitDark: RGB = [0.17, 0.175, 0.16];
+  const rig: RGB = [0.36, 0.37, 0.29];
+  const glove: RGB = [0.08, 0.08, 0.075];
+  const boot: RGB = [0.11, 0.09, 0.075];
+  for (const c of [suit, suitDark, rig]) looks.set(c.join(), cloth);
+  looks.set(glove.join(), { rough: 0.6 });
+
+  /** Muscled arm: deltoid, upper arm with a biceps, elbow, tapering forearm, gloved hand with fingers. */
+  const agentArm = (s: number[], e: number[], h: number[]) => {
+    const at = (k: number, i: number) => s[i] + (e[i] - s[i]) * k;
+    ball(0.08, s[0] * 0.98, s[1] - 0.02, s[2], suit, 1.1); // deltoid
+    tube(s[0], s[1], s[2], at(0.55, 0), at(0.55, 1), at(0.55, 2), 0.074, 0.07, suit);
+    tube(at(0.5, 0), at(0.5, 1), at(0.5, 2), e[0], e[1], e[2], 0.07, 0.055, suit);
+    ball(0.062, at(0.42, 0), at(0.42, 1), at(0.42, 2) + 0.018, suit, 1.25); // biceps
+    ball(0.056, e[0], e[1], e[2], suit);
+    const fe = (k: number, i: number) => e[i] + (h[i] - e[i]) * k;
+    tube(e[0], e[1], e[2], fe(0.45, 0), fe(0.45, 1), fe(0.45, 2), 0.056, 0.052, suit); // forearm muscle
+    tube(fe(0.4, 0), fe(0.4, 1), fe(0.4, 2), h[0], h[1], h[2], 0.052, 0.04, suit);
+    tube(fe(0.75, 0), fe(0.75, 1), fe(0.75, 2), fe(0.92, 0), fe(0.92, 1), fe(0.92, 2), 0.047, 0.045, glove); // glove cuff
+    ball(0.052, h[0], h[1], h[2], glove, 0.9);
+    if (LOW_DETAIL) return;
+    const dir = new Vector3(h[0] - e[0], h[1] - e[1], h[2] - e[2]).normalize();
+    const side = Vector3.Cross(dir, up);
+    if (side.lengthSquared() < 1e-4) side.set(1, 0, 0);
+    side.normalize();
+    for (const i of [-1.5, -0.5, 0.5, 1.5]) {
+      const len = 0.075 - Math.abs(i) * 0.008;
+      const bx = h[0] + side.x * i * 0.021, by = h[1] + side.y * i * 0.021, bz = h[2] + side.z * i * 0.021;
+      tube(bx, by, bz, bx + dir.x * len, by + dir.y * len - 0.014, bz + dir.z * len, 0.014, 0.011, glove);
+    }
+    tube(h[0] + side.x * 0.045, h[1] + side.y * 0.045, h[2] + side.z * 0.045, h[0] + side.x * 0.03 + dir.x * 0.05, h[1] + side.y * 0.03 + dir.y * 0.05, h[2] + side.z * 0.03 + dir.z * 0.05, 0.015, 0.012, glove);
+  };
+
+  /** Agent: scoped rifle, muscled arms with gloves and team armband, head with cap and headset, legs. */
   function agentRest(body: Mesh): SoldierTemplates {
     const metal2: RGB = [0.1, 0.1, 0.11];
-    box(0.07, 0.12, 0.4, 0.1, 1.2, 0.12, wood); // stock
-    box(0.06, 0.08, 0.3, 0.08, 1.24, 0.46, metal2);
-    box(0.07, 0.05, 0.36, 0.08, 1.2, 0.66, wood);
-    box(0.03, 0.03, 0.62, 0.08, 1.26, 1.08, metal2); // long barrel
-    tube(0.08, 1.33, 0.3, 0.08, 1.33, 0.66, 0.035, 0.03, metal2); // scope
-    ball(0.042, 0.08, 1.33, 0.67, [0.35, 0.45, 0.55]); // lens
-    box(0.02, 0.05, 0.02, 0.08, 1.29, 0.38, metal2);
-    box(0.02, 0.05, 0.02, 0.08, 1.29, 0.58, metal2);
-    arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
-    arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
-    tube(-0.265, 1.31, 0.01, -0.255, 1.22, 0.02, 0.08, 0.075, teamC); // armband
+    // suppressed, scoped rifle with a short stock
+    box(0.06, 0.11, 0.34, 0.1, 1.2, 0.14, [0.16, 0.16, 0.15]); // stock
+    box(0.06, 0.09, 0.32, 0.08, 1.24, 0.46, metal2); // receiver
+    box(0.05, 0.12, 0.06, 0.08, 1.15, 0.5, metal2); // magazine
+    box(0.06, 0.06, 0.34, 0.08, 1.22, 0.75, [0.18, 0.18, 0.16]); // handguard
+    tube(0.08, 1.24, 0.92, 0.08, 1.24, 1.32, 0.03, 0.03, metal2); // suppressor
+    tube(0.08, 1.33, 0.3, 0.08, 1.33, 0.62, 0.032, 0.03, metal2); // scope
+    ball(0.04, 0.08, 1.33, 0.63, [0.35, 0.45, 0.55]); // lens
+    box(0.02, 0.045, 0.02, 0.08, 1.295, 0.38, metal2);
+    box(0.02, 0.045, 0.02, 0.08, 1.295, 0.56, metal2);
+    agentArm([0.25, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
+    agentArm([-0.25, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
+    tube(-0.262, 1.33, 0.005, -0.255, 1.25, 0.015, 0.079, 0.074, teamC); // armband
     const arms = shoulderPart(`agentArms${team}`);
 
-    tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin);
-    ball(0.135, 0, 1.69, 0.01, skin, 1.15);
-    faceDetail();
-    ball(0.125, 0, 1.655, -0.035, [0.2, 0.15, 0.1], 0.85); // hair under the cap
-    const capC: RGB = [0.15, 0.15, 0.14];
-    tube(0, 1.75, -0.01, 0, 1.86, -0.02, 0.15, 0.17, capC, 0.95); // cap crown, slightly wider on top
-    tube(0, 1.74, -0.01, 0, 1.77, -0.01, 0.152, 0.152, [0.08, 0.08, 0.07]); // cap band
-    box(0.24, 0.02, 0.12, 0, 1.745, 0.16, [0.08, 0.08, 0.07]).rotation.x = 0.18; // visor
-    box(0.05, 0.035, 0.01, 0, 1.8, 0.155, [0.75, 0.68, 0.45]); // badge
+    // neck with the suit's high collar, head, face, watch cap and radio headset
+    tube(0, 1.47, 0, 0, 1.62, 0.01, 0.06, 0.052, skin);
+    tube(0, 1.44, 0, 0, 1.54, 0.005, 0.085, 0.07, suitDark); // collar
+    ball(0.13, 0, 1.69, 0.01, skin, 1.15);
+    faceDetail(true);
+    ball(0.128, 0, 1.655, -0.035, [0.17, 0.13, 0.09], 0.85); // short hair at the back
+    const capC: RGB = [0.1, 0.1, 0.095];
+    ball(0.138, 0, 1.75, -0.005, capC, 0.72); // watch cap
+    tube(0, 1.71, -0.005, 0, 1.76, -0.005, 0.142, 0.14, [0.08, 0.08, 0.075]); // folded brim
+    for (const x of [-1, 1]) {
+      ball(0.045, x * 0.142, 1.69, 0.0, [0.07, 0.07, 0.07], 1.15); // ear cups
+      tube(x * 0.142, 1.73, 0, x * 0.1, 1.83, 0, 0.012, 0.012, [0.07, 0.07, 0.07]); // headband
+    }
+    tube(-0.15, 1.67, 0.03, -0.07, 1.63, 0.14, 0.008, 0.008, [0.07, 0.07, 0.07]); // boom microphone
+    ball(0.016, -0.065, 1.63, 0.145, [0.07, 0.07, 0.07]);
     const head = shoulderPart(`agentHead${team}`);
 
-    tube(0, 0, 0, 0, -0.4, 0.02, 0.09, 0.072, pants);
-    ball(0.07, 0, -0.4, 0.02, pants);
+    // thigh: strong at the hip, tapering to the knee, knee pad
+    tube(0, 0.02, 0, 0, -0.22, 0.01, 0.1, 0.085, suit);
+    tube(0, -0.2, 0.01, 0, -0.4, 0.02, 0.085, 0.066, suit);
+    ball(0.068, 0, -0.4, 0.02, suit);
+    box(0.11, 0.12, 0.05, 0, -0.4, 0.075, rig).rotation.x = -0.1; // knee pad
     const leg = merge(`agentThigh${team}`, parts.splice(0));
     leg.scaling.setAll(SOLDIER_SCALE);
     leg.bakeCurrentTransformIntoVertices();
-    tube(0, 0, 0, 0, -0.12, -0.01, 0.07, 0.066, pants);
-    tube(0, -0.08, -0.01, 0, -0.3, -0.02, 0.075, 0.072, [0.13, 0.1, 0.08]); // tall boot shaft
-    box(0.13, 0.12, 0.27, 0, -0.33, 0.03, [0.13, 0.1, 0.08]);
-    box(0.14, 0.035, 0.29, 0, -0.385, 0.03, [0.06, 0.05, 0.05]);
-    ball(0.068, 0, -0.35, 0.17, [0.13, 0.1, 0.08], 0.72); // toe cap
-    box(0.14, 0.03, 0.08, 0, -0.41, -0.06, [0.05, 0.04, 0.04]); // heel
+    // shin with calf, laced boot
+    tube(0, 0, 0, 0, -0.14, -0.01, 0.066, 0.068, suit);
+    ball(0.062, 0, -0.08, -0.03, suit, 1.4); // calf
+    tube(0, -0.14, -0.01, 0, -0.3, -0.02, 0.064, 0.064, boot); // boot shaft
+    box(0.13, 0.12, 0.27, 0, -0.33, 0.03, boot);
+    box(0.14, 0.035, 0.29, 0, -0.385, 0.03, [0.05, 0.045, 0.04]); // sole
+    ball(0.066, 0, -0.35, 0.17, boot, 0.72); // toe cap
+    if (!LOW_DETAIL) for (const y of [-0.18, -0.22, -0.26]) box(0.08, 0.012, 0.012, 0, y, 0.06, [0.05, 0.05, 0.05]); // laces
     const shin = merge(`agentShin${team}`, parts.splice(0));
     shin.scaling.setAll(SOLDIER_SCALE);
     shin.bakeCurrentTransformIntoVertices();
@@ -390,24 +465,37 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   }
 
   if (agent) {
-    // ---- agent: long coat flaring over the thighs, belt, lapels, turned-up collar, map case
-    tube(0, 0.86, 0, 0, 1.44, 0, 0.19, 0.24, coat, 0.64);
-    tube(0, 0.36, 0, 0, 0.9, 0, 0.27, 0.2, coat, 0.72); // coat skirt
-    ball(0.085, -0.24, 1.4, 0, coat);
-    ball(0.085, 0.24, 1.4, 0, coat);
-    tube(0, 0.84, 0, 0, 0.92, 0, 0.205, 0.205, uniDark, 0.66); // coat belt
-    box(0.07, 0.06, 0.02, 0, 0.88, 0.14, [0.55, 0.5, 0.4]);
-    for (const x of [-0.08, 0.08]) box(0.07, 0.38, 0.02, x, 1.25, 0.15, uniDark).rotation.z = x > 0 ? -0.25 : 0.25; // lapels
-    for (const y of [1.05, 0.72, 0.56]) box(0.035, 0.035, 0.02, 0.07, y, y > 0.9 ? 0.155 : 0.19, [0.1, 0.1, 0.09]); // buttons
-    tube(0, 1.42, 0, 0, 1.6, 0, 0.12, 0.09, uniDark); // turned-up collar
-    box(0.16, 0.2, 0.06, -0.22, 0.84, 0.08, [0.3, 0.22, 0.14]); // map case
-    for (const x of [-0.14, 0.14]) {
-      box(0.12, 0.04, 0.02, x, 0.74, 0.17, uniDark); // hip pocket flaps
-      box(0.11, 0.1, 0.012, x, 0.68, 0.172, coat);
+    // pelvis and the narrow waist
+    tube(0, 0.8, 0, 0, 0.94, 0, 0.165, 0.155, suit, 0.72);
+    ball(0.075, -0.09, 0.8, -0.06, suit, 1); // seat
+    ball(0.075, 0.09, 0.8, -0.06, suit, 1);
+    tube(0, 0.92, 0, 0, 1.1, 0, 0.152, 0.175, suit, 0.68); // abdomen
+    // chest widening into broad shoulders (V shape), pectorals, back muscles, trapezius
+    tube(0, 1.08, 0, 0, 1.42, 0, 0.18, 0.245, suit, 0.62);
+    for (const x of [-1, 1]) {
+      ball(0.095, x * 0.085, 1.29, 0.075, suit, 0.75); // pectoral
+      ball(0.1, x * 0.12, 1.25, -0.06, suit, 1.3); // latissimus
+      tube(x * 0.06, 1.5, -0.01, x * 0.21, 1.43, 0, 0.05, 0.062, suit, 0.75); // trapezius
     }
-    for (const x of [-0.22, 0.22]) box(0.08, 0.02, 0.1, x, 1.455, 0, uniDark); // epaulettes
-    tube(-0.07, 1.47, 0, -0.22, 1.42, 0, 0.06, 0.085, coat, 0.7);
-    tube(0.07, 1.47, 0, 0.22, 1.42, 0, 0.06, 0.085, coat, 0.7);
+    // belt with buckle, holster on the right hip, knife on the left, pouches at the back
+    tube(0, 0.88, 0, 0, 0.94, 0, 0.17, 0.17, suitDark, 0.72);
+    box(0.06, 0.05, 0.02, 0, 0.91, 0.125, [0.45, 0.43, 0.38]);
+    box(0.08, 0.2, 0.07, 0.19, 0.8, 0.02, rig); // holster
+    box(0.035, 0.07, 0.035, 0.19, 0.93, 0.02, [0.1, 0.1, 0.1]); // pistol grip
+    box(0.035, 0.16, 0.03, -0.18, 0.84, 0.06, [0.09, 0.09, 0.09]).rotation.z = 0.15; // knife
+    for (const x of [-0.09, 0.09]) box(0.1, 0.09, 0.06, x, 0.9, -0.13, rig); // utility pouches
+    // slim chest rig: plate, three magazine pouches, shoulder straps crossing to the back, radio
+    box(0.27, 0.26, 0.04, 0, 1.19, 0.145, rig);
+    for (const x of [-0.08, 0, 0.08]) {
+      box(0.07, 0.11, 0.045, x, 1.11, 0.175, rig);
+      box(0.072, 0.025, 0.05, x, 1.17, 0.177, suitDark); // pouch flaps
+    }
+    for (const x of [-1, 1]) {
+      box(0.05, 0.36, 0.025, x * 0.11, 1.38, 0.12, rig).rotation.x = -0.35; // shoulder straps
+      box(0.05, 0.4, 0.025, x * 0.11, 1.3, -0.15, rig).rotation.x = 0.25;
+    }
+    box(0.09, 0.15, 0.05, -0.07, 1.25, -0.17, rig); // radio on the back
+    tube(-0.09, 1.32, -0.18, -0.12, 1.55, -0.2, 0.008, 0.006, [0.07, 0.07, 0.07]); // its antenna
     const body = merge(`agent${team}`, parts.splice(0));
     body.scaling.setAll(SOLDIER_SCALE);
     body.bakeCurrentTransformIntoVertices();
@@ -435,8 +523,11 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     box(0.05, 0.56, 0.02, x, 1.15, -0.145, webbing).rotation.x = -0.1;
   }
   if (!grenadier && !medic && !pilot) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
+  let laptopParts: Mesh[] = [];
   if (pilot) {
-    // laptop on the ground in front of his knees (he kneels: the body sits 0.35 m lower), screen glowing
+    // laptop on the ground in front of his knees (he kneels: the body sits 0.35 m lower), screen
+    // glowing - a template of its own, set down only when he kneels
+    const before = parts.length;
     const lx = 0, ly = 0.3, lz = 0.62;
     box(0.42, 0.03, 0.3, lx, ly, lz, [0.16, 0.16, 0.17]);
     const lid = box(0.42, 0.3, 0.025, lx, ly + 0.14, lz + 0.16, [0.16, 0.16, 0.17]);
@@ -448,6 +539,15 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     parts.push(screen);
     box(0.32, 0.02, 0.14, lx, ly + 0.022, lz - 0.05, [0.3, 0.3, 0.32]); // keyboard
     box(0.25, 0.12, 0.18, 0.32, 0.3, 0.5, [0.26, 0.3, 0.2]); // controller case
+    laptopParts = parts.splice(before);
+    // four thick antennas splayed out of the pack, like a router's
+    for (const [x, z, ax, az] of [[-0.1, -0.17, -0.55, 0.15], [-0.05, -0.26, -0.22, -0.45], [0.05, -0.26, 0.22, -0.45], [0.1, -0.17, 0.55, 0.15]]) {
+      const len = 0.42;
+      const dx = Math.sin(ax) * len, dz = Math.sin(az) * len * 0.8, dy = Math.cos(ax) * Math.cos(az) * len;
+      tube(x, 1.36, z, x + dx, 1.36 + dy, z + dz, 0.026, 0.02, [0.07, 0.07, 0.075]);
+      ball(0.022, x + dx, 1.36 + dy, z + dz, [0.07, 0.07, 0.075]);
+      tube(x, 1.33, z, x, 1.4, z, 0.034, 0.034, [0.12, 0.12, 0.12]); // swivel foot
+    }
   }
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
   box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.38, 0.31, 0.2]);
@@ -471,6 +571,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const body = merge(`soldier${team}${medic ? "m" : ""}`, parts.splice(0));
   body.scaling.setAll(SOLDIER_SCALE);
   body.bakeCurrentTransformIntoVertices();
+  let pilotKit: Mesh | undefined;
+  if (laptopParts.length) {
+    pilotKit = merge(`pilotKit${team}`, laptopParts);
+    pilotKit.scaling.setAll(SOLDIER_SCALE);
+    pilotKit.bakeCurrentTransformIntoVertices();
+  }
 
   // ---- upper body: arms, hands, weapon, neck, head, helmet (pivots at the shoulders)
   if (grenadier) {
@@ -521,25 +627,34 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   }
 
   tube(0, 1.5, 0, 0, 1.62, 0.01, 0.055, 0.05, skin); // neck
-  ball(0.135, 0, 1.69, 0.01, skin, 1.15); // head
-  faceDetail();
   if (pilot) {
-    // no helmet: short hair, a headset with ear cups, a boom microphone and a glowing status LED
-    ball(0.14, 0, 1.73, -0.01, [0.2, 0.15, 0.1], 0.85); // hair
-    const band = MeshBuilder.CreateTorus("headband", { diameter: 0.31, thickness: 0.035, tessellation: 16 }, scene);
-    band.rotation.z = Math.PI / 2;
-    band.position.set(0, 1.71, 0);
-    band.material = mat(scene, [0.12, 0.12, 0.12]);
-    parts.push(band);
-    for (const x of [-0.155, 0.155]) {
-      const cup = tube(x - Math.sign(x) * 0.01, 1.68, 0.01, x + Math.sign(x) * 0.05, 1.68, 0.01, 0.065, 0.06, [0.14, 0.14, 0.14]);
-      cup.rotation.z = Math.PI / 2;
-    }
-    tube(0.19, 1.66, 0.03, 0.1, 1.6, 0.15, 0.012, 0.012, [0.12, 0.12, 0.12]); // mic boom
-    const led = MeshBuilder.CreateSphere("led", { diameter: 0.035, segments: 4 }, scene);
-    led.position.set(0.21, 1.69, 0.03);
+    // full-face helmet with FPV goggles: no face to be seen. A smooth dark shell, the chin bar, the
+    // goggles' block over the visor with its strap and a stub antenna, a status LED
+    const shellC: RGB = [0.13, 0.135, 0.14];
+    const shell = { rough: 0.35, metal: 0.1 };
+    looks.set(shellC.join(), shell);
+    ball(0.172, 0, 1.71, -0.005, shellC, 1.08); // shell
+    ball(0.12, 0, 1.6, 0.075, shellC, 0.75); // chin bar
+    box(0.2, 0.05, 0.04, 0, 1.635, 0.155, [0.08, 0.08, 0.085]); // breathing vent
+    const gog: RGB = [0.05, 0.05, 0.055];
+    box(0.25, 0.1, 0.12, 0, 1.715, 0.16, gog); // FPV goggles
+    for (const x of [-0.055, 0.055]) box(0.07, 0.055, 0.01, x, 1.715, 0.222, [0.12, 0.14, 0.18]); // lenses (dark glass)
+    const strap = MeshBuilder.CreateTorus("gogStrap", { diameter: 0.35, thickness: 0.03, tessellation: 18 }, scene);
+    strap.scaling.z = 1.05;
+    strap.position.set(0, 1.715, 0);
+    strap.material = mat(scene, [0.09, 0.09, 0.09]);
+    parts.push(strap);
+    tube(0.1, 1.76, 0.17, 0.12, 1.86, 0.17, 0.011, 0.009, gog); // goggles' antenna
+    const led = MeshBuilder.CreateSphere("led", { diameter: 0.025, segments: 4 }, scene);
+    led.position.set(-0.11, 1.74, 0.222);
     led.material = mat(scene, [0.3, 1, 0.5], { emissive: true });
     parts.push(led);
+  } else {
+    ball(0.135, 0, 1.69, 0.01, skin, 1.15); // head
+    faceDetail();
+  }
+  if (pilot) {
+    // (the helmet above replaces head and headgear)
   } else {
     // modern combat helmet: a rounded composite shell, longer front to back, with a skirt that runs
     // down over the sides and the back of the head and leaves the face open; a mount on the front,
@@ -645,12 +760,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   shin.scaling.setAll(SOLDIER_SCALE);
   shin.bakeCurrentTransformIntoVertices();
 
-  for (const m of [body, arms, head, leg, shin, throwArm]) {
+  for (const m of [body, arms, head, leg, shin, throwArm, pilotKit]) {
     if (!m) continue;
     m.isPickable = false;
     m.isVisible = false;
   }
-  return { body, arms, head, leg, shin, throwArm };
+  return { body, arms, head, leg, shin, throwArm, kit: pilotKit };
 }
 
 /** Soft round shadow under a unit: dark disc whose vertex alpha fades to the rim. */

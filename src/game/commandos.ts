@@ -12,7 +12,7 @@ import { Unit } from "./unit";
 
 type ChargeTarget = Unit | Outpost;
 
-interface Charge { target: ChargeTarget; x: number; z: number; fuse: number; mesh: InstancedMesh }
+export interface Charge { target: ChargeTarget; x: number; z: number; fuse: number; mesh: InstancedMesh }
 interface Patrol {
   units: Unit[];
   route: V2[];
@@ -700,18 +700,39 @@ export class CommandosMission {
       }
       const onJeep = c.target instanceof Unit;
       c.mesh.position.set(c.x, g.terrain.heightAt(c.x, c.z) + (onJeep ? 1.05 : 0.02), c.z);
+      // the charge that blows up the second outpost: a cutscene takes over (and sets it off itself)
+      if (this.onSecondBlast && !this.aggressive && !(c.target instanceof Unit) && !c.target.destroyed && this.destroyedOutposts + 1 > COMMANDOS.escalation.after && c.fuse <= 2.2) {
+        const start = this.onSecondBlast;
+        this.onSecondBlast = null;
+        start(c);
+        return;
+      }
       c.fuse -= dt;
       if (c.fuse > 0) continue;
-      c.mesh.dispose();
-      this.planted.splice(i, 1);
-      g.effects.explode(c.x, c.z, COMMANDOS.charges.damage, COMMANDOS.charges.radius, null, 2.4);
-      if (c.target instanceof Unit) {
-        if (c.target.alive) g.damage(c.target, 9999, null);
-      } else if (!c.target.destroyed && Math.hypot(c.x - c.target.x, c.z - c.target.z) <= c.target.radius) {
-        c.target.destroy();
-        this.destroyedOutposts++;
-        g.emit("outpostDestroyed", PLAYER);
-      }
+      this.detonate(c);
+    }
+  }
+
+  /** Called with the charge that is about to destroy the second outpost (see updateCharges). */
+  onSecondBlast: ((c: Charge) => void) | null = null;
+
+  /** Sets a planted charge off. `sparing`: the agent is out of reach of the blast (for the cutscene, where he could not run). */
+  detonate(c: Charge, sparing = false) {
+    const g = this.game, a = this.agent;
+    const i = this.planted.indexOf(c);
+    if (i >= 0) this.planted.splice(i, 1);
+    c.mesh.dispose();
+    const ax = a.x, az = a.z;
+    if (sparing) a.x = a.z = 1e5;
+    g.effects.explode(c.x, c.z, COMMANDOS.charges.damage, COMMANDOS.charges.radius, null, 2.4);
+    a.x = ax;
+    a.z = az;
+    if (c.target instanceof Unit) {
+      if (c.target.alive) g.damage(c.target, 9999, null);
+    } else if (!c.target.destroyed && Math.hypot(c.x - c.target.x, c.z - c.target.z) <= c.target.radius) {
+      c.target.destroy();
+      this.destroyedOutposts++;
+      g.emit("outpostDestroyed", PLAYER);
     }
   }
 
@@ -837,22 +858,23 @@ export class CommandosMission {
   // ---------------------------------------------------------------- drones
 
   /** More than two outposts lost: the enemy goes on full alert and launches its recon drones. */
-  private escalate() {
+  escalate(first?: { pilot: Unit; drone: Unit }) {
     const g = this.game, D = COMMANDOS.drones;
     this.aggressive = true;
     const posts = g.outposts.filter((o) => !o.destroyed).sort(() => Math.random() - 0.5);
     if (!posts.length) return;
     for (let i = 0; i < D.count; i++) {
-      // each drone's pilot kneels at his laptop at a random outpost
+      // each drone's pilot kneels at his laptop at a random outpost (the first one may be given: the cutscene's)
+      const given = i === 0 ? first : undefined;
       const o = posts[i % posts.length];
       const ang = Math.random() * Math.PI * 2;
-      const p = g.nav.freePoint(o.x + Math.cos(ang) * o.radius * 0.5, o.z + Math.sin(ang) * o.radius * 0.5);
-      const pilot = g.spawnUnit("pilot", ENEMY, p.x, p.z);
-      pilot.heading = Math.random() * Math.PI * 2;
+      const p = given ? { x: given.pilot.x, z: given.pilot.z } : g.nav.freePoint(o.x + Math.cos(ang) * o.radius * 0.5, o.z + Math.sin(ang) * o.radius * 0.5);
+      const pilot = given?.pilot ?? g.spawnUnit("pilot", ENEMY, p.x, p.z);
+      if (!given) pilot.heading = Math.random() * Math.PI * 2;
       pilot.stance = "kneel";
       // his screen and headset light up the ground around him a little
       const glow = createGlowSpot(g.scene, g.terrain, p.x + Math.sin(pilot.heading) * 0.7, p.z + Math.cos(pilot.heading) * 0.7, 2.2, [0.45, 0.75, 1], 0.45);
-      const unit = g.spawnUnit("drone", ENEMY, p.x, p.z);
+      const unit = given?.drone ?? g.spawnUnit("drone", ENEMY, p.x, p.z);
       unit.altitude = D.altitude;
       unit.aimY = D.altitude;
       // a dimmer, violet light (infrared-ish)
