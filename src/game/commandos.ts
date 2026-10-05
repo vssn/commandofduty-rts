@@ -737,7 +737,7 @@ export class CommandosMission {
 
   /**
    * The lights that also light the scenery in the realistic mode (trees, houses, vehicles): the lit spots
-   * of the searchlights and drones and the street lamps, the nearest few to (x, z).
+   * of the searchlights and the street lamps (a drone's thermal camera casts no visible light), the nearest few to (x, z).
    */
   lightSources(x: number, z: number): SpotLight[] {
     const h = (px: number, pz: number) => this.game.terrain.heightAt(px, pz);
@@ -745,18 +745,14 @@ export class CommandosMission {
     for (const b of this.beams) {
       if (!b.post.destroyed) all.push({ x: b.light.tx, y: h(b.light.tx, b.light.tz) + 3, z: b.light.tz, radius: b.light.radius * 8, color: [0.75, 0.82, 1], intensity: 3 });
     }
-    for (const d of this.drones) {
-      if (!d.down) all.push({ x: d.light.tx, y: h(d.light.tx, d.light.tz) + 3, z: d.light.tz, radius: d.light.radius * 7, color: [0.85, 0.88, 1], intensity: 3 });
-    }
     for (const p of this.streetPools) all.push({ x: p.x, y: h(p.x, p.z) + 4.2, z: p.z, radius: p.r * 5, color: [1, 0.78, 0.45], intensity: 2 });
     all.sort((a, c) => Math.hypot(a.x - x, a.z - z) - Math.hypot(c.x - x, c.z - z));
     return all.slice(0, MAX_SPOTS);
   }
 
-  /** Whether (x, z) lies in the light of a street lamp or a searchlight beam. */
+  /** Whether (x, z) lies in the light of a street lamp or a searchlight beam (not a drone's marker: it is a thermal camera). */
   isLit(x: number, z: number): boolean {
     if (this.streetPools.some((p) => Math.hypot(p.x - x, p.z - z) < p.r)) return true;
-    if (this.drones.some((d) => !d.down && d.light.contains(x, z))) return true;
     return this.beams.some((b) => !b.post.destroyed && b.light.contains(x, z));
   }
 

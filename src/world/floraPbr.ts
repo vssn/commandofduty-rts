@@ -119,17 +119,33 @@ function leafTexture(scene: Scene): DynamicTexture {
 
 interface Clump { x: number; y: number; z: number; r: number }
 
-/** The clumps of a broadleaf crown (unit tree: trunk up to ~2.4 m, crown ~2.4..5.6 m). */
+/** A main branch of a broadleaf tree: direction, where it leaves the trunk, how far and how steeply it reaches. */
+interface BranchPlan { a: number; y0: number; len: number; rise: number }
+
+/** The branches of the tree variant `seed` (shared by the trunk and the crown, so the leaves sit at the branch ends). */
+function branchPlan(seed: number): BranchPlan[] {
+  const r = rng(seed + 7);
+  const n = 6;
+  return Array.from({ length: n }, (_, k) => ({
+    a: (k / n) * Math.PI * 2 + (r() - 0.5) * 0.6,
+    y0: 2.2 + r() * 1.1,
+    len: 1.0 + r() * 0.75,
+    rise: 0.7 + r() * 0.7,
+  }));
+}
+
+/**
+ * The clumps of a broadleaf crown (unit tree: trunk up to ~2.4 m, crown ~2.4..5.6 m): one at the end of
+ * every main branch, a smaller one over the trunk and one on top - with gaps between them, through which
+ * the branches show.
+ */
 function crownClumps(seed: number): Clump[] {
   const r = rng(seed);
-  const clumps: Clump[] = [{ x: 0, y: 3.95, z: 0, r: 1.3 }];
-  const n = 5;
-  for (let k = 0; k < n; k++) {
-    const a = (k / n) * Math.PI * 2 + r() * 0.6;
-    const d = 0.85 + r() * 0.3;
-    clumps.push({ x: Math.cos(a) * d, y: 3.3 + r() * 0.7, z: Math.sin(a) * d, r: 0.85 + r() * 0.3 });
+  const clumps: Clump[] = [{ x: (r() - 0.5) * 0.3, y: 4.35, z: (r() - 0.5) * 0.3, r: 0.95 }];
+  for (const b of branchPlan(seed)) {
+    clumps.push({ x: Math.cos(b.a) * b.len * 1.02, y: b.y0 + b.rise + 0.25, z: Math.sin(b.a) * b.len * 1.02, r: 0.78 + r() * 0.3 });
   }
-  clumps.push({ x: (r() - 0.5) * 0.5, y: 4.75, z: (r() - 0.5) * 0.5, r: 0.85 });
+  clumps.push({ x: (r() - 0.5) * 0.5, y: 5.05, z: (r() - 0.5) * 0.5, r: 0.7 });
   return clumps;
 }
 
@@ -162,22 +178,74 @@ function crownLayer(scene: Scene, name: string, clumps: Clump[], subdivisions: n
   return g.build(name, scene);
 }
 
-/** Tapered trunk with three branches reaching into the crown. */
-function broadleafTrunk(scene: Scene): Mesh {
-  const parts: Mesh[] = [];
-  const trunk = MeshBuilder.CreateCylinder("t", { height: 3.2, diameterTop: 0.16, diameterBottom: 0.42, tessellation: 7 }, scene);
-  trunk.position.y = 1.6;
-  parts.push(trunk);
-  for (let k = 0; k < 3; k++) {
-    const b = MeshBuilder.CreateCylinder("b", { height: 1.5, diameterTop: 0.05, diameterBottom: 0.14, tessellation: 5 }, scene);
-    const a = (k / 3) * Math.PI * 2 + 0.4;
-    b.position.set(Math.cos(a) * 0.38, 2.55 + k * 0.2, Math.sin(a) * 0.38);
-    b.rotation.set(Math.sin(a) * 0.75, 0, -Math.cos(a) * 0.75);
-    parts.push(b);
+/** Adds a tapered, slightly rough tube along `pts` (radius `r0` at the first point to `r1` at the last) to `g`. */
+function branchTube(g: Geo, pts: [number, number, number][], r0: number, r1: number, sides: number, shade0: number, shade1: number) {
+  const rings: number[][] = [];
+  pts.forEach((p, i) => {
+    const t = i / (pts.length - 1);
+    const next = pts[Math.min(pts.length - 1, i + 1)], prev = pts[Math.max(0, i - 1)];
+    let dx = next[0] - prev[0], dy = next[1] - prev[1], dz = next[2] - prev[2];
+    const dl = Math.hypot(dx, dy, dz) || 1;
+    dx /= dl; dy /= dl; dz /= dl;
+    // two axes across the branch
+    let ax = -dz, az = dx;
+    const al = Math.hypot(ax, az);
+    if (al < 0.001) { ax = 1; az = 0; } else { ax /= al; az /= al; }
+    const bx = dy * az, by = dz * ax - dx * az, bz = -dy * ax;
+    const rad = r0 + (r1 - r0) * t;
+    const ring: number[] = [];
+    for (let k = 0; k < sides; k++) {
+      const q = (k / sides) * Math.PI * 2;
+      const cx = Math.cos(q), sx = Math.sin(q);
+      const nx = ax * cx + bx * sx, ny = by * sx, nz = az * cx + bz * sx;
+      const knob = 1 + (((k * 7 + i * 3) % 5) - 2) * 0.03; // not perfectly round
+      const sh = shade0 + (shade1 - shade0) * t;
+      ring.push(g.vertex(p[0] + nx * rad * knob, p[1] + ny * rad * knob, p[2] + nz * rad * knob, nx, ny, nz, shadeOf(sh)));
+    }
+    rings.push(ring);
+  });
+  for (let i = 0; i < rings.length - 1; i++) {
+    for (let k = 0; k < sides; k++) {
+      const k2 = (k + 1) % sides;
+      g.tri(rings[i][k], rings[i + 1][k], rings[i][k2]);
+      g.tri(rings[i][k2], rings[i + 1][k], rings[i + 1][k2]);
+    }
   }
-  const m = Mesh.MergeMeshes(parts, true)!;
-  m.name = "trunkReal";
-  return m;
+}
+
+/**
+ * Trunk of a broadleaf tree with a flared foot and a slight bend, the main branches of `branchPlan`
+ * reaching out and up with side twigs, and a few bare twig ends sticking out past the leaves - so branches
+ * can be seen in and under the crown.
+ */
+function broadleafTrunk(scene: Scene, seed: number): Mesh {
+  const g = new Geo();
+  const r = rng(seed + 13);
+  const lean = (r() - 0.5) * 0.2, lz = (r() - 0.5) * 0.2;
+  // trunk: root flare, a gentle bend, tapering to where the branches start
+  branchTube(g, [[0, -0.1, 0], [lean * 0.1, 0.4, lz * 0.1], [lean * 0.4, 1.4, lz * 0.4], [lean * 0.8, 2.4, lz * 0.8], [lean, 3.4, lz]], 0.3, 0.09, 7, 0.55, 0.7);
+  branchTube(g, [[0, -0.1, 0], [0, 0.18, 0]], 0.3, 0.2, 7, 0.5, 0.55); // flared foot
+  for (const b of branchPlan(seed)) {
+    const ca = Math.cos(b.a), sa = Math.sin(b.a);
+    const y0 = b.y0, ox = lean * (y0 / 3.4), oz = lz * (y0 / 3.4);
+    const sx = ox + ca * 0.08, sz = oz + sa * 0.08;
+    const mid: [number, number, number] = [ox + ca * b.len * 0.55, y0 + b.rise * 0.45, oz + sa * b.len * 0.55];
+    const end: [number, number, number] = [ox + ca * b.len, y0 + b.rise, oz + sa * b.len];
+    branchTube(g, [[sx, y0 - 0.05, sz], mid, end], 0.075, 0.03, 5, 0.65, 0.8);
+    // side twigs: from the middle of the branch, fanning out to both sides
+    for (const side of [-1, 1]) {
+      if (r() < 0.25) continue;
+      const ta = b.a + side * (0.7 + r() * 0.5);
+      const tl = 0.5 + r() * 0.45;
+      branchTube(g, [mid, [mid[0] + Math.cos(ta) * tl * 0.5, mid[1] + 0.25 + r() * 0.15, mid[2] + Math.sin(ta) * tl * 0.5], [mid[0] + Math.cos(ta) * tl, mid[1] + 0.45 + r() * 0.3, mid[2] + Math.sin(ta) * tl]], 0.032, 0.012, 4, 0.7, 0.85);
+    }
+    // a bare twig carrying on beyond the leaves
+    if (r() < 0.7) {
+      const ta = b.a + (r() - 0.5) * 0.8;
+      branchTube(g, [end, [end[0] + Math.cos(ta) * 0.35, end[1] + 0.3, end[2] + Math.sin(ta) * 0.35], [end[0] + Math.cos(ta) * 0.7, end[1] + 0.65, end[2] + Math.sin(ta) * 0.7]], 0.03, 0.008, 4, 0.8, 0.9);
+    }
+  }
+  return g.build("trunkReal", scene);
 }
 
 /**
@@ -362,7 +430,8 @@ export class RealisticTrees {
   readonly classic: Mesh[] = [];
   private readonly broad: Batch[] = Array.from({ length: CROWNS }, () => ({ matrices: [], colors: [] }));
   private readonly firs: Batch[] = Array.from({ length: FIRS }, () => ({ matrices: [], colors: [] }));
-  private readonly trunks: Batch = { matrices: [], colors: [] };
+  /** One trunk (with its branches) per crown variant: the branches lead to that crown's leaf clumps. */
+  private readonly trunks: Batch[] = Array.from({ length: CROWNS }, () => ({ matrices: [], colors: [] }));
   private readonly firTrunks: Batch = { matrices: [], colors: [] };
   private meshes: Mesh[] | null = null;
   private readonly r = rng(4242);
@@ -381,10 +450,11 @@ export class RealisticTrees {
       b.colors.push(color[0] * j(), color[1] * j(), color[2] * j(), 1);
       this.firTrunks.matrices.push(...arr);
     } else {
-      const b = this.broad[Math.floor(r() * CROWNS)];
+      const ci = Math.floor(r() * CROWNS);
+      const b = this.broad[ci];
       b.matrices.push(...arr);
       b.colors.push(Math.min(1, color[0] * j()), Math.min(1, color[1] * j()), Math.min(1, color[2] * j()), 1);
-      this.trunks.matrices.push(...arr);
+      this.trunks[ci].matrices.push(...arr);
     }
   }
 
@@ -401,6 +471,7 @@ export class RealisticTrees {
     const firMat = plainMaterial(scene, "firNeedles");
     firMat.backFaceCulling = false;
     const barkMat = plainMaterial(scene, "barkReal", [0.3, 0.23, 0.17]);
+    barkMat.backFaceCulling = false;
 
     this.broad.forEach((b, i) => {
       if (!b.matrices.length) return;
@@ -422,12 +493,13 @@ export class RealisticTrees {
       instances(fir, b, this.shadows);
       out.push(fir);
     });
-    if (this.trunks.matrices.length) {
-      const t = broadleafTrunk(scene);
+    this.trunks.forEach((b, i) => {
+      if (!b.matrices.length) return;
+      const t = broadleafTrunk(scene, 100 + i * 31);
       t.material = barkMat;
-      instances(t, this.trunks, this.shadows);
+      instances(t, b, this.shadows);
       out.push(t);
-    }
+    });
     if (this.firTrunks.matrices.length) {
       const t = MeshBuilder.CreateCylinder("firTrunk", { height: 1.8, diameterTop: 0.2, diameterBottom: 0.32, tessellation: 5 }, scene);
       t.position.y = 0.9;

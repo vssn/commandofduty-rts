@@ -1,5 +1,5 @@
 import { Engine, Matrix, Vector3, Viewport, type Camera } from "@babylonjs/core";
-import { ARTILLERY, BUILD, COMMANDOS, PLAYER, type StructureType } from "../config";
+import { ARTILLERY, BUILD, COMMANDOS, MAP_HALF, PLAYER, type StructureType } from "../config";
 import { ORDER_LINE_LIFE, type Game } from "../game/game";
 import type { Unit } from "../game/unit";
 
@@ -330,7 +330,7 @@ export class Overlay {
       }
       const a = cm.agent;
       // reach of the scoped rifle around the selected agent (gold when loaded, grey while reloading)
-      if (a.alive && a.selected) this.groundCircle(game, a.x, a.z, COMMANDOS.sniper.range, cm.sniperCooldown > 0 ? "150, 150, 140" : "233, 181, 60", false);
+      if (a.alive && a.selected) this.groundCircle(game, a.x, a.z, COMMANDOS.sniper.range, cm.sniperCooldown > 0 ? "150, 150, 140" : "233, 181, 60", false, true);
       if (a.alive && cm.pending && cm.pending.progress > 0) {
         const p = this.project(a.x, a.y + 3.6, a.z);
         if (p) {
@@ -383,20 +383,21 @@ export class Overlay {
   }
 
   /** Circle on the terrain (follows the hills), optionally filled. */
-  private groundCircle(game: Game, cx: number, cz: number, r: number, rgb: string, fill: boolean) {
+  private groundCircle(game: Game, cx: number, cz: number, r: number, rgb: string, fill: boolean, clip = false) {
     const ctx = this.ctx, s = this.scale;
     ctx.beginPath();
-    let started = false;
-    for (let i = 0; i <= 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
+    let started = false, pen = false;
+    for (let i = 0; i <= 96; i++) {
+      const a = (i / 96) * Math.PI * 2;
       const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-      const p = this.project(x, game.terrain.heightAt(x, z) + 0.2, z);
-      if (!p) continue;
-      if (started) ctx.lineTo(p.x * s, p.y * s);
-      else { ctx.moveTo(p.x * s, p.y * s); started = true; }
+      // clip: the part of the circle beyond the playfield is left out
+      const p = clip && (Math.abs(x) > MAP_HALF || Math.abs(z) > MAP_HALF) ? null : this.project(x, game.terrain.heightAt(x, z) + 0.2, z);
+      if (!p) { pen = false; continue; }
+      if (pen) ctx.lineTo(p.x * s, p.y * s);
+      else { ctx.moveTo(p.x * s, p.y * s); pen = started = true; }
     }
     if (!started) return;
-    ctx.closePath();
+    if (!clip) ctx.closePath();
     if (fill) {
       ctx.fillStyle = `rgba(${rgb}, 0.13)`;
       ctx.fill();

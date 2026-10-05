@@ -113,7 +113,8 @@ const EGG_DARK = 0.8;
 const EGG_REACH = 1 / 0.77;
 
 /** Lateral scale of the lit spot at distance u (in radii) along its axis: wide near the lamp, narrowing to a tip. */
-function eggWidth(u: number): number {
+function eggWidth(u: number, round = false): number {
+  if (round) return 1;
   // (the power makes the sides bulge: the full width is reached early, then it rounds off into the tip)
   return EGG.tip + (1 - EGG.tip) * Math.pow(smoothstep(-1.1, 0.45, u), 0.62);
 }
@@ -122,9 +123,9 @@ function eggWidth(u: number): number {
  * Where a point (u, v) - along and across the axis from the spot's centre towards the lamp, in radii -
  * lies in the spot: 1 is its edge, less is inside. Drawn and detection use the same shape.
  */
-function eggRho(u: number, v: number): number {
-  const a = u / (u > 0 ? EGG.near : EGG.far);
-  const b = v / eggWidth(u);
+function eggRho(u: number, v: number, round = false): number {
+  const a = round ? u : u / (u > 0 ? EGG.near : EGG.far);
+  const b = v / eggWidth(u, round);
   return Math.hypot(a, b);
 }
 
@@ -161,7 +162,7 @@ function eggMesh(scene: Scene, name: string): Mesh {
 }
 
 /** Lays the spot at (cx, cz) over the ground: its wide end towards (dirX, dirZ), the direction away from the lamp. */
-function placeEgg(m: Mesh, terrain: Terrain, cx: number, cz: number, dirX: number, dirZ: number, radius: number) {
+function placeEgg(m: Mesh, terrain: Terrain, cx: number, cz: number, dirX: number, dirZ: number, radius: number, round = false) {
   const pos = m.getVerticesData("position")!;
   const col = m.getVerticesData("color")!;
   const px = -dirZ, pz = dirX;
@@ -172,20 +173,20 @@ function placeEgg(m: Mesh, terrain: Terrain, cx: number, cz: number, dirX: numbe
     for (let j = 0; j < EGG_SECTORS; j++) {
       const th = (j / EGG_SECTORS) * Math.PI * 2;
       const a = rho * Math.cos(th), b = rho * Math.sin(th);
-      const u = a * (a > 0 ? EGG.near : EGG.far);
-      const v = b * eggWidth(u);
+      const u = round ? a : a * (a > 0 ? EGG.near : EGG.far);
+      const v = b * eggWidth(u, round);
       const x = cx + (dirX * u + px * v) * radius, z = cz + (dirZ * u + pz * v) * radius;
       pos[k] = x;
       pos[k + 1] = terrain.heightAt(x, z) + 0.2;
       pos[k + 2] = z;
       k += 3;
       // brightest at the tip (towards the lamp), a little darker out to the wide end
-      col[c + 3] = 1 - EGG_DARK * smoothstep(-0.9, 1.2, u);
+      col[c + 3] = round ? 1 : 1 - EGG_DARK * smoothstep(-0.9, 1.2, u);
       c += 4;
     }
   }
   pos[0] = cx; pos[1] = terrain.heightAt(cx, cz) + 0.2; pos[2] = cz;
-  col[3] = 1 - EGG_DARK * smoothstep(-0.9, 1.2, 0);
+  col[3] = round ? 1 : 1 - EGG_DARK * smoothstep(-0.9, 1.2, 0);
   m.updateVerticesData("position", pos);
   m.updateVerticesData("color", col);
   m.refreshBoundingInfo();
@@ -316,7 +317,7 @@ export class Searchlight {
     x: number,
     z: number,
     readonly radius: number,
-    mounted = false,
+    private readonly mounted = false,
     tint: { beam: RGB; beamAlpha: number; pool: RGB; poolAlpha: number } = { beam: [0.75, 0.82, 1], beamAlpha: 0.1, pool: [0.85, 0.9, 1], poolAlpha: 0.85 },
   ) {
     this.x = x;
@@ -410,7 +411,7 @@ export class Searchlight {
     const dx = x - this.tx, dz = z - this.tz;
     const u = (dx * this.dirX + dz * this.dirZ) / this.radius;
     const v = (-dx * this.dirZ + dz * this.dirX) / this.radius;
-    return eggRho(u, v) < 1;
+    return eggRho(u, v, this.mounted) < 1;
   }
 
   aim(tx: number, tz: number) {
@@ -428,7 +429,7 @@ export class Searchlight {
       this.dirX = -dx / dl;
       this.dirZ = -dz / dl;
     }
-    placeEgg(this.pool, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius);
-    placeEgg(this.edge, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius);
+    placeEgg(this.pool, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius, this.mounted);
+    placeEgg(this.edge, this.terrain, tx, tz, this.dirX, this.dirZ, this.radius, this.mounted);
   }
 }
