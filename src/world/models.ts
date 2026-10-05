@@ -5,6 +5,12 @@ import { brickBox } from "./masonry";
 
 const matCache = new Map<string, StandardMaterial>();
 
+/**
+ * Phones and tablets (touch screens) get lighter figures: the soldiers are drawn by the dozen, and the
+ * fine detail (faces, fingers, helmet patches, smooth round parts) costs more there than it shows.
+ */
+const LOW_DETAIL = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+
 /** Classic look of a rim light inside a surface: the emissive colour fades in towards the edges (Fresnel). */
 function rimFresnel(m: StandardMaterial, rim: RGB) {
   const f = new FresnelParameters();
@@ -252,7 +258,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const tube = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, ra: number, rb: number, c: RGB, flat = 1) => {
     const d = new Vector3(bx - ax, by - ay, bz - az);
     const len = d.length();
-    const m = MeshBuilder.CreateCylinder("seg", { height: len, diameterBottom: ra * 2, diameterTop: rb * 2, tessellation: 12 }, scene);
+    const m = MeshBuilder.CreateCylinder("seg", { height: len, diameterBottom: ra * 2, diameterTop: rb * 2, tessellation: LOW_DETAIL ? 7 : 12 }, scene);
     m.scaling.z = flat;
     m.bakeCurrentTransformIntoVertices();
     m.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
@@ -263,7 +269,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     return m;
   };
   const ball = (r: number, x: number, y: number, z: number, c: RGB, sy = 1) => {
-    const m = MeshBuilder.CreateSphere("ball", { diameter: r * 2, segments: 10 }, scene);
+    const m = MeshBuilder.CreateSphere("ball", { diameter: r * 2, segments: LOW_DETAIL ? 5 : 10 }, scene);
     m.scaling.y = sy;
     m.position.set(x, y, z);
     paint(m, c, Math.PI * r * 2, Math.PI * r * sy);
@@ -287,9 +293,10 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     ball(0.062, e[0], e[1], e[2], uni);
     tube(e[0], e[1], e[2], h[0], h[1], h[2], 0.062, 0.05, uni);
     ball(0.058, h[0], h[1], h[2], skin);
-    // cuff, fingers and thumb along the forearm's direction
+    // cuff, fingers and thumb along the forearm's direction (phones: just the cuff)
     const f0 = 0.78;
     tube(e[0] + (h[0] - e[0]) * f0, e[1] + (h[1] - e[1]) * f0, e[2] + (h[2] - e[2]) * f0, h[0] - (h[0] - e[0]) * 0.04, h[1] - (h[1] - e[1]) * 0.04, h[2] - (h[2] - e[2]) * 0.04, 0.058, 0.056, uniDark);
+    if (LOW_DETAIL) return;
     const dir = new Vector3(h[0] - e[0], h[1] - e[1], h[2] - e[2]).normalize();
     const side = Vector3.Cross(dir, up);
     if (side.lengthSquared() < 1e-4) side.set(1, 0, 0);
@@ -304,6 +311,10 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
 
   /** Face (the head ball sits at y 1.69): eyes with brows, nose, lips, chin, ears and a jaw line. */
   const faceDetail = () => {
+    if (LOW_DETAIL) {
+      box(0.03, 0.055, 0.045, 0, 1.69, 0.138, [0.8, 0.62, 0.5]); // just the nose
+      return;
+    }
     const brow: RGB = [0.22, 0.16, 0.1];
     const shade: RGB = [0.8, 0.62, 0.5];
     ball(0.1, 0, 1.64, 0.05, skin, 0.75); // jaw
@@ -534,11 +545,11 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     // down over the sides and the back of the head and leaves the face open; a mount on the front,
     // rails on the sides, a retention pad at the back, a chin strap
     const hl = { rough: 0.55, metal: 0.08, surface: "cloth" as SurfaceKind, pbr: { color: [0.92, 0.92, 0.88] as RGB, camo: true } };
-    const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.37, segments: 14, slice: 0.5 }, scene);
+    const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.37, segments: LOW_DETAIL ? 8 : 14, slice: 0.5 }, scene);
     helm.scaling.set(1, 0.95, 1.13);
     helm.position.set(0, 1.755, -0.012);
     helm.material = mat(scene, helmet, { twoSided: true, ...hl, rim });
-    const skirt = MeshBuilder.CreateSphere("helmSkirt", { diameter: 0.376, segments: 14, slice: 0.66, arc: 0.64 }, scene);
+    const skirt = MeshBuilder.CreateSphere("helmSkirt", { diameter: 0.376, segments: LOW_DETAIL ? 8 : 14, slice: 0.66, arc: 0.64 }, scene);
     skirt.scaling.set(1, 0.95, 1.13);
     skirt.position.set(0, 1.74, -0.012);
     skirt.rotation.y = -2.513; // the open side faces forward
@@ -557,14 +568,14 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     box(0.02, 0.04, 0.012, 0, 1.69, -0.215, [0.16, 0.16, 0.15]);
     // the team's colour on an elastic band round the shell and a patch on the crown (in the classic
     // look they merge with the team-coloured helmet; on the camouflage cover they mark the side)
-    const teamBand = MeshBuilder.CreateTorus("helmBand", { diameter: 0.372, thickness: 0.022, tessellation: 20 }, scene);
+    const teamBand = MeshBuilder.CreateTorus("helmBand", { diameter: 0.372, thickness: 0.022, tessellation: LOW_DETAIL ? 10 : 20 }, scene);
     teamBand.scaling.z = 1.13;
     teamBand.position.set(0, 1.775, -0.012);
     teamBand.material = mat(scene, teamC, { rough: 0.7 });
     parts.push(teamBand);
     if (!medic) box(0.1, 0.016, 0.1, 0, 1.932, -0.01, teamC);
     // a net of dark patches over the shell
-    for (const [a, el] of [[0.4, 0.9], [2.0, 0.8], [3.6, 1.0], [5.1, 0.85], [1.2, 1.2], [4.4, 1.15]] as [number, number][]) {
+    for (const [a, el] of (LOW_DETAIL ? [] : [[0.4, 0.9], [2.0, 0.8], [3.6, 1.0], [5.1, 0.85], [1.2, 1.2], [4.4, 1.15]]) as [number, number][]) {
       const r0 = 0.18, ca = Math.cos(a), sa = Math.sin(a), ce = Math.cos(el);
       const patch = box(0.07, 0.02, 0.05, ca * r0 * ce * 0.98, 1.755 + Math.sin(el) * r0 * 0.9, sa * r0 * ce * 0.98, [0.26, 0.3, 0.18], 0, -a);
       patch.rotation.x = 0.4 * (sa > 0 ? 1 : -1);
