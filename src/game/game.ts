@@ -863,9 +863,13 @@ export class Game {
       az = pz + Math.cos(from.turret) * 1.6;
       ay = from.y + JEEP_DIM.turret.y + 0.05;
     } else {
-      ax = from.x + Math.sin(from.heading) * 1.3;
-      az = from.z + Math.cos(from.heading) * 1.3;
-      ay = from.y + (from.stance === "prone" ? 0.5 : from.stance === "kneel" ? 1.3 : 1.75);
+      // the tip of the rifle (see the soldier model: muzzle 1.18 ahead of the shoulders and 0.08 to
+      // the right, at 1.25 height, all scaled by 1.45); lying down the rifle points over the ground
+      const prone = from.stance === "prone";
+      const fwd = prone ? 1.3 : 1.75, side = prone ? 0 : 0.12;
+      ax = from.x + Math.sin(from.heading) * fwd + Math.cos(from.heading) * side;
+      az = from.z + Math.cos(from.heading) * fwd - Math.sin(from.heading) * side;
+      ay = from.y + (prone ? 0.5 : from.stance === "kneel" ? 1.3 : 1.8);
     }
     this.onMuzzle?.(ax, ay, az, kind);
     this.tracers.push({

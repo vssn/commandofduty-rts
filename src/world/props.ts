@@ -407,9 +407,14 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
     for (let t = 4; t < len - 4; t += 5 + r() * 9) {
       if (r() < 0.45) continue;
       const side = r() < 0.5 ? 1 : -1;
-      const off = rd.w / 2 + 1.4; // on the verge, half off the road
+      // the village was left in a hurry: parked cars stand crooked, some half in the lane, a few turned
+      // across it as if their drivers just got out and ran
+      const mood = r();
+      const askew = mood < 0.45, inLane = mood < 0.12;
+      const off = rd.w / 2 + (inLane ? -0.5 : askew && r() < 0.4 ? 0.3 : 1.4);
       const x = rd.a.x + dx * t + dz * side * off, z = rd.a.z + dz * t - dx * side * off;
-      const rot = Math.atan2(dz, dx) * -1 + (side > 0 ? 0 : Math.PI);
+      const rot = Math.atan2(dz, dx) * -1 + (side > 0 ? 0 : Math.PI) + (r() - 0.5) * 0.14
+        + (askew ? (r() < 0.5 ? -1 : 1) * (inLane ? 0.7 + r() * 0.7 : 0.22 + r() * 0.4) : 0);
       if (layout.streetLights.some((l) => Math.hypot(l.x - x, l.z - z) < 3)) continue;
       if (!nav.areaFree(x, z, 2.0, 0.9, rot, 0) || placed.some((p) => Math.hypot(p.x - x, p.z - z) < p.rad + 2.4)) continue;
       put(cars[Math.floor(r() * cars.length)], x, z, rot, 2.0, 0.9, 1.5, "infantry");

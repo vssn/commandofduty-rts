@@ -8,7 +8,7 @@ import { attachSurfaceTexture } from "./surfacePbr";
 import { attachRim } from "./rimPbr";
 
 /** Colour grading of the realistic mode (ColorCurves scale: -100..100). */
-const GRADE = { saturation: -10, highlights: 20, shadows: 12, tint: 18, exposure: 1.55 };
+const GRADE = { saturation: -18, highlights: 50, shadows: 12, tint: 18, exposure: 1.55 };
 
 const toLinear = (v: number) => Math.pow(v, 2.2);
 

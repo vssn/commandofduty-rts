@@ -105,6 +105,8 @@ export class SoldierView implements UnitView {
   private readonly shinR: InstancedMesh;
   private readonly arms: InstancedMesh;
   private readonly head: InstancedMesh;
+  /** The upper body (torso, arms, head) hangs on a node at the hips, so it can lean forward while the legs stay put. */
+  private readonly torso: TransformNode;
   /** Grenadiers only: the right arm with the grenade. */
   private readonly throwArm: InstancedMesh | null;
   private phase = Math.random() * 10;
@@ -128,10 +130,14 @@ export class SoldierView implements UnitView {
   constructor(scene: Scene, tpl: SoldierTemplates, name: string, blob: Mesh) {
     this.root = new TransformNode(name, scene);
     this.shadow = new BlobShadow(blob);
+    this.torso = new TransformNode("torso", scene);
+    this.torso.parent = this.root;
+    this.torso.position.y = HIP_Y;
     const body = tpl.body.createInstance("body");
     body.isPickable = false;
-    body.parent = this.root;
-    ({ arms: this.arms, head: this.head, throwArm: this.throwArm } = buildUpper(tpl, this.root));
+    body.parent = this.torso;
+    body.position.y = -HIP_Y; // (the templates are modelled from the feet up)
+    ({ arms: this.arms, head: this.head, throwArm: this.throwArm } = buildUpper(tpl, this.torso));
     ({ thigh: this.legL, shin: this.shinL } = buildLeg(tpl, this.root, -HIP_X));
     ({ thigh: this.legR, shin: this.shinR } = buildLeg(tpl, this.root, HIP_X));
   }
@@ -193,10 +199,16 @@ export class SoldierView implements UnitView {
     const twist = throwing ? curve(tt, THROW.twist) : 0;
     // lean into the hill when climbing, lean back when going down
     this.root.rotation.set(
-      (0.08 + grade * 0.3) * this.stride + 0.12 * k + p * (Math.PI / 2 - 0.08),
+      grade * 0.3 * this.stride + 0.12 * k + p * (Math.PI / 2 - 0.08),
       u.heading + twist,
       Math.sin(this.phase) * 0.04 * this.stride + iw * shift * 0.03,
     );
+
+    // running: the upper body leans forward from the hips (a little more when pushing uphill) and the
+    // shoulders turn against the hips; the head stays level and looks ahead
+    const run = this.stride * (1 - k) * (1 - p);
+    const lean = run * (0.2 + Math.max(0, grade) * 0.25);
+    this.torso.rotation.set(lean, -Math.sin(this.phase) * 0.07 * run, 0);
 
     // weapon: shouldered when engaging, carried across the chest when walking, lowered and angled
     // when standing around. Every ~12 s an idle soldier briefly checks his weapon.
@@ -224,7 +236,7 @@ export class SoldierView implements UnitView {
       carry * (-0.28 - iw * 0.12) + check * 0.2,
       carry * 0.1 - armRoll,
     );
-    this.arms.position.y = SHOULDER_Y + breath;
+    this.arms.position.y = SHOULDER_Y - HIP_Y + breath;
     if (this.throwArm) {
       // throwing arm: relaxed swing with the body normally, the full wind-up and throw when throwing
       this.throwArm.rotation.set(
@@ -232,7 +244,7 @@ export class SoldierView implements UnitView {
         0,
         throwing ? curve(tt, THROW.armRoll) : armRoll,
       );
-      this.throwArm.position.y = THROW_SHOULDER.y + breath;
+      this.throwArm.position.y = THROW_SHOULDER.y - HIP_Y + breath;
     }
     // head: looks around while idle (slow sweep with the occasional quick glance), otherwise ahead
     const look = cycle > 4 && cycle < 8.5 ? Math.sin((cycle - 4) / 4.5 * Math.PI * 2) * 0.6 : Math.sin(it * 0.3 + this.seed) * 0.12;
@@ -240,9 +252,9 @@ export class SoldierView implements UnitView {
     const medic = u.type === "medic";
     const scan = medic ? look * 1.35 : look;
     const screenLook = u.type === "pilot" ? 0.4 : 0; // eyes on his screen
-    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5 + screenLook, scan * iw * (1 - this.gearW) * (screenLook ? 0.2 : 1), 0);
+    this.head.rotation.set(-p * 1.2 + throwLean * 0.6 - check * 0.25 + breath + this.gearW * 0.5 + screenLook - lean * 0.6, scan * iw * (1 - this.gearW) * (screenLook ? 0.2 : 1), 0);
     if (medic) this.root.rotation.y += look * 0.3 * iw * (1 - this.gearW);
-    this.head.position.y = SHOULDER_Y + breath;
+    this.head.position.y = SHOULDER_Y - HIP_Y + breath;
     // round shadow; stretched along the body when lying down, a bit wider when kneeling
     this.shadow.place(u.x, u.y, u.z, u.heading, 0.95 + k * 0.1, 0.95 + k * 0.15 + p * 0.9);
   }
@@ -268,6 +280,7 @@ export class SoldierView implements UnitView {
    * kneeling ones sag onto both knees, sway, then topple forward onto their face.
    */
   animateDeath(u: Unit, t: number) {
+    this.torso.rotation.set(0, 0, 0);
     const ease = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
     const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
     if (!this.death) {

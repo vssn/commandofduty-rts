@@ -17,13 +17,14 @@ import { Minimap } from "./ui/minimap";
 import { Overlay } from "./ui/overlay";
 import { RtsCamera } from "./ui/rtsCamera";
 import { createCrops } from "./world/crops";
-import { createMeadowGrass } from "./world/meadows";
+import { createMeadowGrass, createMeadowTussocks } from "./world/meadows";
 import { COMPOUND } from "./world/fortification";
 import { createHedges } from "./world/hedges";
 import { createEnvironment } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
 import { createStreetLights } from "./world/lighting";
 import { createProps } from "./world/props";
+import { createVillageDecay } from "./world/villageDecay";
 import { Birds } from "./world/birds";
 import { createDirtTracks } from "./world/dirtTracks";
 import { MuzzleFlashes } from "./game/muzzleFlash";
@@ -31,7 +32,7 @@ import { FogRenderer } from "./world/fogRender";
 import { PbrMode } from "./world/pbr";
 import { preloadGroundTextures, RealisticTerrain } from "./world/terrainPbr";
 import { preloadSurfaceTextures } from "./world/surfacePbr";
-import { RealisticCrops, RealisticHedges, RealisticTrees } from "./world/floraPbr";
+import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
 
@@ -63,13 +64,14 @@ const terrain = new Terrain(scene, layout);
 const nav = new NavGrid();
 setBoot(0.18);
 await tick(); // the map is there
-const realHedges = new RealisticHedges(scene, env.shadows);
-const hedges = createHedges(scene, layout, terrain, env.shadows, realHedges);
+const hedges = createHedges(scene, layout, terrain, env.shadows);
 // the realistic graphics mode has its own field plants and trees, placed exactly like the classic ones
 const realCrops = new RealisticCrops(scene, env.shadows);
 createCrops(scene, layout, terrain, realCrops);
 // meadows (hay, wild, pasture): grass of different lengths on the large green areas
 createMeadowGrass(scene, layout, terrain, realCrops);
+// tall tussocks of grass along the meadows' edges: scenery only, they are no obstacle
+const tussocks = createMeadowTussocks(scene, layout, terrain, env.shadows);
 createHouses(scene, layout, terrain, env.shadows, nav);
 const realTrees = new RealisticTrees(scene, env.shadows);
 const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);
@@ -84,12 +86,14 @@ for (const h of hedges) nav.blockRect(h.x, h.z, h.hw, h.hd, h.rot, 0);
 // containers, cabins, cars, garages, fences and farm machinery (placed on ground that is still free;
 // the solid ones block movement)
 const props = createProps(scene, layout, terrain, env.shadows, nav);
+// the villages look left in a hurry: rubbish in the streets and gardens, a few tufts of grass at the walls
+createVillageDecay(scene, layout, terrain, env.shadows, props);
 const birds = new Birds(scene, terrain, trees);
 // farm tracks with ruts, a grassy middle strip and puddles
 const tracks = createDirtTracks(scene, layout, terrain, nav);
 setBoot(0.58);
 await tick(); // props and tracks
-// muzzle flashes that light up the surroundings in the night mission
+// muzzle flashes that light up the surroundings (in full by night, fainter by day, also in the menu demo)
 const muzzle = new MuzzleFlashes(scene, terrain);
 const game = new Game(scene, terrain, nav, layout, env.shadows);
 setBoot(0.72);
@@ -203,7 +207,9 @@ hud.onAudioChange = syncAudioUi;
 
 // ------------------------------------------------------------------ graphics: classic / PBR
 const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
-  new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops, realHedges,
+  new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops,
+  // hedges: green boxes in the classic look, dense shrubs here; the tall grass tussocks only here
+  { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); } },
   // cars, tractors and trailers, the base buildings and the outposts get their detailed models
   { enable: () => props.setDetail(true), disable: () => props.setDetail(false) },
   { enable: () => game.setBaseDetail(true), disable: () => game.setBaseDetail(false) },
@@ -214,7 +220,7 @@ const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
 ]);
 /** Day / night for the environment and - after it - the PBR lighting. */
 function setNight(on: boolean) {
-  muzzle.enabled = on;
+  muzzle.night = on;
   muzzle.clear();
   env.setNight(on);
   pbr.setLighting();
@@ -522,6 +528,7 @@ scene.onBeforeRenderObservable.add(() => {
     birds.update(dt);
     tracks.update(dt);
     muzzle.update(dt);
+    tussocks.update(dt, game.units); // the tall grass bends away from whatever passes
   }
   if (inMenu) {
     // cinematic fly-over along a slow loop across the battlefield

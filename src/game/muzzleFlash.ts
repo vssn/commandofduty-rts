@@ -33,13 +33,16 @@ function glowTexture(scene: Scene): DynamicTexture {
 }
 
 /**
- * Muzzle flashes that light up their surroundings (commandos mode, by night): a glowing flare at
+ * Muzzle flashes that light up their surroundings (by night in full, by day fainter - also in the
+ * main menu's demo battle, where the 2D tracers are hidden): a glowing flare at
  * the muzzle and a warm, soft patch of light on the ground around it. Both are additive and unlit,
  * so they cost no scene lights and work in the classic and the realistic graphics mode.
  */
 export class MuzzleFlashes {
-  /** Only the night mission uses them. */
-  enabled = false;
+  /** Switched off only while no fighting is shown. */
+  enabled = true;
+  /** Night (the commandos mission): the full light on the ground; by day it is much fainter. */
+  night = false;
   private readonly slots: Slot[] = [];
   private next = 0;
   private base: Float32Array | null = null;
@@ -118,9 +121,10 @@ export class MuzzleFlashes {
       }
       const fade = (1 - k) * (0.8 + Math.random() * 0.4);
       const grow = 0.6 + 0.4 * k;
-      s.glowMat.alpha = Math.min(1, fade * 1.2);
+      const day = this.night ? 1 : 0.8;
+      s.glowMat.alpha = Math.min(1, fade * 1.2 * day);
       s.glow.scaling.setAll(s.peak.glow * grow);
-      s.groundMat.alpha = s.peak.alpha * fade;
+      s.groundMat.alpha = s.peak.alpha * fade * (this.night ? 1 : 0.3);
     }
   }
 

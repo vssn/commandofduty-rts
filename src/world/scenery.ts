@@ -2,7 +2,7 @@ import { Axis, Matrix, Mesh, MeshBuilder, Quaternion, Scene, ShadowGenerator, Ve
 import { MAP_HALF, TERRAIN_HALF } from "../config";
 import type { NavGrid } from "../game/nav";
 import { rng, valueNoise } from "../util/noise";
-import { HOUSE_BODY, HOUSE_ROOF, toWorld, type MapLayout, type RGB } from "./layout";
+import { HOUSE_BODY, HOUSE_ROOF, toLocal, toWorld, type MapLayout, type RGB } from "./layout";
 import { brickBox, brickFaceUV, brickMaterial, createRoofTiles, type RoofSpec } from "./masonry";
 import { createGable, mat, ROOF_ROUGH } from "./models";
 import type { RealisticTrees } from "./floraPbr";
@@ -57,17 +57,29 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
     return new InstanceBatch(m);
   });
   const chimneys = new InstanceBatch(chimTpl);
+  // foundations: a low concrete plinth under every house, a little wider than its walls, from below the
+  // lowest corner up to a hand's breadth above the highest - so the house stands on something
+  // instead of sitting in the grass, also on a slope
+  const plinthTpl = MeshBuilder.CreateBox("houseFoundation", { size: 1 }, scene);
+  plinthTpl.position.y = 0.5;
+  plinthTpl.bakeCurrentTransformIntoVertices();
+  plinthTpl.material = mat(scene, [0.55, 0.53, 0.49], { surface: "concrete" });
+  const plinths = new InstanceBatch(plinthTpl);
   const churchParts: Mesh[] = [];
   const tiles: RoofSpec[] = [];
 
   for (const h of layout.houses) {
-    let minY = Infinity;
+    let minY = Infinity, maxY = -Infinity;
     for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
       const p = toWorld(h.x, h.z, h.rot, (lx * h.w) / 2, (lz * h.d) / 2);
-      minY = Math.min(minY, terrain.heightAt(p.x, p.z));
+      const gy = terrain.heightAt(p.x, p.z);
+      minY = Math.min(minY, gy);
+      maxY = Math.max(maxY, gy);
     }
     const y = minY - 0.3;
     const q = Quaternion.RotationAxis(Axis.Y, h.rot);
+    const plinthBase = minY - 0.5, plinthH = maxY + 0.32 - plinthBase;
+    plinths.add(Matrix.Compose(new Vector3(h.w + 0.26, plinthH, h.d + 0.26), q, new Vector3(h.x, plinthBase, h.z)));
     nav.blockRect(h.x, h.z, h.w / 2, h.d / 2, h.rot);
 
     if (h.church) {
@@ -88,6 +100,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
       spire.position.set(tp.x, y + 15, tp.z);
       spire.rotation.y = h.rot + Math.PI / 4;
       spire.material = mat(scene, [0.24, 0.4, 0.36]);
+      plinths.add(Matrix.Compose(new Vector3(3.7, plinthH, 3.7), q, new Vector3(tp.x, plinthBase, tp.z)));
       nav.blockRect(tp.x, tp.z, 1.7, 1.7, h.rot);
       churchParts.push(body, roof, tower, spire);
       continue;
@@ -107,6 +120,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
   bodies.forEach((b) => b.finish(shadows));
   roofs.forEach((b) => b.finish(shadows));
   chimneys.finish(shadows);
+  plinths.finish(shadows);
   bodyTpl.setEnabled(false);
   roofTpl.setEnabled(false);
   for (const p of churchParts) {
@@ -189,6 +203,31 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
       const a = r() * Math.PI * 2, d = (s.r - 4) * Math.sqrt(r());
       const x = s.x + Math.cos(a) * d, z = s.z + Math.sin(a) * d;
       if (free(x, z, 2.2) && layout.nearestRoad(x, z).d > 2.2) place(x, z, r() < 0.15);
+    }
+  }
+
+  // single trees in the gaps between the houses: well clear of the walls (the crown is wide), the streets
+  // and each other - an accent, not a wood
+  const wallDistance = (x: number, z: number) => {
+    let best = Infinity;
+    for (const h of layout.houses) {
+      if (Math.abs(x - h.x) > 14 || Math.abs(z - h.z) > 14) continue;
+      const l = toLocal(h.x, h.z, h.rot, x, z);
+      best = Math.min(best, Math.hypot(Math.max(Math.abs(l.x) - h.w / 2, 0), Math.max(Math.abs(l.z) - h.d / 2, 0)));
+    }
+    return best;
+  };
+  for (const s of layout.suburbs) {
+    let added = 0;
+    for (let k = 0; k < 400 && added < 9; k++) {
+      const a = r() * Math.PI * 2, d = (s.r - 5) * Math.sqrt(r());
+      const x = s.x + Math.cos(a) * d, z = s.z + Math.sin(a) * d;
+      const gap = wallDistance(x, z);
+      if (gap < 3.4 || gap > 9) continue;
+      if (!free(x, z, 3.4) || layout.nearestRoad(x, z).d < 3) continue;
+      if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 7)) continue;
+      place(x, z, r() < 0.08);
+      added++;
     }
   }
 
