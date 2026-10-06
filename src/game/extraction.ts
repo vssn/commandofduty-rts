@@ -49,19 +49,24 @@ export function pickExtractionPoint(game: Game, from: { x: number; z: number }):
   const L = game.layout, nav = game.nav;
   const lim = MAP_HALF - 22;
   let best: { x: number; z: number } | null = null, bestScore = -Infinity;
-  for (let i = 0; i < 1200; i++) {
+  // in the city the helicopter sets down in the park (the only open ground there): closer to the outposts, and clear of ponds, paths and trees
+  const city = L.map === "embassy";
+  for (let i = 0; i < 2400; i++) {
     const x = (Math.random() * 2 - 1) * lim, z = (Math.random() * 2 - 1) * lim;
     if (L.suburbs.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 10)) continue;
-    if (L.forests.some((f) => Math.hypot(x - f.x, z - f.z) < f.r + 8)) continue;
+    if (L.forests.some((f) => Math.hypot(x - f.x, z - f.z) < f.r + (city ? 12 : 8))) continue;
+    if (city && !L.inPark(x, z, 8)) continue;
+    if (city && (L.pondDepth(x, z) > -0.35 || L.pathDistance(x, z) < 3)) continue;
     if (L.nearestRoad(x, z).d < 3) continue;
-    if (!nav.areaFree(x, z, 6, 6, 0, 0)) continue;
+    if (!nav.areaFree(x, z, city ? 7 : 6, city ? 12 : 6, 0, 0)) continue;
     const post = Math.min(...game.outposts.map((o) => Math.hypot(x - o.x, z - o.z)));
     const agent = Math.hypot(x - from.x, z - from.z);
-    if (post < 30 || agent < 55) continue;
+    if (post < (city ? 14 : 30) || agent < (city ? 40 : 55)) continue;
     const score = post + agent * 0.3 + Math.random() * 10;
     if (score > bestScore) { bestScore = score; best = { x, z }; }
   }
   // (fallback: the far corner from the agent)
+  if (!best && city) return nav.freePoint(-Math.sign(from.x || 1) * 60, 0);
   return best ?? nav.freePoint(-Math.sign(from.x || 1) * lim, -Math.sign(from.z || 1) * lim);
 }
 

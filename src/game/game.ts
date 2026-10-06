@@ -33,7 +33,7 @@ export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
   | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
-  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning" | "dronesLaunched" | "droneDown" | "extraction";
+  | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning" | "dronesLaunched" | "droneDown" | "extraction" | "documentsSecured" | "documentsAll" | "captivesFreed";
 export interface GameEventData { outpost: Outpost; bonus: number; structures?: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 

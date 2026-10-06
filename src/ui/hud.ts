@@ -31,6 +31,9 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   extraction: "Alle Ziele zerstört – zum Extraktionspunkt (blauer Rauch, Minimap)!",
   dronesLaunched: "Der Feind ist alarmiert – zwei Drohnen suchen das Gelände ab",
   droneDown: "Drohne ausgeschaltet",
+  documentsSecured: "Dokumente gesichert",
+  documentsAll: "Alle Dokumente gesichert – zum Extraktionspunkt (blauer Rauch, Minimap)!",
+  captivesFreed: "Gefangene befreit – sie kämpfen an unserer Seite",
 };
 
 const COLOR = { own: "#4d8dff", enemy: "#ef4a3c", neutral: "rgba(46, 48, 36, 0.95)" };
@@ -236,17 +239,23 @@ export class Hud {
     }
     t.charge.classList.toggle("poor", m.charges <= 0);
 
-    const pips = Array.from({ length: COMMANDOS.targets }, (_, i) => `<span class="pip${i < m.destroyedOutposts ? " done" : ""}"></span>`).join("");
+    const docs = m.kind === "documents";
+    const total = docs ? m.embassies.length : COMMANDOS.targets;
+    const done = docs ? m.documents : m.destroyedOutposts;
+    const pips = Array.from({ length: total }, (_, i) => `<span class="pip${i < done ? " done" : ""}"></span>`).join("");
     const left = Math.ceil(m.timeLeft);
     const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
     const open = m.caches.filter((c) => !c.taken).length;
     const goal = m.extraction
       ? `<strong>Extraktionspunkt erreichen</strong><span class="pips">${pips}</span><span>Blauer Rauch – auf der Minimap markiert</span>`
-      : `<strong>Stellungen sprengen: ${m.destroyedOutposts} / ${COMMANDOS.targets}</strong><span class="pips">${pips}</span>`;
+      : docs
+        ? `<strong>Dokumente bergen: ${done} / ${total}</strong><span class="pips">${pips}</span><span>Botschaften (Villen am Park) auf der Minimap markiert – am Eingang kurz verweilen</span>`
+        : `<strong>Stellungen sprengen: ${done} / ${total}</strong><span class="pips">${pips}</span>`;
     const html = goal +
       `<span class="clock${left <= 60 ? " urgent" : ""}">Zeit: ${clock}</span>` +
       `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
       `<span>${open ? `Verstecke mit Sprengstoff (Minimap): ${open}` : "Alle Verstecke geleert"}</span>` +
+      (docs ? `<span>Befreite Soldaten an unserer Seite: ${m.freed.length}</span>` : "") +
       (m.aggressive ? `<span class="clock">Feind alarmiert · Drohnen: ${m.dronesActive}</span>` : "") +
       `<span>Scharfschuss (Gegner anklicken/antippen): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
     if (html !== this.lastMission) {
@@ -289,7 +298,9 @@ export class Hud {
         ? ["Die feindliche U-Bahn-Station wurde zerstört.", "Unsere U-Bahn-Station ist gefallen."]
         : ["Die feindliche Kaserne wurde zerstört.", "Unsere Kaserne ist gefallen."],
       skirmish: ["Der Feind wurde aufgerieben.", "Unsere Truppen wurden aufgerieben."],
-      commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern, der Agent ist ausgeflogen.", "Der Agent ist gefallen. Auftrag gescheitert."],
+      commandos: this.game.commandos?.kind === "documents"
+        ? ["Auftrag erfüllt – die Dokumente aus allen drei Botschaften sind gesichert, der Agent ist ausgeflogen.", "Der Agent ist gefallen. Auftrag gescheitert."]
+        : ["Auftrag erfüllt – die Stellungen liegen in Trümmern, der Agent ist ausgeflogen.", "Der Agent ist gefallen. Auftrag gescheitert."],
     };
     $("banner-text").textContent = mode === "commandos" && result === "lose" && this.game.commandos?.timeUp
       ? "Die Zeit ist abgelaufen. Auftrag gescheitert."

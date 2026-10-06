@@ -20,6 +20,9 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   timeWarning: "Noch eine Minute",
   dronesLaunched: "Feindliche Drohnen gestartet",
   droneDown: "Drohne ausgeschaltet",
+  documentsSecured: "Dokumente gesichert",
+  documentsAll: "Alle Dokumente gesichert. Erreichen Sie den Extraktionspunkt.",
+  captivesFreed: "Gefangene befreit",
   extraction: "Alle Ziele zerstört. Erreichen Sie den Extraktionspunkt.",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",
@@ -160,7 +163,7 @@ export class AudioSystem {
       } else if (ev === "outpostLost") {
         if (team === PLAYER) this.announce(data?.outpost.kind === "radar" ? "Radar ausgefallen" : "Stellung verloren");
       } else if (team === PLAYER && ANNOUNCE[ev]) {
-        this.announce(ANNOUNCE[ev]!, ev === "win" || ev === "lose" || ev === "extraction");
+        this.announce(ANNOUNCE[ev]!, ev === "win" || ev === "lose" || ev === "extraction" || ev === "documentsAll");
       }
     });
 

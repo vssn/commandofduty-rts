@@ -713,10 +713,17 @@ export class DropCutscene {
     const where = [...count].map(([d, n]) => (n > 1 ? `${NUMBERS[n]} im ${d}` : `eines im ${d}`));
     const list = where.length > 1 ? `${where.slice(0, -1).join(", ")} und ${where[where.length - 1]}` : where[0] ?? "";
     const n = m.caches.length;
+    if (m.kind === "documents") {
+      return [
+        `Agent. Ihr Auftrag: Suchen Sie ${NUMBERS[m.embassies.length] ?? m.embassies.length} Botschaften auf, und bergen Sie dort die geheimen Dokumente.`,
+        "Es sind Stadtvillen am Park, jedes Mal andere; auf Ihrer Karte sind sie markiert. Die Gebäude sind stark bewacht, und auch die Stellungen sind in Feindeshand.",
+        `Schalten Sie die Wachen einer Stellung aus, befreien Sie vielleicht Gefangene, die an Ihrer Seite kämpfen. Sie haben ${Math.round(m.timeLimit / 60)} Minuten. Viel Erfolg.`,
+      ];
+    }
     return [
       `Agent. Ihr Auftrag: Sprengen Sie ${COMMANDOS.targets} feindliche Stellungen, und bleiben Sie unentdeckt.`,
       `Sie landen ohne Sprengstoff. Die Depots liegen versteckt an Waldrändern: ${NUMBERS[n] ?? n} Stück, ${list}.`,
-      `Meiden Sie Scheinwerfer und Drohnen. Sie haben ${Math.round(COMMANDOS.timeLimit / 60)} Minuten. Viel Erfolg.`,
+      `Meiden Sie Scheinwerfer und Drohnen. Sie haben ${Math.round(m.timeLimit / 60)} Minuten. Viel Erfolg.`,
     ];
   }
 

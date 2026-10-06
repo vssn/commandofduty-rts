@@ -464,7 +464,8 @@ function startExtractionCinematic(at: { x: number; z: number }) {
   // when the camera moves to the helicopter, the high-score table comes up; the scene waits for the name
   extract.onScore = () => {
     const m = game.commandos!;
-    scoreboard.show({ time: m.timeLeft, outposts: m.destroyedOutposts, drones: m.dronesDown, soldiers: m.soldiersDown });
+    // (the city mission counts the soldiers it freed where the other counts the outposts it blew up)
+    scoreboard.show({ time: m.timeLeft, outposts: m.kind === "documents" ? m.freedTotal : m.destroyedOutposts, drones: m.dronesDown, soldiers: m.soldiersDown }, m.kind);
   };
   extract.holdOpen = () => scoreboard.waiting;
   Object.assign(window, { extract });
@@ -569,7 +570,7 @@ function startGame(mode: GameMode) {
       cam.flyIn(a.x, a.z + 6);
       input.enabled = hud.enabled = true;
       fogRender.strength = 1;
-      hud.toast(`Sprenge ${COMMANDOS.targets} feindliche Stellungen – bleib unentdeckt`);
+      hud.toast(game.commandos!.kind === "documents" ? "Bergen Sie die Dokumente aus den drei Botschaften – bleib unentdeckt" : `Sprenge ${COMMANDOS.targets} feindliche Stellungen – bleib unentdeckt`);
     });
     Object.assign(window, { drop });
     return;
@@ -627,16 +628,26 @@ const requestStart = (mode: GameMode, map: MapId = "hills") => {
   starting = true;
   void artDone.catch(() => undefined).then(() => startGame(mode)); // also if the artwork failed
 };
-// "Eroberung" first asks for the map (Gefecht and Commandos are played on the hill country)
+// "Eroberung" and "Commandos" first ask for the map (Gefecht is played on the hill country); the cards describe
+// the map as the mode in question uses it
 const menuMaps = document.getElementById("menu-maps")!;
-const showMaps = (on: boolean) => {
+let mapsFor: "base" | "commandos" = "base";
+const showMaps = (on: boolean, mode: "base" | "commandos" = "base") => {
+  mapsFor = mode;
   menuModes.hidden = on;
   menuMaps.hidden = !on;
+  if (!on) return;
+  document.getElementById("maps-title")!.textContent = `${mode === "base" ? "Eroberung" : "Commandos"} – Karte wählen`;
+  for (const el of menuMaps.querySelectorAll<HTMLElement>("[data-text-commandos]")) {
+    el.dataset.textBase ??= el.innerHTML;
+    el.innerHTML = mode === "commandos" ? el.dataset.textCommandos! : el.dataset.textBase;
+  }
 };
-document.getElementById("mode-conquest")!.addEventListener("click", () => showMaps(true));
+document.getElementById("mode-conquest")!.addEventListener("click", () => showMaps(true, "base"));
+document.getElementById("mode-commandos")!.addEventListener("click", () => showMaps(true, "commandos"));
 document.getElementById("maps-back")!.addEventListener("click", () => showMaps(false));
 for (const el of document.querySelectorAll<HTMLElement>("#menu-maps [data-map]")) {
-  el.addEventListener("click", () => requestStart("base", el.dataset.map as MapId));
+  el.addEventListener("click", () => requestStart(mapsFor, el.dataset.map as MapId));
 }
 // the city map's names for the base and the production outposts
 if (MAP === "embassy") for (const el of document.querySelectorAll<HTMLElement>("[data-city]")) el.textContent = el.dataset.city!;
@@ -645,7 +656,6 @@ for (const m of ["hills", "embassy"] as MapId[]) {
   (document.getElementById(`map-img-${m}`) as HTMLImageElement).src = renderMapPreview(m === MAP ? layout : new MapLayout(m));
 }
 document.getElementById("mode-skirmish")!.addEventListener("click", () => requestStart("skirmish"));
-document.getElementById("mode-commandos")!.addEventListener("click", () => requestStart("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
 const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight, streetLights }).finally(() => {

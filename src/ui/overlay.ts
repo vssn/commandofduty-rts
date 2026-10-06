@@ -1,5 +1,5 @@
 import { Engine, Matrix, Vector3, Viewport, type Camera } from "@babylonjs/core";
-import { ARTILLERY, BUILD, COMMANDOS, MAP_HALF, PLAYER, type StructureType } from "../config";
+import { ARTILLERY, BUILD, COMMANDOS, EMBASSY_OPS, MAP_HALF, PLAYER, type StructureType } from "../config";
 import { ORDER_LINE_LIFE, type Game } from "../game/game";
 import type { Unit } from "../game/unit";
 
@@ -264,6 +264,21 @@ export class Overlay {
         ctx.fillStyle = "#ffd25a";
         ctx.strokeText("Sprengstoff", p.x, p.y);
         ctx.fillText("Sprengstoff", p.x, p.y);
+      }
+      // embassies (document mission): a ring at the front door with a label above the roof, and the securing progress
+      for (const e of cm.embassies) {
+        if (e.taken) continue;
+        this.groundCircle(game, e.door.x, e.door.z, EMBASSY_OPS.door.reach, "255, 235, 140", false);
+        const p = this.projectDev(e.villa.x, game.terrain.heightAt(e.villa.x, e.villa.z) + e.villa.h + e.villa.roofH + 6.5, e.villa.z);
+        if (!p) continue;
+        ctx.font = `bold ${14 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3 * s;
+        ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
+        ctx.fillStyle = "#ffe48a";
+        const txt = e.progress > 0 ? `${e.name} · Dokumente ${Math.round(e.progress * 100)} %` : `${e.name} · Dokumente`;
+        ctx.strokeText(txt, p.x, p.y);
+        ctx.fillText(txt, p.x, p.y);
       }
       const label = (text: string, x: number, y: number, color: string) => {
         ctx.font = `bold ${14 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
