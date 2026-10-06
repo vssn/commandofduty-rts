@@ -1,5 +1,5 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import { DRONE_DIM, HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
+import { DRONE_DIM, HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, PILOT_CASE_Z, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import { smoothstep } from "../util/noise";
 import type { Unit } from "./unit";
@@ -171,7 +171,7 @@ export class SoldierView implements UnitView {
   }
 
   /** `moved` < 0: the distance was walked backwards (the steps run the other way). */
-  sync(u: Unit, dt: number, moved: number) {
+  sync(u: Unit, dt: number, moved: number, terrain?: Terrain) {
     const walking = u.moving && Math.abs(moved) > 0.001;
     // walk cycle advances with distance so the feet don't slide; uphill = short, quick steps,
     // downhill = longer strides
@@ -244,6 +244,14 @@ export class SoldierView implements UnitView {
       u.heading + twist,
       Math.sin(this.phase) * 0.04 * this.stride + iw * shift * 0.03,
     );
+    if (this.kit?.isEnabled()) {
+      // the kit lies on the ground, not on the kneeling body: the hips' drop and the forward lean
+      // are taken back out, and it follows the slope of the ground ahead
+      const ahead = PILOT_CASE_Z;
+      const slope = terrain ? (terrain.heightAt(u.x + sh * ahead, u.z + ch * ahead) - u.y) / ahead : 0;
+      this.kit.position.set(0, u.y - this.root.position.y, 0);
+      this.kit.rotation.set(-this.root.rotation.x - Math.atan(slope), 0, -this.root.rotation.z);
+    }
 
     // running: the upper body leans forward from the hips (a little more when pushing uphill) and the
     // shoulders turn against the hips; the head stays level and looks ahead

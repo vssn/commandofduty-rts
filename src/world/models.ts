@@ -193,6 +193,9 @@ export const THROW_SHOULDER = { x: 0.26 * SOLDIER_SCALE, y: 1.4 * SOLDIER_SCALE 
 /** Knee joint relative to the hip joint (scaled), where the shin hangs from the thigh. */
 export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 
+/** Drone pilot: how far in front of him (world units) he sets down the drone's case; the drone starts from it. */
+export const PILOT_CASE_Z = 1.95;
+
 export type SoldierVariant = "rifleman" | "grenadier" | "agent" | "medic" | "pilot";
 
 export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
@@ -525,10 +528,27 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   if (!grenadier && !medic && !pilot) for (const x of [-0.13, 0.13]) box(0.11, 0.12, 0.07, x, 0.97, 0.15, kit);
   let laptopParts: Mesh[] = [];
   if (pilot) {
-    // laptop on the ground in front of his knees (he kneels: the body sits 0.35 m lower), screen
-    // glowing - a template of its own, set down only when he kneels
+    // his kit, set down on the ground in front of him (a template of its own, shown only while he
+    // kneels; modelled from the ground up - the view keeps it on the ground): an opened hard case
+    // with the drone in its foam, the lid folded over towards him and lying flat, the laptop on it
     const before = parts.length;
-    const lx = 0, ly = 0.3, lz = 0.62;
+    const S = SOLDIER_SCALE;
+    const caseZ = PILOT_CASE_Z / S, cw = 0.56, cd = 0.5, ch = 0.18, wall = 0.025;
+    const shell: RGB = [0.22, 0.24, 0.2], foam: RGB = [0.07, 0.07, 0.075], steel: RGB = [0.5, 0.5, 0.52];
+    const near = caseZ - cd / 2; // the hinge side
+    box(cw, 0.02, cd, 0, 0.01, caseZ, shell); // bottom
+    box(cw - wall * 2, 0.05, cd - wall * 2, 0, 0.045, caseZ, foam); // foam bed (the drone lies on it)
+    for (const sx of [-1, 1]) box(wall, ch, cd, sx * (cw / 2 - wall / 2), ch / 2, caseZ, shell); // sides
+    for (const sz of [-1, 1]) box(cw, ch, wall, 0, ch / 2, caseZ + sz * (cd / 2 - wall / 2), shell); // ends
+    for (const sx of [-0.18, 0.18]) box(0.05, 0.03, 0.04, sx, ch * 0.7, caseZ + cd / 2 + 0.015, steel); // latches
+    box(0.16, 0.025, 0.03, 0, ch * 0.55, caseZ + cd / 2 + 0.03, [0.1, 0.1, 0.1]); // handle
+    // lid: folded over the hinge, lying on the ground towards him, its inside up
+    const lidT = 0.06, lidZ = near - cd / 2;
+    box(cw, lidT, cd, 0, lidT / 2, lidZ, shell);
+    box(cw - wall * 2, 0.012, cd - wall * 2, 0, lidT + 0.004, lidZ, foam); // padding
+    for (const sx of [-0.2, 0, 0.2]) box(0.06, 0.03, 0.03, sx, 0.02, near, steel); // hinges
+    // the laptop on the lid, screen glowing
+    const lx = 0, ly = lidT + 0.01 + 0.015, lz = lidZ - 0.02;
     box(0.42, 0.03, 0.3, lx, ly, lz, [0.16, 0.16, 0.17]);
     const lid = box(0.42, 0.3, 0.025, lx, ly + 0.14, lz + 0.16, [0.16, 0.16, 0.17]);
     lid.rotation.x = -0.25;
@@ -538,7 +558,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     screen.material = mat(scene, [0.55, 0.85, 1], { emissive: true });
     parts.push(screen);
     box(0.32, 0.02, 0.14, lx, ly + 0.022, lz - 0.05, [0.3, 0.3, 0.32]); // keyboard
-    box(0.25, 0.12, 0.18, 0.32, 0.3, 0.5, [0.26, 0.3, 0.2]); // controller case
+    box(0.25, 0.12, 0.18, 0.42, 0.06, lidZ, [0.26, 0.3, 0.2]); // controller case, on the ground beside
     laptopParts = parts.splice(before);
     // four thick antennas splayed out of the pack, like a router's
     for (const [x, z, ax, az] of [[-0.1, -0.17, -0.55, 0.15], [-0.05, -0.26, -0.22, -0.45], [0.05, -0.26, 0.22, -0.45], [0.1, -0.17, 0.55, 0.15]]) {

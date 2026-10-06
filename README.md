@@ -154,8 +154,10 @@ entdeckt den ungetarnten Agenten nur, wenn ihr Lichtkegel ihn erfasst (oder er d
 im Licht, er erscheint wie durch eine Wärmebildkamera (orange glühend), und sie ruft Truppen herbei, bis sie ihn einige
 Sekunden aus den Augen verliert. Drohnen schießen nicht. Ein Scharfschuss trifft sie mit 25 % – macht sie aber in jedem
 Fall auf ihn aufmerksam. Jede Drohne wird von einem **Drohnenpiloten** an einer zufälligen Stellung gesteuert (kniend, mit
-dem Laptop vor sich am Boden, schwach von seinem Bildschirm beleuchtet; Integralhelm mit FPV-Brille statt Gesicht, aus dem
-Rucksack ragen vier abgespreizte, dicke Antennen wie bei einem Router; den Laptop stellt er erst ab, wenn er kniet); fällt der Pilot, stürzt seine Drohne ab.
+einem aufgeklappten Hartschalen-Werkzeugkoffer vor sich am Boden: der Deckel liegt umgeklappt zu ihm hin, darauf steht der
+Laptop, schwach von seinem Bildschirm beleuchtet; im Schaumstoff des Koffers liegt die Drohne, die daraus aufsteigt.
+Integralhelm mit FPV-Brille statt Gesicht, aus dem Rucksack ragen vier abgespreizte, dicke Antennen wie bei einem Router;
+den Koffer stellt er erst ab, wenn er kniet, und er bleibt auch am Hang auf dem Boden); fällt der Pilot, stürzt seine Drohne ab.
 
 **Sprengstoff:** Der Agent startet ohne Sprengsätze. Vier **Verstecke** mit je 3 Sprengsätzen liegen zufällig an
 Waldrändern (abseits der Stellungen); sie sind auf der Minimap und im Gelände gelb markiert und werden durch Betreten geleert.
@@ -371,7 +373,7 @@ src/
     blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
     dropCutscene.ts   Absprung-Cutscene der Commandos-Mission (Wingsuit, Fallschirm, Briefing, Landung)
     extraction.ts     Extraktion: Wahl des Punkts, blaue Rauchfackel, Hubschrauber, Schluss-Cinematic
-    droneCutscene.ts  Drohnen-Cinematic (Sprengung – die Wachen fallen sichtbar –, Pilot läuft aus, kniet, startet die Drohne, violetter Lichtschein)
+    droneCutscene.ts  Drohnen-Cinematic (Sprengung – die Wachen fallen sichtbar –, Pilot läuft aus, kniet, öffnet den Koffer, die Drohne steigt daraus auf und entfernt sich von ihm, violetter Lichtschein)
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
     agentView.ts      Darstellung des Agenten mit dem animierten Modell (Animationen nach Tempo, Haltungen, Gewehr, Tod)

@@ -22,15 +22,27 @@ class Part {
  * The rifle and the hands on it, in the gun frame (origin between the shoulders, figure axes):
  * shouldered and aimed straight ahead. Carrying, checking or lowering it turns this frame.
  */
-const GRIP = new Vector3(0.08, -0.04, 0.24);
-/** Wrist joints (the hands reach on from there): right behind the pistol grip, left under the front of the receiver. */
-const HAND_R = GRIP.add(new Vector3(0.01, -0.02, -0.07));
-const HAND_L = GRIP.add(new Vector3(-0.03, -0.08, 0.16));
-/** Where the fingers point: round the grip, round the fore-end from below. */
-const FINGERS_R = new Vector3(-0.2, -0.7, 0.5);
-const FINGERS_L = new Vector3(0.5, 0.4, 0.6);
-const POLE_R = new Vector3(0.45, -0.4, -0.1);
-const POLE_L = new Vector3(-0.2, -0.6, 0.2);
+const GRIP = new Vector3(0.1, -0.04, 0.32);
+/**
+ * Wrist joints (the hands reach on from there): right above and behind the pistol grip (the
+ * elbow out to the side), left below and to the left of the fore-end, so the forearm comes up
+ * from under the rifle.
+ */
+const HAND_R = GRIP.add(new Vector3(0.02, 0.06, -0.15));
+const HAND_L = GRIP.add(new Vector3(-0.1, -0.05, 0.15));
+/**
+ * The hands' set: knuckles (wrist → knuckle of the middle finger) and thumb, and where the
+ * fingers curl. Right: knuckles down the right side of the grip, thumb over its left, fingers
+ * round its front. Left: palm up under the fore-end, thumb up its left side, fingers up its right.
+ */
+const KNUCKLES_R = new Vector3(0, -0.5, 0.85);
+const THUMB_R = new Vector3(-0.8, 0.1, 0.5);
+const CURL_R = new Vector3(-0.6, 0, -0.4);
+const KNUCKLES_L = new Vector3(0.35, 0.15, 0.9);
+const THUMB_L = new Vector3(-0.6, 0.5, 0.4);
+const CURL_L = new Vector3(-0.2, 1, 0);
+const POLE_R = new Vector3(0.5, -0.3, -0.1);
+const POLE_L = new Vector3(-0.15, -0.8, 0.15);
 
 const euler = (v: Vector3, out = new Matrix()) => Matrix.RotationYawPitchRollToRef(v.y, v.x, v.z, out);
 
@@ -199,8 +211,10 @@ export class AgentView implements UnitView {
       const dir = (v: Vector3) => Vector3.TransformNormal(v, G);
       rig.reach("R", at(HAND_R), at(POLE_R));
       rig.reach("L", at(HAND_L), at(POLE_L));
-      rig.aim("Wrist.R", "Middle1.R", dir(FINGERS_R));
-      rig.aim("Wrist.L", "Middle1.L", dir(FINGERS_L));
+      rig.orient("Wrist.R", "Middle2.R", dir(KNUCKLES_R), "Thumb2.R", dir(THUMB_R));
+      rig.orient("Wrist.L", "Middle2.L", dir(KNUCKLES_L), "Thumb2.L", dir(THUMB_L));
+      rig.curl("R", 0.6, dir(CURL_R));
+      rig.curl("L", 0.5, dir(CURL_L));
     } else if (this.armTargets) {
       for (const s of ["L", "R"] as const) rig.reach(s, this.armTargets[s].wrist, this.armTargets[s].elbow);
     }

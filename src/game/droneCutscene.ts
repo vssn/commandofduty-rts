@@ -6,6 +6,7 @@ import type { Charge, CommandosMission } from "./commandos";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
 import type { Unit } from "./unit";
+import { PILOT_CASE_Z } from "../world/models";
 
 /**
  * The cutscene before the second outpost goes up: the camera shows the blast, then cuts to another
@@ -18,7 +19,7 @@ import type { Unit } from "./unit";
 
 /** Seconds into the scene. */
 const T = {
-  blast: 2.4, dip1: 5.0, run: 5.7, kneel: 8.0, drone: 8.2, unfold: 8.6, spin: 10.2, lift: 10.9, hover: 13.0, dip2: 15.0, fly: 15.5, end: 20.0,
+  blast: 2.4, dip1: 5.0, run: 5.7, kneel: 8.0, drone: 8.45, unfold: 8.7, spin: 10.2, lift: 10.9, hover: 13.0, dip2: 15.0, fly: 15.5, end: 20.0,
 };
 const FADE = 0.9;
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -161,7 +162,7 @@ export class DroneCutscene {
     const pilot = g.spawnUnit("pilot", ENEMY, this.start.x, this.start.z);
     pilot.heading = this.runAng;
     pilot.stance = "stand";
-    const dx = this.spot.x + this.f.x * 1.2, dz = this.spot.z + this.f.z * 1.2;
+    const dx = this.spot.x + this.f.x * PILOT_CASE_Z, dz = this.spot.z + this.f.z * PILOT_CASE_Z;
     const drone = g.spawnUnit("drone", ENEMY, dx, dz);
     drone.heading = this.runAng;
     drone.altitude = 0.12;
@@ -211,14 +212,16 @@ export class DroneCutscene {
     pilot.heading = this.runAng;
     pilot.postMove(dt, g);
 
-    // the drone: folded on the ground, spread out, motor starts, lifts off
-    if (t >= T.drone) drone.view.setEnabled(true);
+    // the drone: folded in its case, spread out, motor starts, lifts out of the case and climbs away
+    // from him (forward, so it never rises close to his head)
+    drone.view.setEnabled(t >= T.drone);
     const unfold = ease(T.unfold, T.unfold + 1.6, t);
     this.setFold(unfold);
     this.once("unfold", T.unfold, () => this.audio.droneUnfold());
     this.spinK = ease(T.spin, T.spin + 1.0, t);
     const up = ease(T.lift, T.lift + 3.4, t);
-    let x = this.spot.x + this.f.x * 1.2, z = this.spot.z + this.f.z * 1.2, alt = lerp(0.12, 4.8, up);
+    const out = PILOT_CASE_Z + 2.6 * ease(T.lift + 0.9, T.lift + 3.6, t);
+    let x = this.spot.x + this.f.x * out, z = this.spot.z + this.f.z * out, alt = lerp(0.12, 4.8, up);
     if (t >= T.fly) {
       const fl = ease(T.fly, T.end - 0.3, t);
       x = lerp(x, this.droneEnd.x, fl);
@@ -381,8 +384,8 @@ export class DroneCutscene {
     pilot.postMove(0.016, g);
     this.setFold(1);
     drone.view.setEnabled(true);
-    drone.x = this.t >= T.end ? this.droneEnd.x : this.spot.x + this.f.x * 1.2;
-    drone.z = this.t >= T.end ? this.droneEnd.z : this.spot.z + this.f.z * 1.2;
+    drone.x = this.t >= T.end ? this.droneEnd.x : this.spot.x + this.f.x * (PILOT_CASE_Z + 2.6);
+    drone.z = this.t >= T.end ? this.droneEnd.z : this.spot.z + this.f.z * (PILOT_CASE_Z + 2.6);
     drone.altitude = COMMANDOS.drones.altitude;
     drone.postMove(0.016, g);
     this.audio.droneBuzz(0);

@@ -307,6 +307,45 @@ export class AgentRig {
     this.rotate(bone, r);
   }
 
+  /**
+   * Sets a hand fully (figure frame): the knuckles (wrist → `child`) along `dir`, then rolled about
+   * that line until the thumb (wrist → `thumb`) points as near to `thumbDir` as it can.
+   */
+  orient(bone: string, child: string, dir: Vector3, thumb: string, thumbDir: Vector3) {
+    this.aim(bone, child, dir);
+    const a = this.posFig(bone);
+    const axis = this.posFig(child).subtract(a).normalize();
+    const flat = (v: Vector3) => v.subtract(axis.scale(Vector3.Dot(v, axis)));
+    const from = flat(this.posFig(thumb).subtract(a)), to = flat(thumbDir);
+    if (from.lengthSquared() < 1e-8 || to.lengthSquared() < 1e-8) return;
+    from.normalize();
+    to.normalize();
+    const angle = Math.atan2(Vector3.Dot(Vector3.Cross(from, to), axis), Vector3.Dot(from, to));
+    const q = Quaternion.RotationAxis(axis, angle);
+    // (check the sense once: Babylon's quaternion matrices turn row vectors)
+    const r = new Matrix();
+    q.toRotationMatrix(r);
+    if (Vector3.Dot(Vector3.TransformNormal(from, r), to) < Vector3.Dot(from, to) - 1e-6) Quaternion.RotationAxis(axis, -angle).toRotationMatrix(r);
+    this.rotate(bone, r);
+  }
+
+  /**
+   * Bends the fingers (index to pinky, from the knuckles on) by `angle` per joint, their tips
+   * turning towards `towards` (figure frame) - e.g. round a grip.
+   */
+  curl(side: "L" | "R", angle: number, towards: Vector3) {
+    for (const f of ["Index", "Middle", "Ring", "Pinky"]) {
+      for (let j = 2; j <= 4; j++) {
+        const b = `${f}${j}.${side}`, c = j < 4 ? `${f}${j + 1}.${side}` : `${f}4.${side}_end`;
+        const d = this.posFig(c).subtract(this.posFig(b)).normalize();
+        const n = towards.subtract(d.scale(Vector3.Dot(towards, d)));
+        if (n.lengthSquared() < 1e-8) continue;
+        n.normalize();
+        this.aim(b, c, d.scale(Math.cos(angle)).add(n.scale(Math.sin(angle))));
+      }
+    }
+  }
+
   /** Two-bone IK: the arm on `side` ("L" / "R") reaches the wrist target, the elbow bent towards `pole` (figure frame). */
   reach(side: "L" | "R", wrist: Vector3, pole: Vector3) {
     const S = this.posFig(`UpperArm.${side}`);
@@ -404,8 +443,8 @@ function buildRifle(scene: Scene, name: string): Mesh {
     parts.push(m);
     return m;
   };
-  box(0.05, 0.1, 0.26, 0, 0.03, -0.2); // stock
-  box(0.04, 0.12, 0.05, 0, -0.03, -0.31); // butt plate
+  box(0.05, 0.1, 0.18, 0, 0.03, -0.12); // stock (short: the butt sits in the shoulder)
+  box(0.04, 0.12, 0.04, 0, -0.01, -0.21); // butt plate
   box(0.055, 0.085, 0.36, 0, 0.06, 0.1); // receiver
   box(0.04, 0.11, 0.05, 0, -0.04, 0.0, 0.25); // pistol grip
   box(0.045, 0.13, 0.06, 0, -0.03, 0.16, -0.15); // magazine
