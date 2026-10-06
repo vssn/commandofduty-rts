@@ -39,6 +39,19 @@
           <button id="cut-skip" type="button">Überspringen ›</button>
           <div id="cut-fade"></div>
         </div>
+        <div id="scoreboard" hidden>
+          <div class="sb-box">
+            <div class="sb-kicker" id="sb-kicker">Auftrag erfüllt</div>
+            <h2 id="sb-title">Bestenliste</h2>
+            <table class="sb-table">
+              <thead><tr><th>#</th><th>Name</th><th>Zeit übrig</th><th>Stellungen</th><th>Drohnen</th><th>Soldaten</th></tr></thead>
+              <tbody id="sb-body"></tbody>
+            </table>
+            <p id="sb-hint"></p>
+            <button id="sb-ok" type="button">Bestätigen</button>
+            <input id="sb-input" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Name" />
+          </div>
+        </div>
         <div id="fps-counter" hidden>0 FPS</div>
         <div id="pause" hidden>
           <div class="pause-box">
@@ -166,6 +179,7 @@
                     <span class="mode-tags"><em>Feste Truppen</em><em>Artillerie</em><em>Aufreiben</em></span>
                   </span>
                 </button>
+                <div class="mode-col">
                 <button class="mode-card" id="mode-commandos">
                   <span class="mode-img"><img id="mode-img-commandos" alt="" draggable="false" /></span>
                   <span class="mode-body">
@@ -174,6 +188,8 @@
                     <span class="mode-tags"><em>Agent</em><em>Scharfschuss</em><em>Tarnen</em><em>Sprengladung</em></span>
                   </span>
                 </button>
+                <button id="mode-scores" class="menu-btn" type="button">Highscores</button>
+                </div>
               </div>
               <button id="menu-back" class="menu-btn menu-back">‹ Zurück</button>
             </div>

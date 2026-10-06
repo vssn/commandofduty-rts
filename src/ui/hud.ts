@@ -83,6 +83,7 @@ export class Hud {
     this.shownCredits = game.credits[PLAYER];
     // audio settings live in the pause menu; the M key still switches the music on and off
     window.addEventListener("keydown", (e) => {
+      if (e.target instanceof HTMLInputElement && e.target.type === "text") return; // typing a name
       if (e.key === "m" || e.key === "M") {
         audio.setMusic(!audio.musicOn);
         this.onAudioChange?.();

@@ -342,6 +342,10 @@ export class ExtractionCutscene {
   private t = 0;
   private finished = false;
   private skipping = false;
+  /** Called when the camera moves to the helicopter's side (the score table comes up). */
+  onScore: (() => void) | null = null;
+  /** While this is true the scene waits at its end (the player is still entering a name). */
+  holdOpen: (() => boolean) | null = null;
   private readonly fired = new Set<string>();
 
   // layout: the helicopter sets down beyond the flare, its ramp towards the agent
@@ -627,12 +631,19 @@ export class ExtractionCutscene {
     const camD = Vector3.Distance(this.camera.position, this.heli.root.position);
     this.audio.heliRotor(Math.min(1, 30 / Math.max(10, camD)) * (t < 1 ? t : 1));
     this.cameraFor(t, dt);
+    if (t >= T.lift) this.showScore();
     if (t >= T.end - 1.2 && !this.fired.has("fade")) {
       this.fired.add("fade");
       this.fadeEl.style.transition = "opacity 1.1s ease";
       this.fadeEl.style.opacity = "1";
     }
-    if (t >= T.end && !this.skipping) this.finish();
+    if (t >= T.end && !this.skipping && !this.holdOpen?.()) this.finish();
+  }
+
+  private showScore() {
+    if (this.fired.has("score")) return;
+    this.fired.add("score");
+    this.onScore?.();
   }
 
   skip() {
@@ -640,7 +651,10 @@ export class ExtractionCutscene {
     this.skipping = true;
     this.fadeEl.style.transition = "opacity 0.4s ease";
     this.fadeEl.style.opacity = "1";
-    window.setTimeout(() => this.finish(), 450);
+    this.showScore();
+    // (if the score table is up, the scene waits for the name)
+    const end = () => (this.holdOpen?.() ? window.setTimeout(end, 200) : this.finish());
+    window.setTimeout(end, 450);
   }
 
   private finish() {

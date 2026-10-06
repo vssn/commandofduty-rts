@@ -7,6 +7,7 @@ import { CommandosMission } from "./game/commandos";
 import { DropCutscene } from "./game/dropCutscene";
 import { DroneCutscene } from "./game/droneCutscene";
 import { ExtractionCutscene } from "./game/extraction";
+import { Scoreboard } from "./ui/scoreboard";
 import type { Charge } from "./game/commandos";
 import { FogOfWar } from "./game/fog";
 import { CoverMap } from "./game/cover";
@@ -309,6 +310,7 @@ document.addEventListener("webkitfullscreenchange", syncFullscreen);
 document.getElementById("btn-fullscreen")!.addEventListener("click", toggleFullscreen);
 menuFullscreen.addEventListener("click", toggleFullscreen);
 window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type === "text") return; // typing a name
   if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
 });
 
@@ -384,6 +386,7 @@ quitBtn.addEventListener("click", () => {
 // capture phase: runs before the game's own key handling; a pending targeting mode is cancelled
 // there first, otherwise Escape opens / closes the pause menu
 window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type === "text") return; // typing a name
   if (cutsceneOn() && (e.key === "Escape" || e.key === " " || e.key === "Enter")) {
     e.stopPropagation();
     e.preventDefault();
@@ -426,6 +429,8 @@ function startDroneCinematic(c: Charge) {
   Object.assign(window, { drone2 });
 }
 
+const scoreboard = new Scoreboard();
+
 /** The agent has reached the extraction point: the helicopter picks him up, then the mission is won. */
 function startExtractionCinematic(at: { x: number; z: number }) {
   document.body.classList.add("cutscene");
@@ -443,6 +448,12 @@ function startExtractionCinematic(at: { x: number; z: number }) {
     hud.enabled = true;
     game.commandos?.complete();
   });
+  // when the camera moves to the helicopter, the high-score table comes up; the scene waits for the name
+  extract.onScore = () => {
+    const m = game.commandos!;
+    scoreboard.show({ time: m.timeLeft, outposts: m.destroyedOutposts, drones: m.dronesDown, soldiers: m.soldiersDown });
+  };
+  extract.holdOpen = () => scoreboard.waiting;
   Object.assign(window, { extract });
 }
 
@@ -461,6 +472,7 @@ function returnToMenu() {
   drone2 = null;
   extract?.dispose();
   extract = null;
+  scoreboard.hide();
   if (game.commandos) {
     game.commandos.dispose();
     setNight(false);
@@ -500,6 +512,7 @@ function startGame(mode: GameMode) {
   drone2 = null;
   extract?.dispose();
   extract = null;
+  scoreboard.hide();
   game.reset();
   ai = new EnemyAI(game);
   game.canSee = (x, z) => fog.isVisible(x, z);
@@ -579,6 +592,7 @@ const showSettings = (on: boolean) => {
 };
 document.getElementById("menu-new")!.addEventListener("click", () => showModes(true));
 document.getElementById("menu-back")!.addEventListener("click", () => showModes(false));
+document.getElementById("mode-scores")!.addEventListener("click", () => scoreboard.view());
 document.getElementById("menu-settings-open")!.addEventListener("click", () => showSettings(true));
 document.getElementById("menu-settings-back")!.addEventListener("click", () => showSettings(false));
 // The artwork is rendered from the live battlefield (temporary units, lights): a game may only start

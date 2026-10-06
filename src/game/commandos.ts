@@ -113,6 +113,9 @@ export class CommandosMission {
   /** More than COMMANDOS.escalation.after outposts are gone: the enemy is on full alert, drones are up. */
   aggressive = false;
   readonly drones: Drone[] = [];
+  /** For the high-score table: drones shot down and soldiers taken out. */
+  dronesDown = 0;
+  soldiersDown = 0;
   private warnedTime = false;
 
   constructor(private readonly game: Game) {}
@@ -247,6 +250,7 @@ export class CommandosMission {
       return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : dark);
     };
     g.onKilled = (u) => {
+      if (u.team === ENEMY && ["rifleman", "grenadier", "medic", "pilot"].includes(u.type)) this.soldiersDown++;
       if (u.team === ENEMY) this.onEnemyKilled(u);
     };
   }
@@ -981,6 +985,7 @@ export class CommandosMission {
       if (!u.alive) {
         d.down = true;
         d.light.setEnabled(false);
+        this.dronesDown++;
         g.emit("droneDown", PLAYER);
         continue;
       }
