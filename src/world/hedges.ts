@@ -129,6 +129,18 @@ export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, 
       }
     }
   }
+  // single bushes (the city's park): a round shrub, a rounded green block in the classic look
+  for (const b of layout.bushes) {
+    const h = 1.0 + b.r * 0.6;
+    const rot = r() * Math.PI * 2;
+    const v = Math.floor(r() * variants.length);
+    const y = terrain.heightAt(b.x, b.z) + h / 2 - 0.15;
+    data[v].push(...Matrix.Compose(new Vector3(b.r * 0.85, h / HGT, (b.r * 2) / DEP), Quaternion.RotationAxis(Axis.Y, rot), new Vector3(b.x, y, b.z)).asArray());
+    boxData.push(...Matrix.Compose(new Vector3(b.r * 1.7, h, b.r * 1.7), Quaternion.RotationAxis(Axis.Y, rot), new Vector3(b.x, y, b.z)).asArray());
+    const k = 0.85 + r() * 0.3;
+    cols[v].push(HEDGE[0] / 0.3 * k * 1.05, HEDGE[1] / 0.36 * k, HEDGE[2] / 0.16 * k, 1);
+    hedgePositions.push({ x: b.x, z: b.z, rot, hw: b.r, hd: b.r });
+  }
   box.thinInstanceSetBuffer("matrix", new Float32Array(boxData), 16, true);
   box.thinInstanceRefreshBoundingInfo(false);
   box.isPickable = false;

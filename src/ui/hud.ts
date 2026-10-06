@@ -137,8 +137,9 @@ export class Hud {
 
   private train(type: UnitType, count: number) {
     if (!this.game.producerFor(type, PLAYER)) {
-      if (type === "jeep") this.toast("Zuerst eine Werkstatt einnehmen");
-      if (type === "medic") this.toast("Zuerst das Feldlazarett einnehmen");
+      const city = this.game.layout.map === "embassy";
+      if (type === "jeep") this.toast(city ? "Zuerst eine Tiefgarage einnehmen" : "Zuerst eine Werkstatt einnehmen");
+      if (type === "medic") this.toast(city ? "Zuerst die Apotheke einnehmen" : "Zuerst das Feldlazarett einnehmen");
       return;
     }
     let queued = 0;
@@ -284,7 +285,9 @@ export class Hud {
     $("banner-title").textContent = result === "win" ? "Sieg" : "Niederlage";
     const mode = this.game.mode;
     const texts = {
-      base: ["Die feindliche Kaserne wurde zerstört.", "Unsere Kaserne ist gefallen."],
+      base: this.game.layout.map === "embassy"
+        ? ["Die feindliche U-Bahn-Station wurde zerstört.", "Unsere U-Bahn-Station ist gefallen."]
+        : ["Die feindliche Kaserne wurde zerstört.", "Unsere Kaserne ist gefallen."],
       skirmish: ["Der Feind wurde aufgerieben.", "Unsere Truppen wurden aufgerieben."],
       commandos: ["Auftrag erfüllt – die Stellungen liegen in Trümmern, der Agent ist ausgeflogen.", "Der Agent ist gefallen. Auftrag gescheitert."],
     };
@@ -502,7 +505,7 @@ export class Hud {
       if (tags.length) info += `<span class="bonus">${tags.map((t) => `<em>${t}</em>`).join("")}</span>`;
     } else if (g.selectedBuilding) {
       const sb = g.selectedBuilding;
-      info = `<strong>Kaserne</strong><span>Zustand ${Math.ceil(sb.hp)} / ${sb.maxHp}</span><span class="hint">Rechtsklick: Sammelpunkt setzen</span>`;
+      info = `<strong>${g.layout.map === "embassy" ? "U-Bahn-Station" : "Kaserne"}</strong><span>Zustand ${Math.ceil(sb.hp)} / ${sb.maxHp}</span><span class="hint">Rechtsklick: Sammelpunkt setzen</span>`;
     }
     if (info !== this.last.info) {
       this.info.innerHTML = info;

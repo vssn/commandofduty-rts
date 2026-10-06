@@ -23,6 +23,39 @@ gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt di
 „Einstellungen“ öffnet ein Untermenü mit Musik und Grafik; „Vollbild ein/aus“ schaltet den Vollbildmodus (im Spiel über den Button oben rechts oder F). Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), im Spiel stellt man Musik und Effekte im Pausenmenü (Esc) ein. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
+## Karten
+
+**Eroberung** fragt nach der Karte: **Hügelland** (die bisherige Karte) oder **Botschaftsquartier**. Die Kacheln zeigen
+einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`). Gefecht und Commandos spielen im Hügelland.
+Eine andere Karte als die geladene wird mit der Seite neu aufgebaut (`?map=embassy`, `&start=base` startet den Modus
+danach sofort); der Kopf des Hauptmenüs nennt das geladene Einsatzgebiet.
+
+**Botschaftsquartier** (`src/world/embassy.ts`, `city.ts`, `cityModels.ts`): eine Innenstadt, wie das Hügelland
+punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung der eigenen).
+- **Raster:** Ringstraße, Boulevards (10 m) und Seitenstraßen mit breiten Gehwegen und Bordsteinen, parkenden Autos,
+  Straßenlaternen und Platanen entlang der Boulevards.
+- **Quartiere** um die Startpunkte: Blöcke als Villengärten – Rasen in Mähstreifen mit Kiesweg am Rand und Hecke ringsum
+  (die Logik der Felder des Hügellands), darin drei- und vierstöckige Stadtvillen.
+- **Basis** ist der Ausgang einer **U-Bahn-Station** auf einem gepflasterten Platz: ein Glaspavillon in Metro-Grün mit
+  Treppenabgang (dort kommen die Truppen herauf), Metro-Laternen mit Schild, Fassadenband in Teamfarbe, Sandsackwall wie
+  bei der Kaserne. Das **Feldlazarett** ist eine nahe **Apotheke** (Ladenpavillon, grüne Markisen, leuchtendes Kreuz),
+  die **Werkstatt** die Ausfahrt einer **Tiefgarage** (Betonportal mit dunkler Einfahrt, Rampe, Schranke, P-Schild).
+  Im Spiel heißen sie so (Seitenleiste, Meldungen, Sieg/Niederlage).
+- **Park** quer über die Kartenmitte: Kieswege um drei Teiche und hinaus zu den Boulevards, Baumgruppen, Büsche
+  (massiv wie Hecken), sanft gewellter Rasen. Die übrigen Stellungen (Radar, Unterstände, Schützengräben, Wachtürme)
+  liegen hier. Die Teiche sind Hindernisse.
+- **Rand:** Häuserblöcke aus Pariser Altbauten (vier bis sieben Geschosse) schließen die Karte ab: helle
+  Kalksteinfassaden mit hohen Fenstern und Eisengeländern, ein Erdgeschoss mit Rundbogen-Läden, Gesims, durchlaufende
+  Eisenbalkone, graue Zink-Mansarddächer mit Gauben und Schornsteinen. Jeder Block hat an seinen Ecken **Eckhäuser mit
+  abgerundeter Ecke** (Fassade, Gesims, Mansarde und Balkone laufen um die Rundung, darüber oft eine Kuppel), dazwischen
+  Reihenhäuser um einen Innenhof; zu kleine Blöcke sind ein einziger Baukörper mit vier gerundeten Ecken. Die Häuser sind
+  massiv und verdecken die Sicht. Die Straßen führen zwischen den Blöcken hinaus (auch an den Kartenecken) und enden am
+  Kartenrand an Straßensperren; dahinter liegt hinter einer äußeren Ringstraße ein zweiter Blockring als schlichte
+  Baukörper mit Schornsteinreihen (nur Kulisse).
+- Alle Häuser liegen in wenigen zusammengefassten Meshes mit Texturen in Metern (eine Wiederholung = eine Fensterachse
+  eines Geschosses), das hält die Stadt flüssig. Das Gelände ist flach, Pflaster auf Plätzen und Gehwegen, Rasen im Park
+  und in den Gärten; im realistischen Modus Asphalt, Pflaster, Kies und Gras aus denselben Masken.
+
 „Grafik“ (Einstellungen und Pausenmenü, wird gespeichert) schaltet live zwischen **Klassisch** und **Realistisch (PBR)** um
 (`src/world/pbr.ts`). Im PBR-Modus werden alle beleuchteten Materialien durch gleichwertige, physikalisch basierte
 Materialien ersetzt (matt, nicht metallisch; Farbe und Textur werden übernommen), Eckpunkt- und Instanzfarben in den
@@ -352,6 +385,9 @@ src/
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
+    embassy.ts        Layout der Karte „Botschaftsquartier“: Straßenraster, Villengärten, Park, Teiche, Wege, Häuserreihen
+    city.ts           Pariser Altbauten und Stadtvillen (zusammengefasste Geometrie, Fassadentexturen), Teiche, Straßensperren
+    cityModels.ts     U-Bahn-Station (Basis), Apotheke, Tiefgaragen-Ausfahrt
     agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
@@ -389,6 +425,7 @@ src/
     overlay.ts        2D-Overlay: Lebensbalken, Mündungsfeuer, Auswahlrahmen, Sammelpunkt
     minimap.ts        Radar
     hud.ts            Seitenleiste, Meldungen, Sieg/Niederlage
+    mapPreview.ts     Kartenplan für die Kartenwahl im Menü
     portraits.ts      rendert die Einheiten-Porträts der Bau-Kacheln und die Commandos-Fähigkeitskacheln (getarnter Agent, Sprengladung auf Jeep) aus den 3D-Modellen
 ```
 

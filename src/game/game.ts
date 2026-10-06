@@ -19,6 +19,7 @@ import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
 import { agentModelReady } from "../world/agentModel";
+import { createSubwayMesh } from "../world/cityModels";
 import { AgentView } from "./agentView";
 import { BollardView, DroneView, JeepView, NestView, SoldierView, type DroneTemplates, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
 
@@ -191,6 +192,7 @@ export class Game {
 
   /** Shows or hides the detailed base buildings of the realistic graphics mode (built on first use). */
   setBaseDetail(on: boolean) {
+    if (this.layout.map === "embassy") return; // (the metro station has no extra detail)
     for (const b of this.buildings) {
       if (on && !b.detail) {
         b.detail = createBarracksDetail(this.scene, b.team);
@@ -202,13 +204,17 @@ export class Game {
   }
 
   private createBarracks(team: Team, p: V2, rot: number): Barracks {
-    const mesh = createBarracksMesh(this.scene, team);
-    const tiles = createRoofTiles(this.scene, `barracksTiles${team}`, [{
-      w: 8.9, h: 2.5, d: 12.9,
-      color: team === PLAYER ? [0.42, 0.53, 0.76] : [0.76, 0.32, 0.26],
-      transform: Matrix.Compose(Vector3.One(), Quaternion.RotationAxis(Axis.Y, Math.PI / 2), new Vector3(0, 4.4, 0)),
-    }], mesh);
-    this.shadows.addShadowCaster(tiles);
+    // the city map's base is the exit of a metro station
+    const city = this.layout.map === "embassy";
+    const mesh = city ? createSubwayMesh(this.scene, team) : createBarracksMesh(this.scene, team);
+    if (!city) {
+      const tiles = createRoofTiles(this.scene, `barracksTiles${team}`, [{
+        w: 8.9, h: 2.5, d: 12.9,
+        color: team === PLAYER ? [0.42, 0.53, 0.76] : [0.76, 0.32, 0.26],
+        transform: Matrix.Compose(Vector3.One(), Quaternion.RotationAxis(Axis.Y, Math.PI / 2), new Vector3(0, 4.4, 0)),
+      }], mesh);
+      this.shadows.addShadowCaster(tiles);
+    }
     // sandbagged compound around the building; the walls are solid, only the gate is open
     const bags = createSandbags(this.scene, `sandbags${team}`);
     bags.parent = mesh;

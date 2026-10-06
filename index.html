@@ -122,7 +122,7 @@
 
         <div id="menu">
           <div class="menu-panel">
-            <div class="menu-kicker">Herbstoffensive · Einsatzgebiet Hügelland</div>
+            <div class="menu-kicker" id="menu-kicker">Herbstoffensive · Einsatzgebiet Hügelland</div>
             <h1 class="menu-title">Command<span>of Duty</span></h1>
             <p class="menu-brief">
               Der Feind hat sich im Norden festgesetzt. Nimm Stellungen und Werkstätten ein, stelle
@@ -192,6 +192,28 @@
                 </div>
               </div>
               <button id="menu-back" class="menu-btn menu-back">‹ Zurück</button>
+            </div>
+            <div id="menu-maps" hidden>
+              <h2 class="menu-sub">Eroberung – Karte wählen</h2>
+              <div class="mode-cards map-cards">
+                <button class="mode-card" data-map="hills">
+                  <span class="mode-img"><img id="map-img-hills" alt="" draggable="false" /></span>
+                  <span class="mode-body">
+                    <span class="mode-title">Hügelland</span>
+                    <span class="mode-text">Herbstliches Hügelland mit Dörfern, Feldern, Hecken und Wäldern. Die Basen sind Kasernen hinter Sandsackwällen.</span>
+                    <span class="mode-tags"><em>Land</em><em>Felder</em><em>Dörfer</em></span>
+                  </span>
+                </button>
+                <button class="mode-card" data-map="embassy">
+                  <span class="mode-img"><img id="map-img-embassy" alt="" draggable="false" /></span>
+                  <span class="mode-body">
+                    <span class="mode-title">Botschaftsquartier</span>
+                    <span class="mode-text">Innenstadt mit breiten Straßen, Villen und Häuserblöcken; ein Park mit Teichen trennt die Seiten. Basis an der U-Bahn-Station, Apotheke und Tiefgarage nebenan.</span>
+                    <span class="mode-tags"><em>Stadt</em><em>Park</em><em>Häuserblöcke</em></span>
+                  </span>
+                </button>
+              </div>
+              <button id="maps-back" class="menu-btn menu-back">‹ Zurück</button>
             </div>
             <dl id="menu-help" class="menu-help" hidden>
               <dt>Linksklick / Ziehen</dt><dd>Einheiten auswählen</dd>
@@ -318,7 +340,7 @@
         </section>
 
         <section class="panel mode-base-only">
-          <h2>Kaserne</h2>
+          <h2 data-city="U-Bahn-Station">Kaserne</h2>
           <div class="build-grid">
           <button class="build-btn" data-unit="rifleman">
             <img class="portrait" alt="" draggable="false" />
@@ -340,7 +362,7 @@
         </section>
 
         <section class="panel mode-base-only">
-          <h2>Werkstatt</h2>
+          <h2 data-city="Tiefgarage">Werkstatt</h2>
           <div class="build-grid">
           <button class="build-btn" data-unit="jeep">
             <img class="portrait" alt="" draggable="false" />
@@ -348,14 +370,14 @@
             <kbd>E</kbd>
             <span class="build-cost">$400</span>
             <span class="build-name">Gelände&shy;wagen</span>
-            <span class="build-note">Werkstatt einnehmen</span>
+            <span class="build-note" data-city="Tiefgarage einnehmen">Werkstatt einnehmen</span>
             <span class="badge"></span>
           </button>
           </div>
         </section>
 
         <section class="panel mode-base-only">
-          <h2>Feldlazarett</h2>
+          <h2 data-city="Apotheke">Feldlazarett</h2>
           <div class="build-grid">
           <button class="build-btn" data-unit="medic">
             <img class="portrait" alt="" draggable="false" />
@@ -363,7 +385,7 @@
             <kbd>R</kbd>
             <span class="build-cost">$150</span>
             <span class="build-name">Sanitäter</span>
-            <span class="build-note">Feldlazarett einnehmen</span>
+            <span class="build-note" data-city="Apotheke einnehmen">Feldlazarett einnehmen</span>
             <span class="badge"></span>
           </button>
           </div>

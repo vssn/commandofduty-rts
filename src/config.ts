@@ -1,5 +1,9 @@
 /** Half size of the playable area (world units). The map spans -MAP_HALF..MAP_HALF on x and z. */
 export const MAP_HALF = 120;
+/** The maps: Hügelland (hill country, villages and fields) and Botschaftsquartier (an embassy district of a city). */
+export type MapId = "hills" | "embassy";
+export const MAP_NAMES: Record<MapId, string> = { hills: "Hügelland", embassy: "Botschaftsquartier" };
+
 /** Half size of the rendered terrain, larger than the playable area so the camera never sees the void. */
 export const TERRAIN_HALF = 205;
 /** Terrain grid cells per side. */

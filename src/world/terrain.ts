@@ -1,6 +1,7 @@
 import { Color3, DynamicTexture, Mesh, Scene, StandardMaterial, Texture, VertexBuffer, VertexData } from "@babylonjs/core";
 import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
+import { SIDEWALK } from "./embassy";
 import { toLocal, type MapLayout, type RGB } from "./layout";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
@@ -24,6 +25,17 @@ const VERGE_DIRT: RGB = [0.54, 0.47, 0.28];
 const VERGE_TOWN: RGB = [0.5, 0.5, 0.36];
 const HEADLAND: RGB = [0.52, 0.48, 0.28];
 const TRAMPLED: RGB = [0.47, 0.36, 0.23];
+// the city map (Botschaftsquartier)
+const PAVING: RGB = [0.6, 0.58, 0.54];
+const PAVING_B: RGB = [0.55, 0.54, 0.51];
+const PARK_A: RGB = [0.42, 0.53, 0.25];
+const PARK_B: RGB = [0.5, 0.55, 0.27];
+const PARK_PATH: RGB = [0.72, 0.66, 0.53];
+const SHORE: RGB = [0.36, 0.33, 0.24];
+const GARDEN_PATH: RGB = [0.7, 0.65, 0.54];
+/** Water level of the park's ponds (the ground is flat at 0 around them). */
+export const POND_LEVEL = -0.45;
+
 /** Width of the worn strip beside roads, where the surface fades into the grass. */
 const VERGE = 1.8;
 /** Subdivision (per side) of grid cells that contain surface edges. */
@@ -131,6 +143,8 @@ export class Terrain {
   detailCells = 0;
   /** Surface kind found by the last decalAt() call. */
   private kind: Surface = Surface.Natural as Surface;
+  /** The last decalAt() call hit a base's pad (it covers the roads leading to it). */
+  private onPad = false;
   /** Natural ground colour (gamma, without decals and facet jitter) per vertex, for the realistic ground. */
   private naturalColors: Float32Array = new Float32Array(0);
 
@@ -140,6 +154,8 @@ export class Terrain {
       ...[L.playerBase, L.enemyBase].map((b) => ({ x: b.x, z: b.z, r: 22, f: 18, h: 0 })),
       ...L.suburbs.map((s) => ({ x: s.x, z: s.z, r: s.r - 4, f: 20, h: 0 })),
       ...L.outposts.map((o) => ({ x: o.x, z: o.z, r: 9, f: 10, h: 0 })),
+      // the park's ponds lie in level ground (the hollow itself is dug afterwards)
+      ...L.ponds.map((p) => ({ x: p.x, z: p.z, r: Math.max(p.rx, p.rz) + 2, f: 8, h: 0 })),
     ];
     for (const zn of this.zones) zn.h = this.baseHeight(zn.x, zn.z);
 
@@ -154,9 +170,17 @@ export class Terrain {
   }
 
   private baseHeight(x: number, z: number): number {
+    if (this.layout.map === "embassy") return this.cityHeight(x, z);
     let h = fbm(x * 0.0105 + 5.3, z * 0.0105 - 2.1, 4, 3) * 15;
     h += Math.sin(x * 0.021 + 0.6) * Math.cos(z * 0.018 - 0.4) * 2.5;
     return h + this.border(x, z);
+  }
+
+  /** The city: level streets and squares, gently rolling lawns in the park. */
+  private cityHeight(x: number, z: number): number {
+    const L = this.layout;
+    const lawn = smoothstep(0, 10, L.park - Math.abs(z)) * smoothstep(0, 10, 99 - Math.abs(x));
+    return lawn * fbm(x * 0.03 + 3.3, z * 0.03 - 1.2, 3, 7) * 2.4;
   }
 
   /**
@@ -213,6 +237,11 @@ export class Terrain {
       const w = smoothstep(zn.r + zn.f, zn.r, Math.hypot(x - zn.x, z - zn.z));
       h = lerp(h, zn.h, w);
     }
+    // the ponds' hollows: a soft shore, a flat bottom below the water
+    if (this.layout.ponds.length) {
+      const d = this.layout.pondDepth(x, z);
+      if (d > -0.3) h -= 1.7 * smoothstep(-0.25, 0.4, d);
+    }
     return h;
   }
 
@@ -233,6 +262,7 @@ export class Terrain {
   /** Natural ground: autumn grass, greener valleys, drier hill tops, earthy slopes, lawns, forest floor. */
   private groundColor(x: number, z: number, h: number, slope: number, out: RGB): RGB {
     const L = this.layout;
+    if (L.map === "embassy") return this.cityGround(x, z, h, out);
     const nz = valueNoise(x * 0.08, z * 0.08, 5) * 0.6 + valueNoise(x * 0.3, z * 0.3, 9) * 0.4;
     mix(out, GRASS_A, GRASS_B, nz * 0.5 + 0.5);
     const low = smoothstep(2, -6, h);
@@ -269,6 +299,32 @@ export class Terrain {
     return out;
   }
 
+  /** The city's natural ground: lawns in the park (mud at the ponds' shores), paving everywhere else. */
+  private cityGround(x: number, z: number, h: number, out: RGB): RGB {
+    const L = this.layout;
+    const nz = valueNoise(x * 0.08, z * 0.08, 5) * 0.6 + valueNoise(x * 0.3, z * 0.3, 9) * 0.4;
+    const fa = L.fieldAt(x, z);
+    if (fa?.f.garden) {
+      // a villa's lawn (the stripes are painted over it in the classic look)
+      const stripe = (Math.floor(fa.lx / fa.f.sw) & 1) === 0;
+      return set(out, stripe ? fa.f.base : fa.f.stripe, 1 + (nz - 0.5) * 0.06);
+    }
+    if (Math.abs(z) < L.park + 0.5 && Math.abs(x) < 99.5) {
+      mix(out, PARK_A, PARK_B, nz * 0.5 + 0.5);
+      const pd = L.pondDepth(x, z);
+      if (pd > -0.15) mix(out, out, SHORE, smoothstep(-0.15, 0.02, pd));
+      if (h < POND_LEVEL - 0.1) mix(out, out, DEPTH_HAZE, 0.5);
+      for (const f of L.forests) {
+        const d = Math.hypot(x - f.x, z - f.z);
+        if (d < f.r + 3) return mix(out, out, LITTER, smoothstep(f.r + 3, f.r - 3, d) * (0.6 + nz * 0.2));
+      }
+      return out;
+    }
+    // beyond the painted area: the streets leading out, the rest paved
+    if ((Math.abs(x) > MAP_HALF + 12 || Math.abs(z) > MAP_HALF + 12) && L.nearestRoad(x, z).d < 0) return set(out, ASPHALT, 1 + nz * 0.04);
+    return mix(out, PAVING, PAVING_B, nz * 0.5 + 0.5);
+  }
+
   /**
    * Man-made surface painted onto the ground at a point: roads with worn verges, fields, base pads
    * and trampled earth around outposts. Writes the colour and returns its opacity (0 = nothing).
@@ -276,21 +332,31 @@ export class Terrain {
   private decalAt(x: number, z: number, out: RGB, roads = true): number {
     const L = this.layout;
     this.kind = Surface.Natural;
+    this.onPad = false;
     const nz = valueNoise(x * 0.3, z * 0.3, 9);
 
-    for (const b of [L.playerBase, L.enemyBase]) {
+    // (the city's bases stand on the paved square of their block)
+    for (const b of L.map === "embassy" ? [] : [L.playerBase, L.enemyBase]) {
       // gravel pad whose edge frays into the grass
       const edge = Math.max(Math.abs(x - b.x) - 15, Math.abs(z - b.z) - 12) + nz * 1.2;
       if (edge < 2.5) {
         mix(out, CONCRETE, GRAVEL, smoothstep(-6, 1, edge) * 0.8 + nz * 0.2);
         this.kind = Surface.Gravel;
+        this.onPad = true;
         return smoothstep(2.5, -0.5, edge);
       }
     }
 
+    const city = L.map === "embassy";
     const rd = roads ? L.nearestRoad(x, z) : { d: Infinity, road: null };
     if (rd.road) {
       const asphalt = rd.road.kind === "asphalt";
+      // the city's streets have pavements instead of verges
+      if (city && asphalt && rd.d >= 0.6 && rd.d < SIDEWALK) {
+        set(out, PAVING, 1.04 + nz * 0.05);
+        this.kind = Surface.Gravel;
+        return 1;
+      }
       if (rd.d < 0) {
         this.kind = asphalt ? Surface.Asphalt : Surface.Dirt;
         set(out, asphalt ? ASPHALT : DIRT, 1 + nz * (asphalt ? 0.04 : 0.08));
@@ -306,7 +372,27 @@ export class Terrain {
       }
     }
 
+    if (city && Math.abs(z) < L.park + 4 && L.pathDistance(x, z) < 0) {
+      // gravel paths through the park
+      set(out, PARK_PATH, 1 + nz * 0.08);
+      this.kind = Surface.Gravel;
+      return 1;
+    }
+
     const fa = L.fieldAt(x, z);
+    if (fa && fa.f.garden) {
+      // a villa's lawn in mowing stripes, a gravel path round its edge
+      const f = fa.f;
+      const stripe = (Math.floor(fa.lx / f.sw) & 1) === 0;
+      const edge = Math.min(f.hw - Math.abs(fa.lx), f.hd - Math.abs(fa.lz));
+      if (edge < 1.1) {
+        set(out, GARDEN_PATH, 1 + nz * 0.08);
+        this.kind = Surface.Gravel;
+        return 1;
+      }
+      set(out, stripe ? f.base : f.stripe, 1 + nz * 0.05);
+      return 1;
+    }
     if (fa) {
       const f = fa.f;
       const stripe = (Math.floor(fa.lx / f.sw) & 1) === 0;
@@ -319,6 +405,7 @@ export class Terrain {
     }
 
     for (const o of L.outposts) {
+      if (o.look) continue; // (the pharmacy and the car park stand on paving)
       // trodden earth over most of the outpost, reaching further out in front of the entrance (+z)
       const R = OUTPOSTS[o.kind].radius;
       if (Math.abs(x - o.x) > R * 1.3 || Math.abs(z - o.z) > R * 1.3) continue;
@@ -331,6 +418,12 @@ export class Terrain {
         this.kind = Surface.Dirt;
         return smoothstep(1.1, 0.7, d) * 0.92 * tufts;
       }
+    }
+    if (city && !(Math.abs(z) < L.park + 0.5 && Math.abs(x) < 99.5)) {
+      // the city outside the park is paved: pavements, squares, courtyards
+      mix(out, PAVING, PAVING_B, nz);
+      this.kind = Surface.Gravel;
+      return 1;
     }
     return 0;
   }
@@ -382,7 +475,7 @@ export class Terrain {
         const w = this.decalAt(x, z, d, false);
         const o = (i + j * res) * 4;
         // the bases' gravel pads cover the roads leading to them
-        const pad = this.kind === Surface.Gravel && w > 0.5;
+        const pad = this.onPad && w > 0.5;
         const asphalt = this.layout.nearestOfKind(x, z, "asphalt", ROAD_RANGE);
         roads[o] = pad ? 255 : enc(asphalt.d);
         roads[o + 1] = pad ? 255 : enc(this.layout.roadDistance(x, z, "dirt", ROAD_RANGE));
@@ -391,12 +484,13 @@ export class Terrain {
         const ang = asphalt.road ? Math.atan2(asphalt.road.b.z - asphalt.road.a.z, asphalt.road.b.x - asphalt.road.a.x) * 2 : 0;
         roads[o + 2] = Math.round((Math.cos(ang) * 0.5 + 0.5) * 255);
         roads[o + 3] = Math.round((Math.sin(ang) * 0.5 + 0.5) * 255);
-        if (w <= 0) continue;
+        // (painted natural ground - the villa lawns - stays out: the realistic ground draws its own grass in the natural colour)
+        if (w <= 0 || this.kind === Surface.Natural) continue;
         decal[o] = Math.round(Math.min(1, d[0]) * 255);
         decal[o + 1] = Math.round(Math.min(1, d[1]) * 255);
         decal[o + 2] = Math.round(Math.min(1, d[2]) * 255);
         decal[o + 3] = Math.round(w * 255);
-        kind[o + this.kind - 1] = 255;
+        if (this.kind > 0) kind[o + this.kind - 1] = 255;
       }
     }
     return { res, half, decal, kind, roads };

@@ -2,6 +2,7 @@ import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } fro
 import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
 import { createOutpostDetail } from "../world/outpostDetail";
+import { createGarageExitMesh, createPharmacyMesh } from "../world/cityModels";
 import { createOutpostMesh, createRing, mat, RADAR_DIM, TEAM_COLOR } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import type { Game } from "./game";
@@ -16,6 +17,8 @@ const NEUTRAL: RGB = [0.9, 0.88, 0.8];
  */
 export class Outpost {
   readonly kind: OutpostKind;
+  /** The city map's version of this outpost (pharmacy, car park), or null. */
+  readonly look: "pharmacy" | "garage" | null;
   readonly name: string;
   readonly income: number;
   readonly radius: number;
@@ -61,7 +64,8 @@ export class Outpost {
   constructor(spec: OutpostSpec, scene: Scene, terrain: Terrain, shadows: ShadowGenerator) {
     const cfg = OUTPOSTS[spec.kind];
     this.kind = spec.kind;
-    this.name = cfg.name;
+    this.look = spec.look ?? null;
+    this.name = spec.look === "pharmacy" ? "Apotheke" : spec.look === "garage" ? "Tiefgarage" : cfg.name;
     this.income = cfg.income;
     this.radius = cfg.radius;
     this.x = spec.x;
@@ -75,7 +79,7 @@ export class Outpost {
     this.scene = scene;
     this.shadows = shadows;
     this.seed = Math.round(spec.x * 31 + spec.z * 17) | 1;
-    const mesh = createOutpostMesh(scene, spec.kind);
+    const mesh = spec.look === "pharmacy" ? createPharmacyMesh(scene) : spec.look === "garage" ? createGarageExitMesh(scene) : createOutpostMesh(scene, spec.kind);
     this.model = mesh;
     mesh.position.set(spec.x, this.y, spec.z);
     mesh.rotation.y = spec.rot;
@@ -129,7 +133,7 @@ export class Outpost {
   /** Shows the extra model detail of the realistic graphics mode (built the first time it is needed). */
   setDetail(on: boolean) {
     this.detailOn = on;
-    if (on && !this.detail) {
+    if (on && !this.detail && !this.look) {
       this.detail = createOutpostDetail(this.scene, this.kind, this.seed);
       this.detail.position.copyFrom(this.model.position);
       this.detail.rotation.copyFrom(this.model.rotation);

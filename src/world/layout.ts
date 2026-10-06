@@ -1,11 +1,13 @@
-import { MAP_HALF, OUTPOSTS, type OutpostKind } from "../config";
+import { MAP_HALF, OUTPOSTS, type MapId, type OutpostKind } from "../config";
 import { rng, smoothstep, valueNoise } from "../util/noise";
+import { buildEmbassy } from "./embassy";
 
 export interface V2 { x: number; z: number }
 export type RGB = [number, number, number];
 
 export interface Road { a: V2; b: V2; w: number; kind: "asphalt" | "dirt" }
-export interface Field { cx: number; cz: number; hw: number; hd: number; rot: number; base: RGB; stripe: RGB; sw: number }
+/** `garden`: a villa's lawn (Botschaftsquartier) - mowing stripes instead of furrows, no crops. */
+export interface Field { cx: number; cz: number; hw: number; hd: number; rot: number; base: RGB; stripe: RGB; sw: number; garden?: boolean }
 /**
  * A meadow: grassland that is used - cut short, left for hay, grazed or left wild. They vary the big
  * green areas: each has its own blade length (`height` 0 mown .. 1 tall), tone (`tone` 0 dry .. 1
@@ -15,12 +17,30 @@ export type MeadowKind = "mown" | "pasture" | "hay" | "wild";
 export interface Meadow { cx: number; cz: number; hw: number; hd: number; rot: number; kind: MeadowKind; height: number; tone: number }
 export interface Forest { x: number; z: number; r: number; conifer: number }
 export interface Suburb { x: number; z: number; rot: number; r: number }
-export interface OutpostSpec { kind: OutpostKind; x: number; z: number; rot: number }
+/** `look`: the city map's version of the outpost (a pharmacy for the field hospital, an underground car park's exit for the workshop). */
+export interface OutpostSpec { kind: OutpostKind; x: number; z: number; rot: number; look?: "pharmacy" | "garage" }
+/**
+ * A building. Village houses are drawn with brick walls and a gable roof; `style` marks the city's
+ * buildings (see city.ts): "paris" - Parisian apartment blocks in rows, "villa" - free-standing town
+ * villas. For those `h` is the height of the walls and `roofH` that of the zinc mansard roof.
+ */
 export interface HouseSpec {
   x: number; z: number; rot: number;
   w: number; d: number; h: number; roofH: number;
   body: number; roof: number; church?: boolean;
+  style?: "paris" | "villa";
+  /** City buildings: storeys (the ground floor included), a dome on the roof, iron balconies. */
+  floors?: number; dome?: boolean; balconies?: boolean;
+  /**
+   * Rounded corners (radius per corner: +x+z, -x+z, -x-z, +x-z). A corner house has one; its two
+   * walls away from the corner (-x and -z) are party walls. `mass`: a whole block as one building.
+   */
+  round?: [number, number, number, number]; mass?: boolean;
+  /** Far out (scenery only): no dormers, balconies or chimney pots. */
+  plain?: boolean;
 }
+/** A pond in the park (an ellipse): the ground dips, water fills it. */
+export interface Pond { x: number; z: number; rx: number; rz: number; rot: number }
 
 /**
  * Rotations follow Babylon's convention for `mesh.rotation.y`:
@@ -80,6 +100,8 @@ export const HOUSE_ROOF: RGB[] = [
 
 /** Static description of the map: bases, suburbs, roads, fields, forests. */
 export class MapLayout {
+  /** Which map this is (the city map fills the lists below differently and has a few of its own). */
+  readonly map: MapId;
   readonly playerBase: V2 = { x: -20, z: -92 };
   readonly enemyBase: V2 = { x: 20, z: 92 };
 
@@ -132,8 +154,28 @@ export class MapLayout {
   readonly meadows: Meadow[] = [];
   readonly houses: HouseSpec[] = [];
 
-  constructor(seed = 1337) {
+  // ---- the city map only (empty on the hill country)
+  /** Buildings beyond the edge of the map: scenery only (no obstacle, no cover, not on the minimap). */
+  readonly outerHouses: HouseSpec[] = [];
+  /** Gravel paths through the park (painted on the ground, not roads: vehicles get no bonus). */
+  readonly paths: Road[] = [];
+  readonly ponds: Pond[] = [];
+  /** Single bushes in the park (solid like hedges). */
+  readonly bushes: { x: number; z: number; r: number }[] = [];
+  /** Planted trees: plane trees along the boulevards, trees in the villa gardens. */
+  readonly plantedTrees: V2[] = [];
+  /** Road blocks where the streets leave the map. */
+  readonly barriers: { x: number; z: number; rot: number; len: number }[] = [];
+  /** The park's extent (z from -park to +park); 0 on the hill country. */
+  park = 0;
+
+  constructor(map: MapId = "hills", seed = 1337) {
+    this.map = map;
     const r = rng(seed);
+    if (map === "embassy") {
+      buildEmbassy(this, r);
+      return;
+    }
     this.suburbs.forEach((s, i) => this.buildSuburb(s, i, r));
     this.buildCountryRoads();
     this.buildFields(r);
@@ -327,9 +369,36 @@ export class MapLayout {
     return null;
   }
 
+  /** Inside the city map's park (with a margin `pad` in from its edge). */
+  inPark(x: number, z: number, pad = 0): boolean {
+    return this.park > 0 && Math.abs(z) < this.park - pad && Math.abs(x) < MAP_HALF - 21 - pad;
+  }
+
+  /** Signed distance to the edge of the nearest park path (negative = on it). */
+  pathDistance(x: number, z: number): number {
+    let best = Infinity;
+    for (const p of this.paths) {
+      const m = p.w / 2 + 4;
+      if (x < Math.min(p.a.x, p.b.x) - m || x > Math.max(p.a.x, p.b.x) + m || z < Math.min(p.a.z, p.b.z) - m || z > Math.max(p.a.z, p.b.z) + m) continue;
+      best = Math.min(best, segDist(x, z, p.a, p.b) - p.w / 2);
+    }
+    return best;
+  }
+
+  /** The pond at a point: 1 deep inside, 0 at the shore, negative outside (in units of its size). */
+  pondDepth(x: number, z: number): number {
+    let best = -Infinity;
+    for (const p of this.ponds) {
+      if (Math.abs(x - p.x) > p.rx + p.rz + 6 || Math.abs(z - p.z) > p.rx + p.rz + 6) continue;
+      const l = toLocal(p.x, p.z, p.rot, x, z);
+      best = Math.max(best, 1 - Math.hypot(l.x / p.rx, l.z / p.rz));
+    }
+    return best;
+  }
+
   houseAt(x: number, z: number, pad = 0): boolean {
     for (const h of this.houses) {
-      if (Math.abs(x - h.x) > 12 || Math.abs(z - h.z) > 12) continue;
+      if (Math.abs(x - h.x) > 24 || Math.abs(z - h.z) > 24) continue;
       const l = toLocal(h.x, h.z, h.rot, x, z);
       if (Math.abs(l.x) < h.w / 2 + pad && Math.abs(l.z) < h.d / 2 + pad) return true;
     }

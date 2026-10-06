@@ -69,6 +69,7 @@ export function createHouses(scene: Scene, layout: MapLayout, terrain: Terrain, 
   const tiles: RoofSpec[] = [];
 
   for (const h of layout.houses) {
+    if (h.style) continue; // (the city's buildings: see city.ts)
     let minY = Infinity, maxY = -Infinity;
     for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
       const p = toWorld(h.x, h.z, h.rot, (lx * h.w) / 2, (lz * h.d) / 2);
@@ -157,8 +158,10 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
   const conifers = new InstanceBatch(coniferMesh);
 
   const trees: TreeInfo[] = [];
+  const city = layout.map === "embassy";
   const free = (x: number, z: number, housePad = 1.8) =>
     !layout.fieldAt(x, z) &&
+    (!city || (layout.pondDepth(x, z) < -0.2 && layout.pathDistance(x, z) > 1.2)) &&
     layout.nearestRoad(x, z).d > 1.6 &&
     !layout.nearBase(x, z, 24) &&
     !layout.nearOutpost(x, z, 1.5) &&
@@ -193,6 +196,7 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
   // lone trees and small copses in the open country
   for (let k = 0; k < 140; k++) {
     const x = (r() * 2 - 1) * (MAP_HALF - 4), z = (r() * 2 - 1) * (MAP_HALF - 4);
+    if (city && !layout.inPark(x, z, 2)) continue; // (in the city only the park has them)
     if (layout.suburbs.some((s) => Math.hypot(x - s.x, z - s.z) < s.r - 6)) continue;
     if (free(x, z)) place(x, z, r() < 0.2);
   }
@@ -231,9 +235,12 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     }
   }
 
+  // planted trees (city): plane trees along the boulevards, a few in the villa gardens
+  for (const t of layout.plantedTrees) place(t.x, t.z, false);
+
   // beyond the map: firs on the lower mountain slopes and scattered deep down in the abyss
   // (they show how far it goes down); nothing on the sheer faces
-  for (let k = 0; k < 2600; k++) {
+  for (let k = 0; k < (city ? 0 : 2600); k++) {
     const x = (r() * 2 - 1) * (TERRAIN_HALF - 3), z = (r() * 2 - 1) * (TERRAIN_HALF - 3);
     const e = Math.max(Math.abs(x), Math.abs(z));
     if (e < MAP_HALF + 3) continue;

@@ -1,6 +1,6 @@
 import { Engine, Scene } from "@babylonjs/core";
 import "./style.css";
-import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, type GameMode } from "./config";
+import { COMMANDOS, ENEMY, MAP_HALF, MAP_NAMES, PLAYER, type GameMode, type MapId } from "./config";
 import { AudioSystem, MUSIC_LEVELS, VOLUME_LEVELS } from "./audio/audio";
 import { EnemyAI } from "./game/ai";
 import { CommandosMission } from "./game/commandos";
@@ -41,6 +41,8 @@ import { preloadSurfaceTextures } from "./world/surfacePbr";
 import { loadAgentModel } from "./world/agentModel";
 import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
+import { createCity } from "./world/city";
+import { renderMapPreview } from "./ui/mapPreview";
 import { Terrain } from "./world/terrain";
 
 // ------------------------------------------------------------------ staged start-up
@@ -67,8 +69,17 @@ scene.skipPointerMovePicking = true;
 // the agent's rigged figure loads in the background while the map is built (without it he is built from primitives)
 const agentModel = loadAgentModel(scene).catch((e) => console.warn("agent model unavailable", e));
 
+// the map: chosen in the menu (the page is loaded again with it; `start` then starts that mode at once)
+const params = new URLSearchParams(location.search);
+const MAP: MapId = params.get("map") === "embassy" ? "embassy" : "hills";
+const autoStart = (["base", "skirmish", "commandos"] as const).find((m) => m === params.get("start")) ?? null;
+if (autoStart) {
+  params.delete("start");
+  history.replaceState(null, "", location.pathname + (params.toString() ? `?${params}` : ""));
+}
+
 const env = createEnvironment(scene);
-const layout = new MapLayout();
+const layout = new MapLayout(MAP);
 const terrain = new Terrain(scene, layout);
 const nav = new NavGrid();
 setBoot(0.18);
@@ -82,6 +93,8 @@ createMeadowGrass(scene, layout, terrain, realCrops);
 // tall tussocks of grass along the meadows' edges: scenery only, they are no obstacle
 const tussocks = createMeadowTussocks(scene, layout, terrain, env.shadows);
 createHouses(scene, layout, terrain, env.shadows, nav);
+// the city map: apartment blocks, villas, ponds, road blocks
+if (MAP === "embassy") createCity(scene, layout, terrain, env.shadows, nav);
 const realTrees = new RealisticTrees(scene, env.shadows);
 const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);
 // street lamps stand in every mode; they are only switched on for the night mission
@@ -578,6 +591,7 @@ const menuSettings = document.getElementById("menu-settings")!;
 const showModes = (on: boolean) => {
   menuMain.hidden = on;
   menuModes.hidden = !on;
+  document.getElementById("menu-maps")!.hidden = true;
   menuSettings.hidden = true;
   document.body.classList.remove("menu-settings-open");
   document.body.classList.toggle("menu-choose", on);
@@ -598,12 +612,38 @@ document.getElementById("menu-settings-back")!.addEventListener("click", () => s
 // The artwork is rendered from the live battlefield (temporary units, lights): a game may only start
 // once it is done, otherwise its clean-up would hit the running game.
 let starting = false;
-const requestStart = (mode: GameMode) => {
+/** Starts a mode on a map; another map than the one built is loaded with the page (and started there). */
+const requestStart = (mode: GameMode, map: MapId = "hills") => {
   if (starting) return;
+  if (map !== MAP) {
+    starting = true;
+    const q = new URLSearchParams(location.search);
+    q.set("map", map);
+    q.set("start", mode);
+    document.documentElement.classList.remove("ready"); // (fade out)
+    window.setTimeout(() => location.assign(`${location.pathname}?${q}`), 150);
+    return;
+  }
   starting = true;
   void artDone.catch(() => undefined).then(() => startGame(mode)); // also if the artwork failed
 };
-document.getElementById("mode-conquest")!.addEventListener("click", () => requestStart("base"));
+// "Eroberung" first asks for the map (Gefecht and Commandos are played on the hill country)
+const menuMaps = document.getElementById("menu-maps")!;
+const showMaps = (on: boolean) => {
+  menuModes.hidden = on;
+  menuMaps.hidden = !on;
+};
+document.getElementById("mode-conquest")!.addEventListener("click", () => showMaps(true));
+document.getElementById("maps-back")!.addEventListener("click", () => showMaps(false));
+for (const el of document.querySelectorAll<HTMLElement>("#menu-maps [data-map]")) {
+  el.addEventListener("click", () => requestStart("base", el.dataset.map as MapId));
+}
+// the city map's names for the base and the production outposts
+if (MAP === "embassy") for (const el of document.querySelectorAll<HTMLElement>("[data-city]")) el.textContent = el.dataset.city!;
+document.getElementById("menu-kicker")!.textContent = `Herbstoffensive · Einsatzgebiet ${MAP_NAMES[MAP]}`;
+for (const m of ["hills", "embassy"] as MapId[]) {
+  (document.getElementById(`map-img-${m}`) as HTMLImageElement).src = renderMapPreview(m === MAP ? layout : new MapLayout(m));
+}
 document.getElementById("mode-skirmish")!.addEventListener("click", () => requestStart("skirmish"));
 document.getElementById("mode-commandos")!.addEventListener("click", () => requestStart("commandos"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
@@ -617,6 +657,8 @@ const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight, 
   }
   renderingArt = false;
   if (inMenu && !starting) startBackgroundBattle();
+  // loaded for a game on this map: start it right away
+  if (autoStart) requestStart(autoStart, MAP);
 });
 artDone.then(
   (art) => {

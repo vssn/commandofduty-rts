@@ -362,7 +362,7 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
   });
 
   for (const h of layout.houses) {
-    if (h.church) continue;
+    if (h.church || h.style) continue; // (no garages and garden fences in the city)
     // a garage beside some houses
     if (r() < 0.4) {
       // beside the house (long side along its depth) or behind it (away from the street)
@@ -415,6 +415,7 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
       const x = rd.a.x + dx * t + dz * side * off, z = rd.a.z + dz * t - dx * side * off;
       const rot = Math.atan2(dz, dx) * -1 + (side > 0 ? 0 : Math.PI) + (r() - 0.5) * 0.14
         + (askew ? (r() < 0.5 ? -1 : 1) * (inLane ? 0.7 + r() * 0.7 : 0.22 + r() * 0.4) : 0);
+      if (Math.abs(x) > MAP_HALF - 3 || Math.abs(z) > MAP_HALF - 3) continue; // (the city's streets run on beyond the map)
       if (layout.streetLights.some((l) => Math.hypot(l.x - x, l.z - z) < 3)) continue;
       if (!nav.areaFree(x, z, 2.0, 0.9, rot, 0) || placed.some((p) => Math.hypot(p.x - x, p.z - z) < p.rad + 2.4)) continue;
       put(cars[Math.floor(r() * cars.length)], x, z, rot, 2.0, 0.9, 1.5, "infantry");
@@ -426,7 +427,7 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
   const plough = ploughTpl(scene);
   const tractors = ([[0.7, 0.16, 0.1], [0.22, 0.45, 0.2], [0.2, 0.33, 0.62]] as RGB[]).map((c, i) => tractorTpl(scene, c, `tractor${i}`));
   for (const f of layout.fields) {
-    if (r() < 0.35) continue;
+    if (f.garden || r() < 0.35) continue;
     const kinds: ("wagon" | "plough" | "tractor")[] = [r() < 0.55 ? "wagon" : "plough"];
     if (r() < 0.25) kinds.push("tractor");
     for (const kind of kinds) {

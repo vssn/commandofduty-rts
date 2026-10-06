@@ -37,6 +37,7 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain, r
   const colors: number[] = [];
   const m = new Matrix();
   for (const f of layout.fields) {
+    if (f.garden) continue; // (a lawn)
     const kind = cropKind(f);
     const [hMin, hMax] = CROP_HEIGHT[kind];
     const q = Quaternion.RotationAxis(Axis.Y, f.rot);
