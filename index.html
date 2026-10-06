@@ -44,11 +44,12 @@
             <div class="sb-kicker" id="sb-kicker">Auftrag erfüllt</div>
             <h2 id="sb-title">Bestenliste</h2>
             <table class="sb-table">
-              <thead><tr><th>#</th><th>Name</th><th>Zeit übrig</th><th>Stellungen</th><th>Drohnen</th><th>Soldaten</th></tr></thead>
+              <thead><tr><th>#</th><th>Name</th><th>Zeit übrig</th><th id="sb-col-out">Stellungen</th><th>Drohnen</th><th>Soldaten</th></tr></thead>
               <tbody id="sb-body"></tbody>
             </table>
             <p id="sb-hint"></p>
             <button id="sb-ok" type="button">Bestätigen</button>
+            <button id="sb-switch" type="button" hidden>Botschaftsquartier ›</button>
             <input id="sb-input" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Name" />
           </div>
         </div>
@@ -184,7 +185,7 @@
                   <span class="mode-img"><img id="mode-img-commandos" alt="" draggable="false" /></span>
                   <span class="mode-body">
                     <span class="mode-title">Commandos</span>
-                    <span class="mode-text">Ein Spezialagent hinter feindlichen Linien: der Feind hält die ganze Karte und patrouilliert. Sprenge sechs Stellungen.</span>
+                    <span class="mode-text">Ein Spezialagent hinter feindlichen Linien: der Feind hält die ganze Karte und patrouilliert. Sprenge Stellungen im Hügelland oder birg Dokumente im Botschaftsquartier.</span>
                     <span class="mode-tags"><em>Agent</em><em>Scharfschuss</em><em>Tarnen</em><em>Sprengladung</em></span>
                   </span>
                 </button>
@@ -194,13 +195,13 @@
               <button id="menu-back" class="menu-btn menu-back">‹ Zurück</button>
             </div>
             <div id="menu-maps" hidden>
-              <h2 class="menu-sub">Eroberung – Karte wählen</h2>
+              <h2 class="menu-sub" id="maps-title">Eroberung – Karte wählen</h2>
               <div class="mode-cards map-cards">
                 <button class="mode-card" data-map="hills">
                   <span class="mode-img"><img id="map-img-hills" alt="" draggable="false" /></span>
                   <span class="mode-body">
                     <span class="mode-title">Hügelland</span>
-                    <span class="mode-text">Herbstliches Hügelland mit Dörfern, Feldern, Hecken und Wäldern. Die Basen sind Kasernen hinter Sandsackwällen.</span>
+                    <span class="mode-text" data-text-commandos="Herbstliches Hügelland bei Nacht: Sprenge sechs Stellungen, ohne entdeckt zu werden. Sprengstoff liegt in Verstecken an den Waldrändern.">Herbstliches Hügelland mit Dörfern, Feldern, Hecken und Wäldern. Die Basen sind Kasernen hinter Sandsackwällen.</span>
                     <span class="mode-tags"><em>Land</em><em>Felder</em><em>Dörfer</em></span>
                   </span>
                 </button>
@@ -208,7 +209,7 @@
                   <span class="mode-img"><img id="map-img-embassy" alt="" draggable="false" /></span>
                   <span class="mode-body">
                     <span class="mode-title">Botschaftsquartier</span>
-                    <span class="mode-text">Innenstadt mit breiten Straßen, Villen und Häuserblöcken; ein Park mit Teichen trennt die Seiten. Basis an der U-Bahn-Station, Apotheke und Tiefgarage nebenan.</span>
+                    <span class="mode-text" data-text-commandos="Nachts in der Innenstadt: Suche drei Botschaften (Villen am Park, jedes Mal andere) auf und birg dort die Dokumente. Stark bewacht – befreie Gefangene in den Stellungen und flieh mit dem Hubschrauber.">Innenstadt mit breiten Straßen, Villen und Häuserblöcken; ein Park mit Teichen trennt die Seiten. Basis an der U-Bahn-Station, Apotheke und Tiefgarage nebenan.</span>
                     <span class="mode-tags"><em>Stadt</em><em>Park</em><em>Häuserblöcke</em></span>
                   </span>
                 </button>

@@ -226,6 +226,26 @@ export class Minimap {
       ctx.lineTo(x + 6, y - 1);
       ctx.stroke();
     }
+    // commandos (city): the embassies with the documents - a pulsing ring and a small white envelope
+    for (const e of this.game.commandos?.embassies ?? []) {
+      if (e.taken) continue;
+      const [x, y] = this.map(e.villa.x, e.villa.z);
+      ctx.strokeStyle = `rgba(255, 235, 140, ${0.35 + pulse * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 10 + pulse * 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#f6f1de";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(x - 7, y - 5, 14, 10);
+      ctx.strokeRect(x - 7, y - 5, 14, 10);
+      ctx.beginPath();
+      ctx.moveTo(x - 7, y - 5);
+      ctx.lineTo(x, y + 1);
+      ctx.lineTo(x + 7, y - 5);
+      ctx.stroke();
+    }
     // commandos: the extraction point, once open (blue smoke: a pulsing blue ring with a flare)
     const ex = this.game.commandos?.extraction;
     if (ex) {

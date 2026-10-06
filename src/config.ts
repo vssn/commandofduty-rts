@@ -170,6 +170,32 @@ export const COMMANDOS = {
   alertRadius: 38,
 };
 
+/**
+ * Commandos on the Botschaftsquartier: instead of blowing up outposts the agent has to visit three
+ * embassies (town villas along the park, drawn by lot every mission) and secure their documents at the
+ * front door, then reach the extraction point. The villas are guarded far more heavily, the outposts
+ * too; soldiers held at an outpost may be freed once its guards are down and then fight with the agent.
+ */
+export const EMBASSY_OPS = {
+  /** Embassies to visit. */
+  documents: 3,
+  /** Seconds until the mission fails. */
+  timeLimit: 840,
+  /** From this many documents on the enemy is on full alert (drones). */
+  escalateAfter: 2,
+  /** The documents are secured within `reach` of the door, after `time` seconds there. */
+  door: { reach: 3, time: 4 },
+  /** Guards per outpost, outposts with an MG nest, foot patrols (3 men each) and jeeps. */
+  garrison: 3,
+  nests: 5,
+  patrols: 6,
+  jeepPatrols: 2,
+  /** Round every embassy: guards, an MG nest, a squad circling the villa and a searchlight. */
+  villa: { guards: 6, nest: true, patrols: 1 },
+  /** Chance that soldiers are held at an outpost; they are freed once all its guards are dead. */
+  captives: { chance: 0.6, min: 2, max: 3 },
+};
+
 /** Skirmish: starting forces per side (no reinforcements) and starting credits. Every jeep starts
  *  with its own MG gunner aboard (extra riflemen on top of the listed infantry). */
 export const SKIRMISH = {

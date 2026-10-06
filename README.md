@@ -26,7 +26,7 @@ führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 ## Karten
 
 **Eroberung** fragt nach der Karte: **Hügelland** (die bisherige Karte) oder **Botschaftsquartier**. Die Kacheln zeigen
-einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`). Gefecht und Commandos spielen im Hügelland.
+einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`). Gefecht spielt im Hügelland; „Commandos“ fragt ebenfalls nach der Karte (siehe unten).
 Eine andere Karte als die geladene wird mit der Seite neu aufgebaut (`?map=embassy`, `&start=base` startet den Modus
 danach sofort); der Kopf des Hauptmenüs nennt das geladene Einsatzgebiet.
 
@@ -209,6 +209,27 @@ Fußpatrouillen, die auf frische Spuren stoßen, folgen ihnen in Laufrichtung un
 Über Gegnern zeigt „?“ Suche/Fährte, „!“ dass sie den Agenten entdeckt haben.
 
 Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
+
+### Commandos im Botschaftsquartier
+
+Nach „Commandos“ fragt das Menü die Karte. Im **Botschaftsquartier** spielt dieselbe Mission nachts in der Stadt, mit
+demselben Absprung (Wingsuit, Fallschirm, Briefing, Landung – er endet im Park oder auf einer Straße), denselben Fähigkeiten
+und derselben Extraktion – nur das Ziel ist ein anderes (Werte: `EMBASSY_OPS` in `src/config.ts`, Logik in
+`src/game/commandos.ts`):
+- **Auftrag: drei Botschaften aufsuchen und dort die Dokumente bergen** (14 Minuten). Botschaften sind die Stadtvillen
+  an der Parkseite (die Villen der beiden Reihen am Park); **welche drei, wird bei jedem Einsatz ausgelost** – verteilt
+  und vom Landeplatz aus zu Fuß erreichbar. Eine Fahne auf dem Dach markiert sie (nach dem Fund grün), auf der Minimap
+  erscheint ein Umschlag mit pulsierendem Ring, im Spiel „Botschaft n · Dokumente“ samt Fortschritt. Die Dokumente sind
+  gesichert, wenn der Agent vier Sekunden am Eingang der Villa steht (Ring auf dem Boden; verlässt er ihn, sinkt der Fortschritt).
+- **Stark bewacht:** an jeder Botschaft sechs Wachen rund ums Haus, ein MG-Nest vor der Tür, ein Suchscheinwerfer (er
+  erlischt, sobald die Dokumente weg sind) und ein Trupp, der das Haus umkreist; dazu mehr Wachen, MG-Nester und Patrouillen
+  an den Stellungen als im Hügelland. Die Stellungen (Park, Apotheke, Tiefgarage) sind in Feindeshand.
+- **Gefangene befreien:** an den Stellungen können Soldaten festgehalten werden. Sind alle Wachen einer Stellung
+  ausgeschaltet, besteht eine Chance (60 %), dass zwei bis drei Soldaten frei kommen; sie kämpfen auf der Seite des Agenten,
+  folgen ihm und lassen sich wie normale Einheiten auswählen und befehligen. Das Auftragsfeld zählt sie.
+- Nach dem zweiten Dokument ist der Feind alarmiert und die Drohnen steigen auf. Sind alle drei Dokumente da, öffnet sich
+  der **Extraktionspunkt** (blaue Fackel, Minimap „E“), diesmal auf freier Fläche im Park; dort holt der Hubschrauber den
+  Agenten mit derselben Schluss-Cinematic ab. Das Highscore-Menü führt eine eigene Tabelle je Karte (Spalte „Befreite“ statt „Stellungen“).
 
 ## Wirtschaft (Eroberung)
 

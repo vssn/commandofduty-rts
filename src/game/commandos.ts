@@ -1,8 +1,8 @@
 import { Color3, Mesh, MeshBuilder, MultiMaterial, StandardMaterial, type InstancedMesh } from "@babylonjs/core";
 import { classicMaterial } from "../world/pbr";
-import { COMMANDOS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
+import { COMMANDOS, EMBASSY_OPS, ENEMY, MAP_HALF, PLAYER, SIGHT, type UnitType } from "../config";
 import { COMPOUND } from "../world/fortification";
-import { toWorld, type V2 } from "../world/layout";
+import { toWorld, type HouseSpec, type V2 } from "../world/layout";
 import { createGlowSpot, Searchlight } from "../world/lighting";
 import { MAX_SPOTS, type SpotLight } from "../world/spotPbr";
 import { createChargeMesh, mat } from "../world/models";
@@ -29,7 +29,7 @@ interface Death { x: number; z: number; t: number; found: boolean }
 interface Search { cx: number; cz: number; t0: number; until: number }
 /** Hidden explosives at the edge of a wood. */
 export interface Cache { x: number; z: number; taken: boolean; mesh: Mesh }
-interface Beam { light: Searchlight; post: Outpost; base: number; phase: number; lockT: number; alarmT: number }
+interface Beam { light: Searchlight; post: { destroyed: boolean }; base: number; phase: number; lockT: number; alarmT: number }
 /** A recon drone, its pilot on the ground and its light. */
 interface Drone {
   unit: Unit;
@@ -45,6 +45,26 @@ interface Drone {
   lastSeen: V2 | null;
   down: boolean;
 }
+
+/**
+ * An embassy of the document mission: a town villa along the park. The documents are secured at its
+ * front door (`door`); a flag on the roof marks it.
+ */
+export interface Embassy {
+  name: string;
+  villa: HouseSpec;
+  door: V2;
+  /** Documents already secured. */
+  taken: boolean;
+  /** Securing progress 0..1 while the agent is at the door. */
+  progress: number;
+  /** The lamp's stand-in post: "destroyed" (lamp off) once the documents are gone. */
+  post: { destroyed: boolean };
+  flag: Mesh;
+  flagMat: StandardMaterial;
+}
+/** Mission kind: blow up outposts (hill country) or fetch documents from three embassies (Botschaftsquartier). */
+export type MissionKind = "sabotage" | "documents";
 
 /** Units that walk about on orders (pilots stay at their laptop, drones are flown by the mission). */
 const grounded = (u: Unit) => u.type !== "drone" && u.type !== "pilot";
@@ -118,13 +138,44 @@ export class CommandosMission {
   soldiersDown = 0;
   private warnedTime = false;
 
-  constructor(private readonly game: Game) {}
+  /** The objective: on the city map the agent fetches documents from embassies instead of blowing up outposts. */
+  readonly kind: MissionKind;
+  /** Embassies of the document mission (empty otherwise). */
+  readonly embassies: Embassy[] = [];
+  /** Soldiers freed from the enemy at an outpost: they fight with the agent. */
+  readonly freed: Unit[] = [];
+  /** Soldiers freed in all (for the high-score table). */
+  freedTotal = 0;
+  /** The guards of each outpost, and the outposts whose guards are all down (a captive soldier may be freed there). */
+  private readonly guardsOf = new Map<Outpost, Unit[]>();
+  private readonly cleared = new Set<Outpost>();
+  private captiveCheckT = 0;
+  private followT = 0;
+
+  constructor(private readonly game: Game) {
+    this.kind = game.layout.map === "embassy" ? "documents" : "sabotage";
+  }
+
+  /** Embassies whose documents the agent has secured. */
+  get documents() { return this.embassies.filter((e) => e.taken).length; }
+  /** Whether the main objective is done (the extraction point opens). */
+  get objectiveDone() {
+    return this.kind === "documents" ? this.documents >= this.embassies.length : this.destroyedOutposts >= COMMANDOS.targets;
+  }
+  /** Seconds the whole mission may take. */
+  get timeLimit() { return this.kind === "documents" ? EMBASSY_OPS.timeLimit : COMMANDOS.timeLimit; }
+  /** Enemy forces: guards per outpost, outposts with an MG nest, foot patrols and jeeps. */
+  private get forces() {
+    return this.kind === "documents"
+      ? { garrison: EMBASSY_OPS.garrison, nests: EMBASSY_OPS.nests, patrols: EMBASSY_OPS.patrols, jeepPatrols: EMBASSY_OPS.jeepPatrols }
+      : { garrison: COMMANDOS.garrison, nests: COMMANDOS.nests, patrols: COMMANDOS.patrols, jeepPatrols: COMMANDOS.jeepPatrols };
+  }
 
   get sniperCooldown() { return Math.max(0, this.sniperCd); }
   /** Drones still in the air. */
   get dronesActive() { return this.drones.filter((d) => !d.down).length; }
   /** Seconds left on the mission clock. */
-  get timeLeft() { return Math.max(0, COMMANDOS.timeLimit - this.time); }
+  get timeLeft() { return Math.max(0, this.timeLimit - this.time); }
   get cloakCooldown() { return Math.max(0, this.cloakCd); }
 
   // ---------------------------------------------------------------- setup
@@ -153,26 +204,32 @@ export class CommandosMission {
     g.nav.clearRect(own.x, own.z, COMPOUND.hw + 1.5, COMPOUND.hd + 1.5, own.rot);
 
 
+    const F = this.forces;
     // guards at every outpost, looking in different directions
     for (const o of g.outposts) {
-      for (let i = 0; i < COMMANDOS.garrison; i++) {
-        const a = (i / COMMANDOS.garrison) * Math.PI * 2 + Math.random();
+      const guards: Unit[] = [];
+      for (let i = 0; i < F.garrison; i++) {
+        const a = (i / F.garrison) * Math.PI * 2 + Math.random();
         const p = g.nav.freePoint(o.x + Math.cos(a) * o.radius * 0.45, o.z + Math.sin(a) * o.radius * 0.45);
         const u = g.spawnUnit(i === 0 && o.kind === "hospital" ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
         u.heading = a;
         this.homes.set(u, { x: p.x, z: p.z });
+        guards.push(u);
       }
+      this.guardsOf.set(o, guards);
     }
 
     // some outposts are covered by a manned MG nest on their edge
-    const nestPosts = [...g.outposts].sort(() => Math.random() - 0.5).slice(0, COMMANDOS.nests);
+    const nestPosts = [...g.outposts].sort(() => Math.random() - 0.5).slice(0, F.nests);
     for (const o of nestPosts) {
       for (let tries = 0; tries < 12; tries++) {
         const a = Math.random() * Math.PI * 2, r = o.radius * 0.8;
         const x = o.x + Math.sin(a) * r, z = o.z + Math.cos(a) * r;
         if (!g.nav.areaFree(x, z, 1.3, 1.3, a, 0)) continue;
         const nest = g.spawnStructure("mgnest", ENEMY, x, z, a, o);
-        g.board(g.spawnUnit("rifleman", ENEMY, x, z - 2), nest);
+        const gunner = g.spawnUnit("rifleman", ENEMY, x, z - 2);
+        g.board(gunner, nest);
+        this.guardsOf.get(o)?.push(gunner);
         break;
       }
     }
@@ -190,7 +247,7 @@ export class CommandosMission {
     const posts = g.outposts.map((o) => ({ x: o.x, z: o.z }));
     const route = (start: number, stride: number, len: number) =>
       Array.from({ length: len }, (_, k) => posts[(start + k * stride) % posts.length]);
-    for (let i = 0; i < COMMANDOS.patrols; i++) {
+    for (let i = 0; i < F.patrols; i++) {
       const r = route(i * 2, 3, 4);
       const units = (["rifleman", "rifleman", "grenadier"] as UnitType[]).map((t, k) => {
         const p = g.nav.freePoint(r[0].x + k * 1.5, r[0].z + 3);
@@ -219,7 +276,7 @@ export class CommandosMission {
       }
       return r.length >= 2 ? r : route(1, 4, 5);
     };
-    for (let i = 0; i < COMMANDOS.jeepPatrols; i++) {
+    for (let i = 0; i < F.jeepPatrols; i++) {
       const r = roadRoute();
       const p = g.nav.freePoint(r[0].x, r[0].z, 1);
       const jeep = g.spawnUnit("jeep", ENEMY, p.x, p.z);
@@ -237,6 +294,7 @@ export class CommandosMission {
     this.makeAgentMaterialsOwn();
 
     this.placeCaches();
+    if (this.kind === "documents") this.setupEmbassies();
 
     const tpl = createChargeMesh(g.scene);
     tpl.isVisible = false;
@@ -317,6 +375,11 @@ export class CommandosMission {
     this.drones.length = 0;
     for (const c of this.caches) if (!c.taken) c.mesh.dispose();
     this.caches.length = 0;
+    for (const e of this.embassies) {
+      e.flag.dispose();
+      e.flagMat.dispose();
+    }
+    this.embassies.length = 0;
     for (const c of this.planted) c.mesh.dispose();
     this.planted.length = 0;
     this.chargeTpl?.dispose();
@@ -644,10 +707,14 @@ export class CommandosMission {
     this.updateCharges(dt);
     this.updatePatrols(dt);
     this.updateBeams(dt);
-    if (!this.aggressive && this.destroyedOutposts > COMMANDOS.escalation.after) this.escalate();
+    if (!this.aggressive && (this.destroyedOutposts > COMMANDOS.escalation.after || (this.kind === "documents" && this.documents >= EMBASSY_OPS.escalateAfter))) this.escalate();
     this.updateDrones(dt);
     this.updateAlert(dt);
     this.updateCaches();
+    if (this.kind === "documents") {
+      this.updateEmbassies(dt);
+      this.updateCaptives(dt);
+    }
 
     if (!this.warnedTime && this.timeLeft <= 60) {
       this.warnedTime = true;
@@ -660,7 +727,7 @@ export class CommandosMission {
     } else if (!a.alive) {
       g.result = "lose";
       g.emit("lose", PLAYER);
-    } else if (this.destroyedOutposts >= COMMANDOS.targets) {
+    } else if (this.objectiveDone) {
       // last objective: get out alive - reach the extraction point
       if (!this.extraction) this.startExtraction();
       else if (!this.extracting && Math.hypot(a.x - this.extraction.x, a.z - this.extraction.z) <= EXTRACT_RADIUS) {
@@ -742,7 +809,7 @@ export class CommandosMission {
     const a = this.agent;
     this.extraction = pickExtractionPoint(this.game, a);
     this.flare = new ExtractionFlare(this.game.scene, this.game.terrain, this.extraction.x, this.extraction.z);
-    this.game.emit("extraction", PLAYER);
+    this.game.emit(this.kind === "documents" ? "documentsAll" : "extraction", PLAYER);
   }
 
   /** The agent is out: mission accomplished. */
@@ -891,6 +958,177 @@ export class CommandosMission {
       if (d <= u.stats.acquire + 4) u.target = a; // in range: open fire
       else if (!u.isStructure && grounded(u) && Math.hypot(u.x - x, u.z - z) < radius) {
         u.orderMove(g.nav.freePoint(a.x + (Math.random() - 0.5) * 6, a.z + (Math.random() - 0.5) * 6, u.navLayer), true, g);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- embassies (city map)
+
+  /**
+   * Draws the three embassies among the villas along the park (spread apart, reachable on foot from the
+   * agent's landing place) and puts the guards, a machine-gun nest, a searchlight, a squad on its rounds and a
+   * flag on the roof at each.
+   */
+  private setupEmbassies() {
+    const g = this.game, a = this.agent, O = EMBASSY_OPS;
+    const cands = g.layout.houses.filter((h) => h.style === "villa" && Math.abs(h.z) < 72 && Math.hypot(h.x - a.x, h.z - a.z) > 35).sort(() => Math.random() - 0.5);
+    const doorOf = (h: HouseSpec) => {
+      const p = toWorld(h.x, h.z, h.rot, 0, h.d / 2 + 2.2);
+      return g.nav.freePoint(p.x, p.z);
+    };
+    const reachable = (d: V2) => {
+      const path = g.nav.findPath(a.x, a.z, d.x, d.z);
+      const end = path[path.length - 1];
+      return !!end && Math.hypot(end.x - d.x, end.z - d.z) < 2;
+    };
+    const chosen: HouseSpec[] = [];
+    // spread apart and reachable first, then whatever is left
+    for (const [spread, need] of [[40, true], [20, true], [0, false]] as const) {
+      for (const h of cands) {
+        if (chosen.length >= O.documents) break;
+        if (chosen.includes(h) || chosen.some((c) => Math.hypot(c.x - h.x, c.z - h.z) < spread)) continue;
+        if (need && !reachable(doorOf(h))) continue;
+        chosen.push(h);
+      }
+    }
+    const flags: [number, number, number][] = [[0.85, 0.15, 0.15], [0.2, 0.45, 0.9], [0.95, 0.75, 0.15]];
+    chosen.forEach((h, i) => {
+      const door = doorOf(h);
+      const post = { destroyed: false };
+      const { flag, flagMat } = this.flagMesh(h, flags[i % flags.length]);
+      this.embassies.push({ name: `Botschaft ${i + 1}`, villa: h, door, taken: false, progress: 0, post, flag, flagMat });
+      const at = (lx: number, lz: number) => {
+        const p = toWorld(h.x, h.z, h.rot, lx, lz);
+        return g.nav.freePoint(p.x, p.z);
+      };
+      // guards: two at the door, one at each side, one at the back and a grenadier at the front
+      const hw = h.w / 2 + 2.4, hd = h.d / 2 + 2.4;
+      const posts: [number, number, number][] = [
+        [-3.2, hd, 0], [3.2, hd, 0], [-hw, 0, -Math.PI / 2], [hw, 0, Math.PI / 2], [0, -hd, Math.PI], [0, hd + 3.5, 0],
+      ];
+      for (let k = 0; k < Math.min(O.villa.guards, posts.length); k++) {
+        const [lx, lz, turn] = posts[k];
+        const p = at(lx, lz);
+        const u = g.spawnUnit(k === posts.length - 1 ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
+        u.heading = h.rot + turn;
+        this.homes.set(u, { x: p.x, z: p.z });
+      }
+      // a searchlight at a back corner sweeps the front of the villa
+      const lp = at(-h.w / 2 - 3.5, -h.d / 2 - 3);
+      const light = new Searchlight(g.scene, g.terrain, g.shadows, lp.x, lp.z, COMMANDOS.searchlight.poolRadius);
+      g.nav.structure(lp.x, lp.z, 0.4, 0.4, 0, [0, 1], 1);
+      this.beams.push({ light, post, base: Math.atan2(door.x - lp.x, door.z - lp.z), phase: Math.random() * 10, lockT: 0, alarmT: 0 });
+      // an MG nest in front of the door, covering the garden
+      if (O.villa.nest) {
+        for (const [lx, lz] of [[-5.5, hd + 4.5], [5.5, hd + 4.5], [0, hd + 6.5]]) {
+          const p = toWorld(h.x, h.z, h.rot, lx, lz);
+          if (!g.nav.areaFree(p.x, p.z, 1.3, 1.3, h.rot, 0)) continue;
+          const nest = g.spawnStructure("mgnest", ENEMY, p.x, p.z, h.rot, null);
+          g.board(g.spawnUnit("rifleman", ENEMY, p.x, p.z - 2), nest);
+          break;
+        }
+      }
+      // a squad that walks rounds about the villa
+      for (let n = 0; n < O.villa.patrols; n++) {
+        const route = [[hw + 2.5, hd + 2.5], [-hw - 2.5, hd + 2.5], [-hw - 2.5, -hd - 2.5], [hw + 2.5, -hd - 2.5]].map(([lx, lz]) => at(lx, lz));
+        const units = (["rifleman", "rifleman", "grenadier"] as UnitType[]).map((t, k) => {
+          const p = g.nav.freePoint(route[n % 4].x + k * 1.5, route[n % 4].z + 1.5);
+          return g.spawnUnit(t, ENEMY, p.x, p.z);
+        });
+        this.patrols.push({ units, route, next: (n + 1) % 4, wait: Math.random() * 4, trackT: -1, onFoot: true });
+      }
+    });
+  }
+
+  /** A flag on a pole on the roof (it glows a little, so it can be seen in the dark). */
+  private flagMesh(h: HouseSpec, c: [number, number, number]): { flag: Mesh; flagMat: StandardMaterial } {
+    const g = this.game, sc = g.scene;
+    const top = h.h + h.roofH + (h.dome ? 2.5 : 0);
+    const pole = MeshBuilder.CreateCylinder("flagPole", { height: 4.2, diameter: 0.12, tessellation: 6 }, sc);
+    pole.position.y = 2.1;
+    const flagMat = new StandardMaterial("embassyFlag", sc);
+    flagMat.diffuseColor = new Color3(...c);
+    flagMat.emissiveColor = new Color3(c[0] * 0.55, c[1] * 0.55, c[2] * 0.55);
+    flagMat.specularColor = Color3.Black();
+    flagMat.backFaceCulling = false;
+    const cloth = MeshBuilder.CreatePlane("flagCloth", { width: 2.1, height: 1.3 }, sc);
+    cloth.position.set(1.1, 3.4, 0);
+    cloth.material = flagMat;
+    const poleMat = new StandardMaterial("flagPoleMat", sc);
+    poleMat.diffuseColor = new Color3(0.8, 0.8, 0.78);
+    pole.material = poleMat;
+    const flag = Mesh.MergeMeshes([pole, cloth], true, true, undefined, false, true)!;
+    flag.isPickable = false;
+    flag.position.set(h.x, g.terrain.heightAt(h.x, h.z) + top, h.z);
+    flag.rotation.y = Math.random() * Math.PI * 2;
+    return { flag, flagMat };
+  }
+
+  /** The agent stands at an embassy's front door: after a few seconds the documents are his. */
+  private updateEmbassies(dt: number) {
+    const g = this.game, a = this.agent, D = EMBASSY_OPS.door;
+    for (const e of this.embassies) {
+      if (e.taken) continue;
+      const near = a.alive && Math.hypot(a.x - e.door.x, a.z - e.door.z) <= D.reach;
+      if (near) {
+        e.progress = Math.min(1, e.progress + dt / D.time);
+        if (!a.path.length && !a.dest) {
+          a.stance = "kneel";
+          a.heading = Math.atan2(e.villa.x - a.x, e.villa.z - a.z);
+        }
+      } else {
+        e.progress = Math.max(0, e.progress - dt / (D.time * 2));
+      }
+      if (e.progress < 1) continue;
+      e.taken = true;
+      e.post.destroyed = true; // its searchlight goes out
+      e.flagMat.diffuseColor.set(0.25, 0.7, 0.3);
+      e.flagMat.emissiveColor.set(0.1, 0.4, 0.15);
+      // (the last one is announced with the extraction point)
+      if (this.documents < this.embassies.length) g.emit("documentsSecured", PLAYER);
+    }
+  }
+
+  /**
+   * A few outposts hold prisoners: once all guards of such an outpost are dead there is a chance that soldiers
+   * are freed there; they join the agent, fire at the enemy and follow him.
+   */
+  private updateCaptives(dt: number) {
+    const g = this.game, a = this.agent, C = EMBASSY_OPS.captives;
+    this.captiveCheckT -= dt;
+    if (this.captiveCheckT <= 0) {
+      this.captiveCheckT = 0.5;
+      for (const [o, guards] of this.guardsOf) {
+        if (this.cleared.has(o) || guards.some((u) => u.alive)) continue;
+        this.cleared.add(o);
+        if (Math.random() > C.chance) continue;
+        const n = C.min + Math.floor(Math.random() * (C.max - C.min + 1));
+        for (let i = 0; i < n; i++) {
+          const ang = (i / n) * Math.PI * 2 + Math.random();
+          const p = g.nav.freePoint(o.x + Math.cos(ang) * 2.2, o.z + Math.sin(ang) * 2.2);
+          const u = g.spawnUnit(i === n - 1 && n > 2 ? "grenadier" : "rifleman", PLAYER, p.x, p.z);
+          u.heading = ang;
+          this.freed.push(u);
+          this.freedTotal++;
+        }
+        g.emit("captivesFreed", PLAYER);
+      }
+    }
+    // the freed soldiers stay with the agent
+    this.followT -= dt;
+    if (this.followT > 0 || !a.alive) return;
+    this.followT = 1;
+    for (let i = this.freed.length - 1; i >= 0; i--) {
+      const u = this.freed[i];
+      if (!u.alive) {
+        this.freed.splice(i, 1);
+        continue;
+      }
+      if (u.target || u.path.length || u.boarding) continue;
+      const d = Math.hypot(u.x - a.x, u.z - a.z);
+      if (d > 7) {
+        const ang = Math.random() * Math.PI * 2;
+        u.orderMove(g.nav.freePoint(a.x + Math.cos(ang) * 3.5, a.z + Math.sin(ang) * 3.5), false, g);
       }
     }
   }
@@ -1084,10 +1322,13 @@ export class CommandosMission {
     const g = this.game;
     const enemies = g.units.filter((u) => u.team === ENEMY);
     const lim = MAP_HALF - 8;
+    const city = g.layout.map === "embassy";
     for (const [fromPost, fromEnemy] of [[34, 30], [28, 24], [22, 18], [16, 12]]) {
       for (let tries = 0; tries < 400; tries++) {
         const x = (Math.random() * 2 - 1) * lim, z = (Math.random() * 2 - 1) * lim;
         if (g.nav.isBlocked(x, z)) continue;
+        // in the city he comes down in the open: in the park or on a street (not in a walled garden), with room for the canopy
+        if (city && !((g.layout.inPark(x, z, 3) || g.layout.nearestRoad(x, z).d < 1) && g.nav.areaFree(x, z, 3, 3, 0, 0))) continue;
         if (g.outposts.some((o) => Math.hypot(o.x - x, o.z - z) < o.radius + fromPost)) continue;
         if (Math.hypot(g.enemyBarracks.x - x, g.enemyBarracks.z - z) < fromPost + 12) continue;
         if (enemies.some((u) => Math.hypot(u.x - x, u.z - z) < fromEnemy)) continue;

@@ -6,7 +6,12 @@
 export interface ScoreEntry { name: string; time: number; outposts: number; drones: number; soldiers: number }
 export type Score = Omit<ScoreEntry, "name">;
 
-const KEY = "cod.commandos.scores";
+/** The two missions keep their own tables: outposts blown up (hill country) and documents fetched (city). */
+export type ScoreKind = "sabotage" | "documents";
+const KEYS: Record<ScoreKind, string> = { sabotage: "cod.commandos.scores", documents: "cod.commandos.embassy.scores" };
+const KICKERS: Record<ScoreKind, string> = { sabotage: "Hügelland", documents: "Botschaftsquartier" };
+/** What the table's fourth column counts. */
+const COLUMN: Record<ScoreKind, string> = { sabotage: "Stellungen", documents: "Befreite" };
 const MAX_ENTRIES = 10;
 const MAX_NAME = 12;
 
@@ -15,9 +20,9 @@ export function compareScores(a: Score, b: Score): number {
   return b.time - a.time || b.outposts - a.outposts || b.drones - a.drones || b.soldiers - a.soldiers;
 }
 
-export function loadScores(): ScoreEntry[] {
+export function loadScores(kind: ScoreKind = "sabotage"): ScoreEntry[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const raw = JSON.parse(localStorage.getItem(KEYS[kind]) ?? "[]");
     if (!Array.isArray(raw)) return [];
     const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
     return raw
@@ -30,9 +35,9 @@ export function loadScores(): ScoreEntry[] {
   }
 }
 
-function saveScores(list: ScoreEntry[]) {
+function saveScores(kind: ScoreKind, list: ScoreEntry[]) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX_ENTRIES)));
+    localStorage.setItem(KEYS[kind], JSON.stringify(list.slice(0, MAX_ENTRIES)));
   } catch {
     /* storage unavailable: the table just is not kept */
   }
@@ -55,6 +60,10 @@ export class Scoreboard {
   private list: ScoreEntry[] = [];
   private rank = -1;
   private score: Score | null = null;
+  /** Which mission's table is shown. */
+  private kind: ScoreKind = "sabotage";
+  private readonly switchBtn = document.getElementById("sb-switch") as HTMLButtonElement;
+  private readonly outCol = document.getElementById("sb-col-out")!;
   private nameEl: HTMLElement | null = null;
   private closeTimer = 0;
 
@@ -71,6 +80,8 @@ export class Scoreboard {
       e.stopPropagation(); // typing a name must not trigger the game's hotkeys
     });
     this.ok.addEventListener("click", () => (this.viewing ? this.hide() : this.confirm()));
+    // (only when looking at the table from the menu) the other mission's table
+    this.switchBtn.addEventListener("click", () => this.view(this.kind === "sabotage" ? "documents" : "sabotage"));
     window.addEventListener("keydown", (e) => {
       if (this.viewing && (e.key === "Escape" || e.key === "Enter")) {
         e.stopPropagation();
@@ -83,15 +94,19 @@ export class Scoreboard {
     });
   }
 
-  /** Shows the saved table (from the main menu). */
-  view() {
+  /** Shows the saved table of a mission (from the main menu). */
+  view(kind: ScoreKind = this.kind) {
+    this.kind = kind;
+    this.outCol.textContent = COLUMN[kind];
+    this.switchBtn.hidden = false;
+    this.switchBtn.textContent = `${KICKERS[kind === "sabotage" ? "documents" : "sabotage"]} ›`;
     window.clearTimeout(this.closeTimer);
     this.viewing = true;
     this.score = null;
-    this.list = loadScores();
+    this.list = loadScores(kind);
     this.rank = -1;
     this.waiting = false;
-    this.kicker.textContent = "Commandos";
+    this.kicker.textContent = `Commandos · ${KICKERS[kind]}`;
     this.title.textContent = "Highscores";
     this.hint.textContent = this.list.length ? "" : "Noch keine Einträge – spiele eine Mission zu Ende";
     this.ok.textContent = "Schließen";
@@ -103,12 +118,15 @@ export class Scoreboard {
   }
 
   /** Shows the table with this result in its place (if it makes the top ten) and asks for a name. */
-  show(score: Score) {
+  show(score: Score, kind: ScoreKind = "sabotage") {
     window.clearTimeout(this.closeTimer);
     this.viewing = false;
-    this.kicker.textContent = "Auftrag erfüllt";
+    this.kind = kind;
+    this.outCol.textContent = COLUMN[kind];
+    this.switchBtn.hidden = true;
+    this.kicker.textContent = `Auftrag erfüllt · ${KICKERS[kind]}`;
     this.score = score;
-    this.list = loadScores();
+    this.list = loadScores(kind);
     const better = this.list.filter((e) => compareScores(e, score) <= 0).length; // (equal results rank behind older ones)
     this.rank = better < MAX_ENTRIES ? better : -1;
     this.waiting = true;
@@ -143,7 +161,7 @@ export class Scoreboard {
       saved = { name, ...this.score };
       this.list.splice(this.rank, 0, saved);
       this.list = this.list.slice(0, MAX_ENTRIES);
-      saveScores(this.list);
+      saveScores(this.kind, this.list);
     }
     this.rank = -1;
     this.input.blur();
