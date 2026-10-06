@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@babylonjs/addons": "^9.29.0",
-    "@babylonjs/core": "^9.29.0"
+    "@babylonjs/core": "^9.29.0",
+    "@babylonjs/loaders": "^9.29.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

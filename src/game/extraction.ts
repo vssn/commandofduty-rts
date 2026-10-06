@@ -2,6 +2,7 @@ import {
   Color3, Color4, DynamicTexture, Mesh, MeshBuilder, ParticleSystem, PointLight, StandardMaterial, TransformNode, Vector3,
   type FreeCamera, type Scene, type Texture,
 } from "@babylonjs/core";
+import { AgentView } from "./agentView";
 import type { AudioSystem } from "../audio/audio";
 import { MAP_HALF } from "../config";
 import { smoothstep } from "../util/noise";
@@ -554,12 +555,14 @@ export class ExtractionCutscene {
     a.px = px;
     a.pz = pz;
     a.y = y;
-    // backing up: the steps run backwards (negative distance)
-    a.view.sync(a, dt, -moved, this.terrain);
     // covering the retreat: the upper body and the rifle sweep slowly across the ground he leaves behind
     const sweep = ease(T.walk - 1, T.walk, t) * (1 - ease(T.inside - 1.2, T.inside - 0.4, t));
+    const turn = Math.sin((t - T.walk) * 0.9) * 0.55 * sweep;
+    if (a.view instanceof AgentView) a.view.twist = turn;
+    // backing up: the steps run backwards (negative distance)
+    a.view.sync(a, dt, -moved, this.terrain);
     const parts = (a.view as unknown as { parts?: { torso: { rotation: Vector3 } } }).parts;
-    if (parts) parts.torso.rotation.y = Math.sin((t - T.walk) * 0.9) * 0.55 * sweep;
+    if (parts && !(a.view instanceof AgentView)) parts.torso.rotation.y = turn;
     // gone into the dark of the cabin
     a.view.setEnabled(t < T.inside - 0.3);
   }

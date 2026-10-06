@@ -93,7 +93,7 @@ schickt die KI sie nicht wieder hinein. Werte: `SKIRMISH` und `ARTILLERY` in `sr
 ## Spielmodus „Commandos“
 
 Keine eigene Basis: ein einzelner **Spezialagent**, der bei jedem Einsatz an einer anderen, zufälligen Stelle abseits von
-Stellungen und Patrouillen startet (athletische Figur im eng anliegenden Kampfanzug mit Brustweste, Holster, Knieschonern, Handschuhen, Wollmütze und Headset, schallgedämpftes Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
+Stellungen und Patrouillen startet (Figur: das animierte Modell „SWAT“ von Quaternius – Einsatzanzug, Weste, Helm mit Visier –, dazu ein schallgedämpftes Zielfernrohrgewehr; 60 HP, deutlich schneller als Soldaten, schießt
 nur auf Befehl), hinter feindlichen Linien. Der Feind hält alle Stellungen: Wachen an jeder Stellung, Fußpatrouillen
 zwischen den Stellungen und bemannte Geländewagen, die das Wegenetz abfahren. Wer den Agenten entdeckt, löst Alarm aus – umliegende Truppen
 rücken an. Der Agent kann Stellungen nicht einnehmen, nur sprengen. Auftrag: **6 feindliche Stellungen sprengen, in 10 Minuten**;
@@ -110,6 +110,14 @@ Gelände schwenkend, die Rampe hinauf und verschwindet im Innenraum – gefilmt 
 die flach über dem Boden vor ihm langsam zur Seite gleitet. Dann steigt der Hubschrauber senkrecht auf, dreht über die
 Karte und fliegt davon, gesehen von einer fest am Rumpf montierten Außenkamera, die an der Seite entlang nach vorn
 blickt – dann ist die Mission gewonnen.
+
+**Figur des Agenten:** Das Modell (`public/models/swat.glb`, glTF mit Skelett, CC0) läuft mit seinen eigenen
+Animationen – Stehen, Gehen, Laufen, Rückwärtslaufen, Fallen –, nach Tempo gemischt und im Schritt mit dem
+zurückgelegten Weg (die Füße rutschen nicht). Weil die Waffen-Animationen des Modells eine Pistole einhändig halten, greifen
+die Arme per Zwei-Knochen-IK an ein eigenes Gewehr: im Gehen tief vor dem Körper, beim Feuern angelegt, beim Rückwärtsgehen
+auf die Distanz gerichtet. Hocke (mit Waffencheck), Knien und Liegen setzt der Code als Knochendrehungen über die Animation,
+die Füße bzw. das Knie bleiben dabei auf dem Boden. Die Cutscenes stellen dieselbe Figur Knochen für Knochen (Wingsuit-Haltung,
+Hände an den Steuerleinen, Landung). Bis das Modell geladen ist (oder falls es fehlt), wird der Agent wie bisher aus Grundkörpern gebaut.
 
 **Absprung (Cutscene):** Die Mission beginnt damit, dass der Agent im Wingsuit aus einer mondbeschienenen Wolkendecke
 herausfällt (Wolkenballen als Billboards, die ihn anfangs einhüllen und danach als Kulisse über ihm hängen); die Arme
@@ -342,6 +350,7 @@ src/
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
+    agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
     pbr.ts            Grafik-Option PBR: Materialtausch Standard → PBR, lineare Farben, Atmosphäre (Tag), umkehrbar
@@ -365,6 +374,7 @@ src/
     droneCutscene.ts  Drohnen-Cinematic (Sprengung – die Wachen fallen sichtbar –, Pilot läuft aus, kniet, startet die Drohne, violetter Lichtschein)
     production.ts     Bauschleife für Kaserne und Werkstatt
     views.ts          Darstellung/Animation: Soldat (Gehen, Knien, Liegen, Wurf) und Jeep (Räder, MG-Turm)
+    agentView.ts      Darstellung des Agenten mit dem animierten Modell (Animationen nach Tempo, Haltungen, Gewehr, Tod)
     outpost.ts        einnehmbare Stellungen (Fortschritt, Bonus, Einkommen)
     ai.ts             einfacher Gegner (produziert, nimmt Stellungen ein, greift in Wellen an, flieht aus Artillerie-Zielgebieten)
   audio/
@@ -385,3 +395,5 @@ src/
 Der Code ist Teil dieses Projekts. Die Texturen in `public/textures/` stammen von [Poly Haven](https://polyhaven.com)
 und stehen unter **CC0 1.0** (gemeinfrei, keine Namensnennung nötig, auch kommerziell frei nutzbar). Herkunft,
 Urheber, Abrufdatum und vorgenommene Änderungen je Textur: [`public/textures/LICENSE.md`](public/textures/LICENSE.md).
+Das Modell des Agenten (`public/models/swat.glb`, „SWAT“ von Quaternius über Poly Pizza) steht ebenfalls unter **CC0 1.0**:
+[`public/models/LICENSE.md`](public/models/LICENSE.md).

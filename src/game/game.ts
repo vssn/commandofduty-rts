@@ -18,6 +18,8 @@ import type { NavGrid } from "./nav";
 import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
+import { agentModelReady } from "../world/agentModel";
+import { AgentView } from "./agentView";
 import { BollardView, DroneView, JeepView, NestView, SoldierView, type DroneTemplates, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
 
 export type WeaponKind = "rifle" | "mg" | "sniper";
@@ -290,6 +292,13 @@ export class Game {
     return this.outposts.reduce((s, o) => s + (o.owner === team ? o.income : 0), 0);
   }
 
+  /** The agent's rigged figure (casting shadows like the soldiers). */
+  private agentView(name: string): AgentView {
+    const v = new AgentView(this.scene, name, this.blobTpl);
+    for (const m of v.meshes) this.shadows.addShadowCaster(m);
+    return v;
+  }
+
   spawnUnit(type: UnitType, team: Team, x: number, z: number): Unit {
     const name = `${type}-${team}`;
     const view: UnitView = type === "jeep"
@@ -300,7 +309,9 @@ export class Game {
           ? new BollardView(this.scene, this.bollardTpl, name)
           : type === "drone"
             ? new DroneView(this.scene, this.droneTpl, name, this.blobTpl)
-            : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
+            : type === "agent" && agentModelReady()
+              ? this.agentView(name)
+              : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
     const ring = this.ringTpl.createInstance("ring");
     ring.isPickable = false;
     if (type === "jeep") ring.scaling.set(2.6, 1, 2.6);

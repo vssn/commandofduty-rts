@@ -10,14 +10,15 @@ import { SQUAT } from "./views";
 import type { Terrain } from "../world/terrain";
 import type { Game } from "./game";
 import type { SoldierView } from "./views";
+import { AgentView } from "./agentView";
 
 /**
  * The opening cutscene of a commandos mission: the agent falls from the night sky in a wingsuit,
  * opens his parachute, glides past a few enemy outposts while the announcer briefs him, lands,
  * sheds suit and pack (they stay on the ground) and readies his rifle.
  *
- * The world stands still meanwhile. The agent's own figure is posed by hand (see SoldierView.parts)
- * and handed back to the game at the end.
+ * The world stands still meanwhile. The agent's own figure is posed by hand (see SoldierView.parts;
+ * the rigged figure, AgentView, takes the same parts over its bones) and handed back to the game at the end.
  */
 
 /** Seconds into the scene. */
@@ -330,8 +331,10 @@ export class DropCutscene {
 
   private readonly scene: Scene;
   private readonly terrain: Terrain;
-  private readonly view: SoldierView;
-  private readonly parts: SoldierView["parts"];
+  private readonly view: SoldierView | AgentView;
+  private readonly parts: SoldierView["parts"] | AgentView["parts"];
+  /** The rigged figure (null: the figure built from parts). */
+  private readonly rigged: AgentView | null;
   private t = 0;
   private readonly fired = new Set<string>();
   private shake = 0;
@@ -406,8 +409,13 @@ export class DropCutscene {
     this.scene = sc;
     this.terrain = game.terrain;
     const agent = game.commandos!.agent;
-    this.view = agent.view as SoldierView;
+    this.view = agent.view as SoldierView | AgentView;
     this.parts = this.view.parts;
+    this.rigged = agent.view instanceof AgentView ? agent.view : null;
+    if (this.rigged) {
+      this.rigged.applyPose(0);
+      this.rigFit.shoulder = this.rigged.joint("UpperArm.L").y;
+    }
     this.agentHeading = agent.heading;
     this.baseFov = camera.fov;
     this.y0 = this.terrain.heightAt(agent.x, agent.z);
@@ -523,6 +531,9 @@ export class DropCutscene {
       this.hands.push(h);
     }
 
+    // the rigged figure has arms of its own: they are set onto the same targets
+    if (this.rigged) for (const m of [...this.limbs, ...this.hands]) m.setEnabled(false);
+
     // wingsuit membrane (11 vertices, updated every frame)
     this.membrane = new Mesh("dropWing", sc);
     this.memPos = new Float32Array(11 * 3);
@@ -546,7 +557,8 @@ export class DropCutscene {
     this.pack = MeshBuilder.CreateBox("dropPack", { width: 0.55, height: 0.75, depth: 0.28 }, sc);
     this.pack.material = nylon(sc, "dropPack", [0.09, 0.093, 0.087], 0.12, 0.35);
     this.pack.parent = this.view.root;
-    this.pack.position.set(0, SHOULDER_Y - 0.5, -0.3);
+    this.pack.position.copyFrom(this.fit(new Vector3(0, SHOULDER_Y - 0.5, -0.3)));
+    if (this.rigged) this.pack.scaling.set(0.78, 0.88, 0.8);
     this.pack.isPickable = false;
     // harness: shoulder straps down its front, a chest strap with a buckle, a carry loop on top
     const strapMat = cloth("dropStrap", [0.1, 0.1, 0.09]);
@@ -773,7 +785,7 @@ export class DropCutscene {
     const k = ease(T.aEnd + 0.45, T.aEnd + 2.3, t);
     const psi = this.heading(t);
     this.fly.position.copyFrom(p);
-    this.fly.position.y -= SQUAT.drop * crouchW(t); // the hips sink into the crouch
+    if (!this.rigged) this.fly.position.y -= SQUAT.drop * crouchW(t); // the hips sink into the crouch (the rigged figure sets its feet itself)
     const bank = Math.sin(t * 0.7) * 0.2 * (1 - k) + Math.sin(t * 0.5) * 0.05 * k;
     this.fly.rotation.set(glide * (1 - k), psi, bank);
     const hang = -0.14 + 0.05 * Math.sin(t * 0.8);
@@ -830,23 +842,34 @@ export class DropCutscene {
       }
       return v;
     };
-    const shoulder = (side: number) => new Vector3(side * SX, SHOULDER_Y - 0.08, 0);
+    let shoulder = (side: number) => new Vector3(side * SX, SHOULDER_Y - 0.08, 0);
     const wrists: Vector3[] = [], sides = [-1, 1];
-    sides.forEach((side, i) => {
-      const s = shoulder(side), e = pick(side, "elbow"), w = pick(side, "wrist");
-      this.limb(this.limbs[i * 2], s, e);
-      this.limb(this.limbs[i * 2 + 1], e, w);
-      this.hands[i].position.copyFrom(w);
-      wrists.push(w);
-    });
+    const rig = this.rigged;
+    if (rig) {
+      // the rigged figure's arms reach for the same poses (fitted to its build), its joints span the membrane
+      const target = (side: number) => ({ elbow: this.fit(pick(side, "elbow")), wrist: this.fit(pick(side, "wrist")) });
+      rig.armTargets = { L: target(-1), R: target(1) };
+      rig.applyPose(t, crouchW(t));
+      shoulder = (side) => rig.joint(side < 0 ? "UpperArm.L" : "UpperArm.R");
+      for (const s of ["L", "R"]) wrists.push(rig.joint(`Wrist.${s}`));
+    } else {
+      sides.forEach((side, i) => {
+        const s = shoulder(side), e = pick(side, "elbow"), w = pick(side, "wrist");
+        this.limb(this.limbs[i * 2], s, e);
+        this.limb(this.limbs[i * 2 + 1], e, w);
+        this.hands[i].position.copyFrom(w);
+        wrists.push(w);
+      });
+    }
 
     // membrane
     if (this.shedT < 0) {
       const P = this.memPos;
       const set = (i: number, v: Vector3) => { P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; };
       const ankle = (hipX: number, rx: number, rz: number) => new Vector3(hipX + LEG * Math.sin(rz), HIP_Y - LEG * Math.cos(rz) * Math.cos(rx), -LEG * Math.sin(rx));
-      const aL = ankle(-HIP_X, this.parts.legL.rotation.x, -spread), aR = ankle(HIP_X, this.parts.legR.rotation.x, spread);
-      const hL = new Vector3(-0.2, HIP_Y + 0.05, -0.02), hR = new Vector3(0.2, HIP_Y + 0.05, -0.02);
+      const aL = rig ? rig.joint("Foot.L") : ankle(-HIP_X, this.parts.legL.rotation.x, -spread);
+      const aR = rig ? rig.joint("Foot.R") : ankle(HIP_X, this.parts.legR.rotation.x, spread);
+      const hL = this.fit(new Vector3(-0.2, HIP_Y + 0.05, -0.02)), hR = this.fit(new Vector3(0.2, HIP_Y + 0.05, -0.02));
       // the membrane stands taut and full, quivering only a little
       const bulge = (0.08 + Math.sin(t * 37) * 0.008) * wFly + 0.04;
       sides.forEach((side, i) => {
@@ -856,7 +879,7 @@ export class DropCutscene {
         M.z -= bulge;
         set(o, S); set(o + 1, W); set(o + 2, A); set(o + 3, H); set(o + 4, M);
       });
-      set(10, new Vector3(0, HIP_Y - 0.1, -0.04));
+      set(10, this.fit(new Vector3(0, HIP_Y - 0.1, -0.04)));
       // the leg membrane's corner points follow the legs: left wing's (H, A) and right wing's (A, H)
       const nor = new Array<number>(33).fill(0);
       VertexData.ComputeNormals(P, this.membrane.getIndices()!, nor);
@@ -885,7 +908,7 @@ export class DropCutscene {
       m.material = web;
       m.parent = root;
       m.isPickable = false;
-      this.limb(m, a, b);
+      this.limb(m, this.fit(a), this.fit(b));
       if (face) m.rotationQuaternion = m.rotationQuaternion!.multiply(Quaternion.RotationAxis(Vector3.Up(), face));
       list.push(m);
       return m;
@@ -894,11 +917,11 @@ export class DropCutscene {
     for (const side of [-1, 1]) {
       // risers and the link where the lines meet
       const link = this.linkPoint(side);
-      for (const dz of [0.035, -0.035]) strap(new Vector3(side * 0.27, SY + 0.02, -0.03 + dz), link.add(new Vector3(0, -0.06, dz * 0.4)), 0.045, 0.012, this.risers);
+      for (const dz of [0.035, -0.035]) strap(new Vector3(side * 0.27, SY + 0.02, -0.03 + dz), this.unfit(link.add(new Vector3(0, -0.06, dz * 0.4))), 0.045, 0.012, this.risers);
       const ring = MeshBuilder.CreateTorus("dropLink", { diameter: 0.07, thickness: 0.018, tessellation: 10 }, sc);
       ring.material = steel;
       ring.parent = root;
-      ring.position.copyFrom(link.add(new Vector3(0, -0.04, 0)));
+      ring.position.copyFrom(link.add(new Vector3(0, -0.04, 0)));  // (linkPoint() is fitted already)
       ring.rotation.z = Math.PI / 2;
       this.risers.push(ring);
       const cuff = MeshBuilder.CreateCylinder("dropCuff", { height: 0.12, diameter: 0.06, tessellation: 8 }, sc); // the band round the bundle
@@ -918,7 +941,7 @@ export class DropCutscene {
     const buckle = MeshBuilder.CreateBox("dropBuckle", { width: 0.07, height: 0.06, depth: 0.025 }, sc);
     buckle.material = steel;
     buckle.parent = root;
-    buckle.position.set(0, SY - 0.4, 0.295);
+    buckle.position.copyFrom(this.fit(new Vector3(0, SY - 0.4, 0.295)));
     this.harness.push(buckle);
     strap(new Vector3(-0.24, HIP_Y + 0.22, 0.2), new Vector3(0.24, HIP_Y + 0.22, 0.2), 0.05, 0.02, this.harness, Math.PI / 2);
     for (const m of this.risers) m.setEnabled(false);
@@ -926,8 +949,32 @@ export class DropCutscene {
 
   /** Where the lines of one side meet, above the shoulder (figure frame). */
   private linkPoint(side: number): Vector3 {
-    return new Vector3(side * 0.22, SHOULDER_Y + 0.72, -0.05);
+    return this.fit(new Vector3(side * 0.22, SHOULDER_Y + 0.72, -0.05));
   }
+
+  /**
+   * A point on the built figure (where the rig, pack and wingsuit were laid out) moved onto the
+   * rigged figure's build: hips at the same height, lower and narrower shoulders standing higher
+   * out of the vest, a slimmer chest set a little forward.
+   */
+  private fit(v: Vector3): Vector3 {
+    if (!this.rigged) return v.clone();
+    const top = this.rigFit.shoulder;
+    const k = Math.min(1, Math.max(0, (v.y - HIP_Y) / (SHOULDER_Y - HIP_Y)));
+    const y = (v.y <= HIP_Y ? v.y : v.y >= SHOULDER_Y ? v.y - SHOULDER_Y + top : HIP_Y + (v.y - HIP_Y) * (top - HIP_Y) / (SHOULDER_Y - HIP_Y))
+      + 0.12 * smoothstep(SHOULDER_Y - 0.3, SHOULDER_Y, v.y);
+    return new Vector3(v.x * (0.82 - 0.22 * k), y, 0.054 + 0.773 * v.z);
+  }
+
+  /** The inverse of fit() (for points already fitted). */
+  private unfit(v: Vector3): Vector3 {
+    if (!this.rigged) return v.clone();
+    // solved numerically: a few fixed-point steps are plenty for the smooth map
+    const g = v.clone();
+    for (let i = 0; i < 6; i++) g.addInPlace(v.subtract(this.fit(g)).multiplyByFloats(1.4, 1, 1.29));
+    return g;
+  }
+  private readonly rigFit = { shoulder: 0 };
 
   /** Lays a cylinder (height 1 along y) between two points. */
   private limb(m: Mesh, a: Vector3, b: Vector3) {
@@ -1276,6 +1323,7 @@ export class DropCutscene {
         lerp(0, 0.1, up) + w * (0.5 + Math.sin(t * 0.9) * 0.15),
       );
       this.parts.arms.position.y = SHOULDER_Y - HIP_Y;
+      this.rigged?.applyPose(t, crouchW(t));
     }
     this.shedStep(dt);
     this.cameraFor(t, dt);
@@ -1343,6 +1391,7 @@ export class DropCutscene {
     p.shinR.rotation.set(0, 0, 0);
     p.head.rotation.set(0, 0, 0);
     p.torso.rotation.set(0, 0, 0);
+    if (this.rigged) this.rigged.armTargets = null;
     this.camera.fov = this.baseFov;
     for (const m of [...this.limbs, ...this.hands, ...this.clouds, ...this.harness, ...this.risers]) m.dispose();
     this.fly.dispose();

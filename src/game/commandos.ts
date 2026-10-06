@@ -456,7 +456,8 @@ export class CommandosMission {
   private makeAgentMaterialsOwn() {
     const done = new Set<Mesh>();
     for (const m of this.agent.view.root.getChildMeshes()) {
-      const src = (m as InstancedMesh).sourceMesh;
+      // (the rigged figure's meshes are no instances: they own their materials directly)
+      const src = (m as InstancedMesh).sourceMesh ?? (m instanceof Mesh ? m : null);
       if (!src || done.has(src)) continue;
       done.add(src);
       const own = (x: StandardMaterial) => {

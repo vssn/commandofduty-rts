@@ -37,6 +37,7 @@ import { PbrMode } from "./world/pbr";
 import { preloadGroundTextures, RealisticTerrain } from "./world/terrainPbr";
 import { setSpotLights } from "./world/spotPbr";
 import { preloadSurfaceTextures } from "./world/surfacePbr";
+import { loadAgentModel } from "./world/agentModel";
 import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { Terrain } from "./world/terrain";
@@ -62,6 +63,8 @@ const engine = new Engine(canvas, true, { stencil: true }, true);
 const scene = new Scene(engine);
 scene.detachControl(); // input is handled by InputController; avoids picking on every pointer move
 scene.skipPointerMovePicking = true;
+// the agent's rigged figure loads in the background while the map is built (without it he is built from primitives)
+const agentModel = loadAgentModel(scene).catch((e) => console.warn("agent model unavailable", e));
 
 const env = createEnvironment(scene);
 const layout = new MapLayout();
@@ -754,6 +757,7 @@ window.addEventListener("resize", () => {
   engine.resize();
   overlay.resize();
 });
+await agentModel; // (ready long before this on any normal connection)
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
