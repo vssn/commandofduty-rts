@@ -89,6 +89,8 @@ export class Game {
    * (null = daylight, the normal range applies).
    */
   spotRange: ((viewer: Unit, target: Unit, range: number) => number) | null = null;
+  /** Commandos: whether `viewer`, who has `target` in range, has made him out yet (the agent in cover takes a while to be noticed). */
+  spotGate: ((viewer: Unit, target: Unit) => boolean) | null = null;
   /** Player's fog of war: whether a point is in sight (null = no fog). */
   canSee: ((x: number, z: number) => boolean) | null = null;
   /** Cover lookup; assigned after the scenery exists. */
@@ -252,6 +254,7 @@ export class Game {
     this.commandos = null;
     this.onKilled = null;
     this.spotRange = null;
+    this.spotGate = null;
     this.credits[0] = this.credits[1] = START_CREDITS;
     this.time = 0;
     this.sinceUnitsHit = Infinity;
@@ -766,6 +769,7 @@ export class Game {
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
       if (this.spotRange && d >= this.spotRange(u, o, range)) continue;
+      if (this.spotGate && d < range && !this.spotGate(u, o)) continue;
       if (d < bd) { bd = d; best = o; }
     }
     if (best) return best;

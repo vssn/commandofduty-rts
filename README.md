@@ -213,6 +213,10 @@ erkennen den Agenten schon auf 22 Einheiten und kehren nach etwa 45 s auf Posten
 hinterlässt Fußspuren (sichtbar im eigenen Sichtbereich, verblassen nach knapp 2 Minuten; getarnt keine Spuren).
 Fußpatrouillen, die auf frische Spuren stoßen, folgen ihnen in Laufrichtung und durchsuchen am Spurende die Gegend.
 Über Gegnern zeigt „?“ Suche/Fährte, „!“ dass sie den Agenten entdeckt haben.
+**Deckung:** Steht der Agent bei Bäumen, Hecken, Büschen oder an einem Gebäude (und nicht im Licht einer Lampe oder
+eines Scheinwerfers), bemerken ihn Gegner nur auf 70 % der üblichen Entfernung – und selbst dann erst nach etwa 2 Sekunden
+(`COMMANDOS.cover`): über dem Soldaten erscheint ein „?“ mit einem Ring, der sich schließt, dann wird es zum „!“. Wer
+dem Agenten fast vor die Füße läuft (unter 3 m), erkennt ihn sofort; im Freien bleibt es bei der sofortigen Entdeckung.
 
 Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
 

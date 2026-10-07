@@ -299,8 +299,9 @@ export class CommandosMission {
     g.spotRange = (viewer, target, range) => {
       if (viewer.team !== ENEMY || target !== this.agent) return range;
       const dark = this.aggressive ? COMMANDOS.escalation.dark : COMMANDOS.night.dark;
-      return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : dark);
+      return range * (this.isLit(target.x, target.z) ? COMMANDOS.night.lit : dark) * (this.inCover() ? COMMANDOS.cover.range : 1);
     };
+    g.spotGate = (viewer, target) => this.makesOut(viewer, target);
     g.onKilled = (u) => {
       if (u.team === ENEMY && ["rifleman", "grenadier", "medic", "pilot"].includes(u.type)) this.soldiersDown++;
       if (u.team === ENEMY) this.onEnemyKilled(u);
@@ -385,7 +386,46 @@ export class CommandosMission {
       if (c) m.diffuseColor.copyFrom(c);
     }
     g.spotRange = null;
+    g.spotGate = null;
     g.onKilled = null;
+  }
+
+  // ---------------------------------------------------------------- cover & detection
+
+  /** Seconds each soldier has been looking at the agent in cover (and when he last did). */
+  private readonly suspicion = new Map<Unit, { t: number; seen: number }>();
+
+  /** The agent stands in cover (trees, hedges, bushes, a building's flank) and not in the light of a lamp or searchlight. */
+  inCover(): boolean {
+    const a = this.agent;
+    return a.alive && !!this.game.cover?.at(a.x, a.z) && !this.isLit(a.x, a.z);
+  }
+
+  /**
+   * Called when `viewer` has the agent within sight range: in the open he is noticed at once, in cover only after
+   * COMMANDOS.cover.delay seconds of looking (the "?" fills up), unless he is practically in front of the viewer.
+   */
+  private makesOut(viewer: Unit, target: Unit): boolean {
+    if (viewer.team !== ENEMY || target !== this.agent || !this.inCover()) return true;
+    const C = COMMANDOS.cover;
+    if (Math.hypot(viewer.x - target.x, viewer.z - target.z) < C.close) return true;
+    let s = this.suspicion.get(viewer);
+    if (!s || this.time - s.seen > 0.9) {
+      s = { t: 0, seen: this.time };
+      this.suspicion.set(viewer, s);
+    }
+    s.t += this.time - s.seen;
+    s.seen = this.time;
+    if (s.t < C.delay) return false;
+    this.suspicion.delete(viewer);
+    return true;
+  }
+
+  /** How far a soldier is from raising the alarm (0..1): the "?" over his head fills up while he makes the agent out. */
+  suspicionOf(u: Unit): number {
+    const s = this.suspicion.get(u);
+    if (!s || !u.alive || this.time - s.seen > 0.9 || u.target === this.agent) return 0;
+    return Math.min(1, s.t / COMMANDOS.cover.delay);
   }
 
   // ---------------------------------------------------------------- searching & tracking
@@ -433,7 +473,7 @@ export class CommandosMission {
         continue;
       }
       // heightened vigilance: they spot the agent from farther away than usual
-      if (a.alive && !a.cloaked && !u.target && Math.hypot(a.x - u.x, a.z - u.z) < SEARCH.vigilance) u.target = a;
+      if (a.alive && !a.cloaked && !u.target && Math.hypot(a.x - u.x, a.z - u.z) < SEARCH.vigilance && this.makesOut(u, a)) u.target = a;
       if (u.target || u.path.length) continue;
       const k = Math.min(1, (this.time - s.t0) / (s.until - s.t0));
       const r = SEARCH.radiusMin + (SEARCH.radiusMax - SEARCH.radiusMin) * k * (0.6 + Math.random() * 0.4);

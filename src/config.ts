@@ -149,6 +149,12 @@ export const COMMANDOS = {
    */
   night: { dark: 0.55, lit: 1.25 },
   /**
+   * Cover (trees, hedges, bushes, buildings; not in a lamp's or searchlight's light): enemies notice the agent only at
+   * `range` times the usual distance, and even then take `delay` seconds - shown as a "?" that turns into "!" - to raise the alarm.
+   * Stumbling right into a guard (closer than `close`) gives him away at once.
+   */
+  cover: { range: 0.7, delay: 2, close: 3 },
+  /**
    * Once more than `after` outposts are blown up the enemy turns aggressive: it notices the agent
    * sooner in the dark (`dark`), alarms reach further (`alertScale`) and drones take off.
    */
