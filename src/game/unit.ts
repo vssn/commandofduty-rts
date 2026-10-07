@@ -108,6 +108,12 @@ export class Unit implements Target {
 
   private cooldown = Math.random() * 0.5;
   private scanT = 0;
+  /** Seconds the current (not explicitly ordered) target has been chased without getting in range. */
+  private chaseT = 0;
+  private retargetT = 0;
+  /** A target given up on (it keeps running away): not picked again for `ignoreT` seconds, the next unit is chosen. */
+  ignore: Target | null = null;
+  ignoreT = 0;
   private repathT = 0;
   private stuckT = 0;
   /** How often the unit already planned a new route because it got stuck (per order, max 2). */
@@ -304,6 +310,21 @@ export class Unit implements Target {
       }
     }
 
+    this.ignoreT -= dt;
+    // a unit that has a target of its own accord (not ordered) turns to a clearly nearer enemy
+    if (this.armed && this.target && !this.explicitTarget && !this.isStructure) {
+      this.retargetT -= dt;
+      if (this.retargetT <= 0) {
+        this.retargetT = 0.6 + Math.random() * 0.3;
+        const cur = this.target, near = g.findEnemy(this, this.stats.acquire);
+        if (near && near !== cur && Math.hypot(near.x - this.x, near.z - this.z) + 2 < Math.hypot(cur.x - this.x, cur.z - this.z)) {
+          this.target = near;
+          this.chaseT = 0;
+          if (!this.isVehicle) this.path = [];
+        }
+      }
+    }
+
     let moving = this.path.length > 0;
     let fighting = false;
     const t = this.target;
@@ -326,6 +347,13 @@ export class Unit implements Target {
         }
       } else if (this.isStructure) {
         this.loseTarget(g); // cannot follow: wait for the next target in range
+      } else if (!this.explicitTarget && (this.chaseT += dt) > 6) {
+        // chased for long without catching up (it retreats): give up on this one, take the next
+        this.ignore = t;
+        this.ignoreT = 5;
+        this.chaseT = 0;
+        this.loseTarget(g);
+        moving = this.path.length > 0;
       } else if (this.explicitTarget || d <= this.stats.acquire + 4) {
         if (!this.isVehicle || this.explicitTarget) {
           this.repathT -= dt;
@@ -341,6 +369,7 @@ export class Unit implements Target {
       }
     }
     if (fighting) this.combatT = 0;
+    if (fighting || !this.target) this.chaseT = 0;
     if (this.isVehicle && !fighting && !this.isStructure) this.aimTurret(this.x + Math.sin(this.heading), this.z + Math.cos(this.heading), dt);
 
     // a car that stands still starts off slowly

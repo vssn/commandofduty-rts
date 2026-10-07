@@ -222,7 +222,9 @@ export class Outpost {
     this.guarded = false;
     const inside: [number, number] = [0, 0];
     // the commandos agent is a saboteur: he neither takes outposts nor stops the enemy from holding them
-    const occupants = g.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && u.type !== "agent" && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
+    // (in the city he does: holding one brings soldiers over to his side)
+    const agentCounts = g.commandos?.kind === "documents";
+    const occupants = g.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && (u.type !== "agent" || agentCounts) && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
     for (const u of occupants) inside[u.team]++;
     this.contested = inside[0] > 0 && inside[1] > 0;
     if (this.contested) return; // enemy soldier present: progress is frozen, nobody heals

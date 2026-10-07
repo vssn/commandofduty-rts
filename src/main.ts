@@ -42,6 +42,7 @@ import { loadAgentModel } from "./world/agentModel";
 import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { createCity } from "./world/city";
+import { createRoadMarkings } from "./world/roadMarkings";
 import { renderMapPreview } from "./ui/mapPreview";
 import { Terrain } from "./world/terrain";
 
@@ -94,7 +95,10 @@ createMeadowGrass(scene, layout, terrain, realCrops);
 const tussocks = createMeadowTussocks(scene, layout, terrain, env.shadows);
 createHouses(scene, layout, terrain, env.shadows, nav);
 // the city map: apartment blocks, villas, ponds, road blocks
-if (MAP === "embassy") createCity(scene, layout, terrain, env.shadows, nav);
+if (MAP === "embassy") {
+  createCity(scene, layout, terrain, env.shadows, nav);
+  createRoadMarkings(scene, layout, terrain, nav);
+}
 const realTrees = new RealisticTrees(scene, env.shadows);
 const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);
 // street lamps stand in every mode; they are only switched on for the night mission
@@ -827,5 +831,5 @@ await agentModel; // (ready long before this on any normal connection)
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
-Object.assign(window, { game, scene, cam, audio, ai, fog, pbr, startGame, returnToMenu });
+Object.assign(window, { game, scene, cam, audio, ai, fog, fogRender, pbr, startGame, returnToMenu });
 

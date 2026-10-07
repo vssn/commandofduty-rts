@@ -22,7 +22,7 @@ const ANNOUNCE: Partial<Record<GameEvent, string>> = {
   droneDown: "Drohne ausgeschaltet",
   documentsSecured: "Dokumente gesichert",
   documentsAll: "Alle Dokumente gesichert. Erreichen Sie den Extraktionspunkt.",
-  captivesFreed: "Gefangene befreit",
+  captivesFreed: "Stellung gehalten. Verstärkung.",
   extraction: "Alle Ziele zerstört. Erreichen Sie den Extraktionspunkt.",
   enemyArtillery: "Artilleriebeschuss",
   unitsAttacked: "Wir werden angegriffen",

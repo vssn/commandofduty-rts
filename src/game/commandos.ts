@@ -146,9 +146,8 @@ export class CommandosMission {
   readonly freed: Unit[] = [];
   /** Soldiers freed in all (for the high-score table). */
   freedTotal = 0;
-  /** The guards of each outpost, and the outposts whose guards are all down (a captive soldier may be freed there). */
-  private readonly guardsOf = new Map<Outpost, Unit[]>();
-  private readonly cleared = new Set<Outpost>();
+  /** Outposts the agent has taken: their soldiers have joined him already. */
+  private readonly rewarded = new Set<Outpost>();
   private captiveCheckT = 0;
   private followT = 0;
 
@@ -207,16 +206,13 @@ export class CommandosMission {
     const F = this.forces;
     // guards at every outpost, looking in different directions
     for (const o of g.outposts) {
-      const guards: Unit[] = [];
       for (let i = 0; i < F.garrison; i++) {
         const a = (i / F.garrison) * Math.PI * 2 + Math.random();
         const p = g.nav.freePoint(o.x + Math.cos(a) * o.radius * 0.45, o.z + Math.sin(a) * o.radius * 0.45);
         const u = g.spawnUnit(i === 0 && o.kind === "hospital" ? "grenadier" : "rifleman", ENEMY, p.x, p.z);
         u.heading = a;
         this.homes.set(u, { x: p.x, z: p.z });
-        guards.push(u);
       }
-      this.guardsOf.set(o, guards);
     }
 
     // some outposts are covered by a manned MG nest on their edge
@@ -227,9 +223,7 @@ export class CommandosMission {
         const x = o.x + Math.sin(a) * r, z = o.z + Math.cos(a) * r;
         if (!g.nav.areaFree(x, z, 1.3, 1.3, a, 0)) continue;
         const nest = g.spawnStructure("mgnest", ENEMY, x, z, a, o);
-        const gunner = g.spawnUnit("rifleman", ENEMY, x, z - 2);
-        g.board(gunner, nest);
-        this.guardsOf.get(o)?.push(gunner);
+        g.board(g.spawnUnit("rifleman", ENEMY, x, z - 2), nest);
         break;
       }
     }
@@ -1090,23 +1084,21 @@ export class CommandosMission {
   }
 
   /**
-   * A few outposts hold prisoners: once all guards of such an outpost are dead there is a chance that soldiers
-   * are freed there; they join the agent, fire at the enemy and follow him.
+   * The agent takes an outpost by holding it (no enemy soldier inside, the usual capture time): the soldiers held there
+   * join him, fire at the enemy and follow him.
    */
   private updateCaptives(dt: number) {
     const g = this.game, a = this.agent, C = EMBASSY_OPS.captives;
     this.captiveCheckT -= dt;
     if (this.captiveCheckT <= 0) {
       this.captiveCheckT = 0.5;
-      for (const [o, guards] of this.guardsOf) {
-        if (this.cleared.has(o) || guards.some((u) => u.alive)) continue;
-        this.cleared.add(o);
-        if (Math.random() > C.chance) continue;
-        const n = C.min + Math.floor(Math.random() * (C.max - C.min + 1));
-        for (let i = 0; i < n; i++) {
-          const ang = (i / n) * Math.PI * 2 + Math.random();
+      for (const o of g.outposts) {
+        if (o.owner !== PLAYER || this.rewarded.has(o)) continue;
+        this.rewarded.add(o);
+        for (let i = 0; i < C.count; i++) {
+          const ang = (i / C.count) * Math.PI * 2 + Math.random();
           const p = g.nav.freePoint(o.x + Math.cos(ang) * 2.2, o.z + Math.sin(ang) * 2.2);
-          const u = g.spawnUnit(i === n - 1 && n > 2 ? "grenadier" : "rifleman", PLAYER, p.x, p.z);
+          const u = g.spawnUnit(i === C.count - 1 ? "grenadier" : "rifleman", PLAYER, p.x, p.z);
           u.heading = ang;
           this.freed.push(u);
           this.freedTotal++;

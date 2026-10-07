@@ -715,9 +715,9 @@ export class DropCutscene {
     const n = m.caches.length;
     if (m.kind === "documents") {
       return [
-        `Agent. Ihr Auftrag: Suchen Sie ${NUMBERS[m.embassies.length] ?? m.embassies.length} Botschaften auf, und bergen Sie dort die geheimen Dokumente.`,
-        "Es sind Stadtvillen am Park, jedes Mal andere; auf Ihrer Karte sind sie markiert. Die Gebäude sind stark bewacht, und auch die Stellungen sind in Feindeshand.",
-        `Schalten Sie die Wachen einer Stellung aus, befreien Sie vielleicht Gefangene, die an Ihrer Seite kämpfen. Sie haben ${Math.round(m.timeLimit / 60)} Minuten. Viel Erfolg.`,
+        `Agent. Ihr Auftrag: Bergen Sie die Dokumente aus ${NUMBERS[m.embassies.length] ?? m.embassies.length} Botschaften. Die Villen am Park sind auf Ihrer Karte markiert.`,
+        "Die Botschaften sind stark bewacht. Halten Sie Stellungen, um Verstärkung zu erhalten.",
+        `Sie haben ${Math.round(m.timeLimit / 60)} Minuten. Viel Erfolg.`,
       ];
     }
     return [

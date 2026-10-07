@@ -67,7 +67,7 @@ function ringTexture(scene: Scene): DynamicTexture {
 }
 
 /** Additive, unlit material that glows in `color`, shaped by the round glow texture. */
-function glowMaterial(scene: Scene, name: string, color: RGB, alpha: number, shaped: boolean | Texture = true): StandardMaterial {
+export function glowMaterial(scene: Scene, name: string, color: RGB, alpha: number, shaped: boolean | Texture = true): StandardMaterial {
   const m = new StandardMaterial(name, scene);
   m.disableLighting = true;
   m.diffuseColor = Color3.Black();

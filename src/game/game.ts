@@ -762,6 +762,7 @@ export class Game {
     for (const o of this.units) {
       // bollards are only attacked on explicit orders
       if (!o.alive || o.vehicle || o.team === u.team || o.cloaked || o.type === "bollard") continue;
+      if (u.ignoreT > 0 && o === u.ignore) continue;
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
       if (this.spotRange && d >= this.spotRange(u, o, range)) continue;

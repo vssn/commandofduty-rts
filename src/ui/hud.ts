@@ -33,7 +33,7 @@ const MESSAGES: Partial<Record<GameEvent, string>> = {
   droneDown: "Drohne ausgeschaltet",
   documentsSecured: "Dokumente gesichert",
   documentsAll: "Alle Dokumente gesichert – zum Extraktionspunkt (blauer Rauch, Minimap)!",
-  captivesFreed: "Gefangene befreit – sie kämpfen an unserer Seite",
+  captivesFreed: "Stellung gehalten – drei Soldaten kämpfen an unserer Seite",
 };
 
 const COLOR = { own: "#4d8dff", enemy: "#ef4a3c", neutral: "rgba(46, 48, 36, 0.95)" };
@@ -255,7 +255,7 @@ export class Hud {
       `<span class="clock${left <= 60 ? " urgent" : ""}">Zeit: ${clock}</span>` +
       `<span>Agent: ${Math.ceil(Math.max(0, m.agent.hp))} / ${m.agent.maxHp} · Ladungen: ${m.charges}</span>` +
       `<span>${open ? `Verstecke mit Sprengstoff (Minimap): ${open}` : "Alle Verstecke geleert"}</span>` +
-      (docs ? `<span>Befreite Soldaten an unserer Seite: ${m.freed.length}</span>` : "") +
+      (docs ? `<span>Stellung halten (kein Feind darin): drei Soldaten schließen sich an · bei uns: ${m.freed.length}</span>` : "") +
       (m.aggressive ? `<span class="clock">Feind alarmiert · Drohnen: ${m.dronesActive}</span>` : "") +
       `<span>Scharfschuss (Gegner anklicken/antippen): ${m.sniperCooldown > 0 ? `lädt nach … ${Math.ceil(m.sniperCooldown)} s` : "bereit"}</span>`;
     if (html !== this.lastMission) {
