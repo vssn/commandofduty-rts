@@ -241,6 +241,9 @@ und derselben Extraktion – nur das Ziel ist ein anderes (Werte: `EMBASSY_OPS` 
   stellen sich die Soldaten vor ihn – auf die Linie vom Agenten zum nächsten Gegner, nebeneinander –, damit sie das Feuer
   auf sich ziehen (der Gegner nimmt den jeweils nächsten Soldaten ins Visier). Wer gerade feuert, bleibt stehen;
   eigene Befehle des Spielers bleiben unangetastet, bis sie ausgeführt sind.
+  Der Begleitschutz greift nur, wenn der Agent **und alle** befreiten Soldaten ausgewählt sind; ist der Agent allein
+  ausgewählt, läuft er in seinem normalen Tempo und die Soldaten bleiben zurück. Sein Markierungskreis ist größer, dicker,
+  golden und pulsiert leicht, damit man ihn in einer ausgewählten Gruppe erkennt.
 - Nach dem zweiten Dokument ist der Feind alarmiert und die Drohnen steigen auf. Sind alle drei Dokumente da, öffnet sich
   der **Extraktionspunkt** (blaue Fackel, Minimap „E“), diesmal auf freier Fläche im Park; dort holt der Hubschrauber den
   Agenten mit derselben Schluss-Cinematic ab. Das Highscore-Menü führt eine eigene Tabelle je Karte (Spalte „Befreite“ statt „Stellungen“).

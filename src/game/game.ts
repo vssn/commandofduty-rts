@@ -68,6 +68,8 @@ export class Game {
   private readonly nestTpl: Record<Team, NestTemplates>;
   private readonly bollardTpl: Mesh;
   private readonly ringTpl: Mesh;
+  /** The agent's selection ring: larger, thicker and gold, so he can be told from the soldiers round him. */
+  private readonly agentRingTpl: Mesh;
   private readonly blobTpl: Mesh;
   /** Aura templates for 1, 2 and 3 simultaneous bonuses. */
   private readonly auraTpl: Mesh[];
@@ -170,6 +172,8 @@ export class Game {
     this.auraTpl = [0.45, 0.65, 0.9].map((a, i) => createAuraTemplate(scene, `aura${i + 1}`, a));
     this.ringTpl = createRing(scene, "selRing", 1.9, 0.12, [0.4, 1, 0.45]);
     this.ringTpl.isVisible = false;
+    this.agentRingTpl = createRing(scene, "agentRing", 3.4, 0.34, [1, 0.82, 0.25]);
+    this.agentRingTpl.isVisible = false;
     this.moveMarkerTpl = createRing(scene, "moveMarker", 2.2, 0.16, [0.45, 1, 0.5]);
     this.moveMarkerTpl.isVisible = false;
     this.attackMarkerTpl = createRing(scene, "attackMarker", 2.2, 0.16, [1, 0.3, 0.25]);
@@ -321,7 +325,7 @@ export class Game {
             : type === "agent" && agentModelReady()
               ? this.agentView(name)
               : new SoldierView(this.scene, this.soldierTpl[team][type], name, this.blobTpl);
-    const ring = this.ringTpl.createInstance("ring");
+    const ring = (type === "agent" ? this.agentRingTpl : this.ringTpl).createInstance("ring");
     ring.isPickable = false;
     if (type === "jeep") ring.scaling.set(2.6, 1, 2.6);
     if (type === "mgnest" || type === "bollard") ring.scaling.set(1.9, 1, 1.9);

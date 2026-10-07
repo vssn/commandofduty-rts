@@ -731,6 +731,9 @@ export class CommandosMission {
     this.updateSearches();
     this.updateTracking(dt);
 
+    // his selection ring pulses gently, so he stands out of a selected group
+    const pulse = 1 + 0.06 * Math.sin(this.time * 5);
+    a.ring.scaling.set(pulse, 1, pulse);
     // cloak: the agent fades out while invisible
     const alpha = a.cloaked ? 0.22 : 1;
     for (const m of this.agentMaterials) m.alpha += (alpha - m.alpha) * Math.min(1, dt * 8);
@@ -1161,8 +1164,15 @@ export class CommandosMission {
     const g = this.game, a = this.agent;
     for (let i = this.freed.length - 1; i >= 0; i--) if (!this.freed[i].alive) this.freed.splice(i, 1);
     // the pace: the soldiers near him set it
-    const near = this.freed.filter((u) => Math.hypot(u.x - a.x, u.z - a.z) < 30);
-    a.speedCap = near.length ? Math.min(...near.map((u) => u.stats.speed)) * 0.92 : Infinity;
+    const near = this.freed.filter((u) => u.selected && Math.hypot(u.x - a.x, u.z - a.z) < 30);
+    a.speedCap = near.length && a.selected && this.freed.every((u) => u.selected) ? Math.min(...near.map((u) => u.stats.speed)) * 0.92 : Infinity;
+    // the escort only works while the whole group is selected: with the agent alone the soldiers stay behind
+    const group = a.selected && this.freed.every((u) => u.selected);
+    if (!group) {
+      a.speedCap = Infinity;
+      this.escortDest.clear();
+      return;
+    }
     this.followT -= dt;
     if (this.followT > 0 || !a.alive || !this.freed.length) return;
     this.followT = 0.5;
