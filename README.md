@@ -237,6 +237,10 @@ und derselben Extraktion – nur das Ziel ist ein anderes (Werte: `EMBASSY_OPS` 
 - **Stellungen halten:** Im Botschaftsquartier kann der Agent Stellungen einnehmen: ist niemand vom Feind mehr darin, hält er
   sie wie ein Soldat (Fortschrittsanzeige oben); sobald sie ihm gehört, kommen drei Soldaten. Sie kämpfen auf seiner Seite,
   folgen ihm und lassen sich wie normale Einheiten auswählen und befehligen. Das Auftragsfeld zählt sie.
+  **Begleitschutz:** Der Agent geht nicht schneller als der langsamste Soldat in seiner Nähe (30 m). Droht ihm ein Gegner,
+  stellen sich die Soldaten vor ihn – auf die Linie vom Agenten zum nächsten Gegner, nebeneinander –, damit sie das Feuer
+  auf sich ziehen (der Gegner nimmt den jeweils nächsten Soldaten ins Visier). Wer gerade feuert, bleibt stehen;
+  eigene Befehle des Spielers bleiben unangetastet, bis sie ausgeführt sind.
 - Nach dem zweiten Dokument ist der Feind alarmiert und die Drohnen steigen auf. Sind alle drei Dokumente da, öffnet sich
   der **Extraktionspunkt** (blaue Fackel, Minimap „E“), diesmal auf freier Fläche im Park; dort holt der Hubschrauber den
   Agenten mit derselben Schluss-Cinematic ab. Das Highscore-Menü führt eine eigene Tabelle je Karte (Spalte „Befreite“ statt „Stellungen“).

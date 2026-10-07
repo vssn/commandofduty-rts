@@ -1146,23 +1146,66 @@ export class CommandosMission {
         g.emit("captivesFreed", PLAYER);
       }
     }
-    // the freed soldiers stay with the agent
+    this.escort(dt);
+  }
+
+  /** Where each freed soldier was last sent by the mission (a different destination means the player gave an order). */
+  private readonly escortDest = new Map<Unit, V2>();
+
+  /**
+   * The freed soldiers stay with the agent, and the agent keeps pace with them (he walks no faster than the
+   * slowest soldier near him). When an enemy threatens him they step in front of him - on the line from him to the
+   * nearest enemy, side by side - so that the fire is drawn onto them.
+   */
+  private escort(dt: number) {
+    const g = this.game, a = this.agent;
+    for (let i = this.freed.length - 1; i >= 0; i--) if (!this.freed[i].alive) this.freed.splice(i, 1);
+    // the pace: the soldiers near him set it
+    const near = this.freed.filter((u) => Math.hypot(u.x - a.x, u.z - a.z) < 30);
+    a.speedCap = near.length ? Math.min(...near.map((u) => u.stats.speed)) * 0.92 : Infinity;
     this.followT -= dt;
-    if (this.followT > 0 || !a.alive) return;
-    this.followT = 1;
-    for (let i = this.freed.length - 1; i >= 0; i--) {
-      const u = this.freed[i];
-      if (!u.alive) {
-        this.freed.splice(i, 1);
-        continue;
-      }
-      if (u.target || u.path.length || u.boarding) continue;
-      const d = Math.hypot(u.x - a.x, u.z - a.z);
-      if (d > 7) {
-        const ang = Math.random() * Math.PI * 2;
-        u.orderMove(g.nav.freePoint(a.x + Math.cos(ang) * 3.5, a.z + Math.sin(ang) * 3.5), false, g);
+    if (this.followT > 0 || !a.alive || !this.freed.length) return;
+    this.followT = 0.5;
+    // the threat: the enemy nearest to the agent among those that are after him or his men, or are close
+    let threat: Unit | null = null, td = 30;
+    for (const e of g.units) {
+      if (!e.alive || e.team !== ENEMY || !e.armed || e.vehicle || e.type === "drone") continue;
+      const d = Math.hypot(e.x - a.x, e.z - a.z);
+      const after = e.target === a || (e.target instanceof Unit && this.freed.includes(e.target));
+      if (d < td && (after || d < 22) && (!g.canSee || g.canSee(e.x, e.z))) {
+        td = d;
+        threat = e;
       }
     }
+    const n = this.freed.length;
+    this.freed.forEach((u, k) => {
+      if (u.boarding) return;
+      // a new order from the player (another destination) is left alone until it is carried out
+      const mine = this.escortDest.get(u);
+      if (u.dest && (!mine || Math.hypot(u.dest.x - mine.x, u.dest.z - mine.z) > 0.01)) return;
+      if (!threat) {
+        this.escortDest.delete(u);
+        if (u.target || u.path.length) return;
+        if (Math.hypot(u.x - a.x, u.z - a.z) > 7) {
+          const ang = Math.random() * Math.PI * 2;
+          this.sendTo(u, g.nav.freePoint(a.x + Math.cos(ang) * 3.5, a.z + Math.sin(ang) * 3.5));
+        }
+        return;
+      }
+      // firing at something in range: stay where he is
+      if (u.target && u.target.alive && Math.hypot(u.target.x - u.x, u.target.z - u.z) <= g.rangeOf(u, u.target)) return;
+      const dx = threat.x - a.x, dz = threat.z - a.z, len = Math.hypot(dx, dz) || 1;
+      const fx = dx / len, fz = dz / len;
+      // in front of the agent (not past the enemy), spread sideways
+      const ahead = Math.min(4.5, Math.max(1.5, len * 0.5)), side = (k - (n - 1) / 2) * 2.2;
+      const spot = g.nav.freePoint(a.x + fx * ahead + fz * side, a.z + fz * ahead - fx * side);
+      if (Math.hypot(u.x - spot.x, u.z - spot.z) > 1.8 && (!mine || Math.hypot(mine.x - spot.x, mine.z - spot.z) > 2.5)) this.sendTo(u, spot);
+    });
+  }
+
+  private sendTo(u: Unit, p: V2) {
+    u.orderMove(p, false, this.game);
+    this.escortDest.set(u, { x: p.x, z: p.z });
   }
 
   // ---------------------------------------------------------------- drones
