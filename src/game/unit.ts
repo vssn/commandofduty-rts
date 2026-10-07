@@ -108,6 +108,8 @@ export class Unit implements Target {
 
   private cooldown = Math.random() * 0.5;
   private scanT = 0;
+  /** Upper limit of the walking speed (the commandos agent keeps pace with the soldiers escorting him). */
+  speedCap = Infinity;
   /** Seconds the current (not explicitly ordered) target has been chased without getting in range. */
   private chaseT = 0;
   private retargetT = 0;
@@ -440,7 +442,7 @@ export class Unit implements Target {
       this.x += Math.sin(this.heading) * step;
       this.z += Math.cos(this.heading) * step;
     } else {
-      const step = Math.min(dist, this.stats.speed * this.slopeFactor(dx / dist, dz / dist, g) * dt);
+      const step = Math.min(dist, Math.min(this.stats.speed, this.speedCap) * this.slopeFactor(dx / dist, dz / dist, g) * dt);
       this.x += (dx / dist) * step;
       this.z += (dz / dist) * step;
       this.faceTowards(wp.x, wp.z, dt);
