@@ -321,17 +321,27 @@ export class Overlay {
       for (const u of game.units) {
         if (!u.alive || u.team === PLAYER || u.fogHidden || u.vehicle) continue;
         const spotted = u.target === cm.agent;
-        if (!spotted && !u.intel) continue;
+        // a soldier who is making the agent out (he is in cover): the "?" fills up and turns into the "!"
+        const sus = spotted ? 0 : cm.suspicionOf(u);
+        if (!spotted && !u.intel && sus <= 0) continue;
         const p = this.project(u.x, u.y + (u.isVehicle ? 4.8 : 3.9), u.z);
         if (!p) continue;
         ctx.font = `900 ${16 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
         ctx.textAlign = "center";
         ctx.lineWidth = 3.5 * s;
         ctx.strokeStyle = "rgba(10, 10, 8, 0.9)";
-        ctx.fillStyle = spotted ? "#ff4a3a" : u.intel === "track" ? "#ffb347" : "#ffe066";
+        ctx.fillStyle = spotted ? "#ff4a3a" : sus > 0 ? `rgb(255, ${Math.round(224 - 150 * sus)}, ${Math.round(102 - 50 * sus)})` : u.intel === "track" ? "#ffb347" : "#ffe066";
         const mark = spotted ? "!" : "?";
         ctx.strokeText(mark, p.x * s, p.y * s);
         ctx.fillText(mark, p.x * s, p.y * s);
+        if (sus > 0) {
+          // the ring round the mark closes in step with the alarm
+          ctx.beginPath();
+          ctx.arc(p.x * s, (p.y - 6) * s, 12 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * sus);
+          ctx.lineWidth = 2.5 * s;
+          ctx.strokeStyle = ctx.fillStyle;
+          ctx.stroke();
+        }
       }
       for (const c of cm.planted) {
         const p = this.project(c.x, game.terrain.heightAt(c.x, c.z) + 2.2, c.z);

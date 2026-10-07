@@ -52,6 +52,12 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   massiv und verdecken die Sicht. Die Straßen führen zwischen den Blöcken hinaus (auch an den Kartenecken) und enden am
   Kartenrand an Straßensperren; dahinter liegt hinter einer äußeren Ringstraße ein zweiter Blockring als schlichte
   Baukörper mit Schornsteinreihen (nur Kulisse).
+- **Straßen** (`src/world/roadMarkings.ts`): körniger, geflickter Asphalt mit Reifenspuren, Ölflecken und Flickstellen;
+  abgenutzte weiße Fahrbahnmarkierungen (stellenweise abgeplatzt): Mittellinien (Boulevards doppelt, Seitenstraßen
+  gestrichelt), Randlinien, **Busspuren** mit Schriftzug „BUS“ auf den Boulevards, vor den Kreuzungen **Links- und
+  Rechtsabbiegespuren** mit Pfeilen (je nach den Abzweigen der Kreuzung), Haltelinien und Zebrastreifen. An den vier
+  Kreuzungen der Boulevards mit den Alleen stehen **Ampeln**, die nur Gelb blinken. Alles sind flache, transparente Quads
+  knapp über dem Boden, zu drei Meshes zusammengefasst (Straßenkorn, Verschleiß, Farbe).
 - Alle Häuser liegen in wenigen zusammengefassten Meshes mit Texturen in Metern (eine Wiederholung = eine Fensterachse
   eines Geschosses), das hält die Stadt flüssig. Das Gelände ist flach, Pflaster auf Plätzen und Gehwegen, Rasen im Park
   und in den Gärten; im realistischen Modus Asphalt, Pflaster, Kies und Gras aus denselben Masken.
@@ -207,6 +213,10 @@ erkennen den Agenten schon auf 22 Einheiten und kehren nach etwa 45 s auf Posten
 hinterlässt Fußspuren (sichtbar im eigenen Sichtbereich, verblassen nach knapp 2 Minuten; getarnt keine Spuren).
 Fußpatrouillen, die auf frische Spuren stoßen, folgen ihnen in Laufrichtung und durchsuchen am Spurende die Gegend.
 Über Gegnern zeigt „?“ Suche/Fährte, „!“ dass sie den Agenten entdeckt haben.
+**Deckung:** Steht der Agent bei Bäumen, Hecken, Büschen oder an einem Gebäude (und nicht im Licht einer Lampe oder
+eines Scheinwerfers), bemerken ihn Gegner nur auf 70 % der üblichen Entfernung – und selbst dann erst nach etwa 2 Sekunden
+(`COMMANDOS.cover`): über dem Soldaten erscheint ein „?“ mit einem Ring, der sich schließt, dann wird es zum „!“. Wer
+dem Agenten fast vor die Füße läuft (unter 3 m), erkennt ihn sofort; im Freien bleibt es bei der sofortigen Entdeckung.
 
 Werte: `COMMANDOS` in `src/config.ts`, Logik in `src/game/commandos.ts`.
 
@@ -221,15 +231,21 @@ und derselben Extraktion – nur das Ziel ist ein anderes (Werte: `EMBASSY_OPS` 
   und vom Landeplatz aus zu Fuß erreichbar. Eine Fahne auf dem Dach markiert sie (nach dem Fund grün), auf der Minimap
   erscheint ein Umschlag mit pulsierendem Ring, im Spiel „Botschaft n · Dokumente“ samt Fortschritt. Die Dokumente sind
   gesichert, wenn der Agent vier Sekunden am Eingang der Villa steht (Ring auf dem Boden; verlässt er ihn, sinkt der Fortschritt).
-- **Stark bewacht:** an jeder Botschaft sechs Wachen rund ums Haus, ein MG-Nest vor der Tür, ein Suchscheinwerfer (er
-  erlischt, sobald die Dokumente weg sind) und ein Trupp, der das Haus umkreist; dazu mehr Wachen, MG-Nester und Patrouillen
-  an den Stellungen als im Hügelland. Die Stellungen (Park, Apotheke, Tiefgarage) sind in Feindeshand.
-- **Gefangene befreien:** an den Stellungen können Soldaten festgehalten werden. Sind alle Wachen einer Stellung
-  ausgeschaltet, besteht eine Chance (60 %), dass zwei bis drei Soldaten frei kommen; sie kämpfen auf der Seite des Agenten,
+- **Bewachung:** Die Stellungen (Park, Apotheke, Tiefgarage) sind in Feindeshand, jede mit zwei Wachen; zwischen ihnen
+  gehen Fußpatrouillen und ein Geländewagen. Nur die Botschaften sind stark bewacht: fünf Wachen ums Haus, ein MG-Nest vor
+  der Tür, ein Suchscheinwerfer (er erlischt, sobald die Dokumente weg sind) und ein Trupp, der das Haus umkreist.
+- **Stellungen halten:** Im Botschaftsquartier kann der Agent Stellungen einnehmen: ist niemand vom Feind mehr darin, hält er
+  sie wie ein Soldat (Fortschrittsanzeige oben); sobald sie ihm gehört, kommen drei Soldaten. Sie kämpfen auf seiner Seite,
   folgen ihm und lassen sich wie normale Einheiten auswählen und befehligen. Das Auftragsfeld zählt sie.
 - Nach dem zweiten Dokument ist der Feind alarmiert und die Drohnen steigen auf. Sind alle drei Dokumente da, öffnet sich
   der **Extraktionspunkt** (blaue Fackel, Minimap „E“), diesmal auf freier Fläche im Park; dort holt der Hubschrauber den
   Agenten mit derselben Schluss-Cinematic ab. Das Highscore-Menü führt eine eigene Tabelle je Karte (Spalte „Befreite“ statt „Stellungen“).
+
+### Zielwahl der Soldaten
+
+Wer von sich aus ein Ziel hat (nicht auf Befehl), wechselt zu einem deutlich näheren Gegner (alle ~0,6 s geprüft, mindestens
+2 m näher). Läuft ihm das Ziel länger als 6 s davon, ohne dass er in Reichweite kommt (es zieht sich zurück), gibt er es auf
+und nimmt 5 s lang einen anderen: den nächsten (`ignore` in `src/game/unit.ts`).
 
 ## Wirtschaft (Eroberung)
 

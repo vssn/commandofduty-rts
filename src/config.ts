@@ -149,6 +149,12 @@ export const COMMANDOS = {
    */
   night: { dark: 0.55, lit: 1.25 },
   /**
+   * Cover (trees, hedges, bushes, buildings; not in a lamp's or searchlight's light): enemies notice the agent only at
+   * `range` times the usual distance, and even then take `delay` seconds - shown as a "?" that turns into "!" - to raise the alarm.
+   * Stumbling right into a guard (closer than `close`) gives him away at once.
+   */
+  cover: { range: 0.7, delay: 2, close: 3 },
+  /**
    * Once more than `after` outposts are blown up the enemy turns aggressive: it notices the agent
    * sooner in the dark (`dark`), alarms reach further (`alertScale`) and drones take off.
    */
@@ -174,7 +180,7 @@ export const COMMANDOS = {
  * Commandos on the Botschaftsquartier: instead of blowing up outposts the agent has to visit three
  * embassies (town villas along the park, drawn by lot every mission) and secure their documents at the
  * front door, then reach the extraction point. The villas are guarded far more heavily, the outposts
- * too; soldiers held at an outpost may be freed once its guards are down and then fight with the agent.
+ * too; holding an outpost (as if taking it) brings three soldiers over, who then fight with the agent.
  */
 export const EMBASSY_OPS = {
   /** Embassies to visit. */
@@ -185,15 +191,15 @@ export const EMBASSY_OPS = {
   escalateAfter: 2,
   /** The documents are secured within `reach` of the door, after `time` seconds there. */
   door: { reach: 3, time: 4 },
-  /** Guards per outpost, outposts with an MG nest, foot patrols (3 men each) and jeeps. */
-  garrison: 3,
-  nests: 5,
-  patrols: 6,
-  jeepPatrols: 2,
-  /** Round every embassy: guards, an MG nest, a squad circling the villa and a searchlight. */
-  villa: { guards: 6, nest: true, patrols: 1 },
-  /** Chance that soldiers are held at an outpost; they are freed once all its guards are dead. */
-  captives: { chance: 0.6, min: 2, max: 3 },
+  /** Guards per outpost (no MG nests), foot patrols (3 men each) and jeeps between them. */
+  garrison: 2,
+  nests: 0,
+  patrols: 3,
+  jeepPatrols: 1,
+  /** Round every embassy, much stronger: guards, an MG nest, a squad circling the villa and a searchlight. */
+  villa: { guards: 5, nest: true, patrols: 1 },
+  /** Soldiers who join the agent once he has taken an outpost by holding it. */
+  captives: { count: 3 },
 };
 
 /** Skirmish: starting forces per side (no reinforcements) and starting credits. Every jeep starts
