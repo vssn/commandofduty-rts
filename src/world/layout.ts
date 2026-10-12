@@ -1,6 +1,7 @@
 import { MAP_HALF, OUTPOSTS, type MapId, type OutpostKind } from "../config";
 import { rng, smoothstep, valueNoise } from "../util/noise";
 import { buildEmbassy } from "./embassy";
+import { ScarpSet } from "./scarps";
 
 export interface V2 { x: number; z: number }
 export type RGB = [number, number, number];
@@ -169,8 +170,12 @@ export class MapLayout {
   /** The park's extent (z from -park to +park); 0 on the hill country. */
   park = 0;
 
+  /** The escarpments (terrace and hill edges) of the hill country; none on the city map. */
+  readonly scarps: ScarpSet;
+
   constructor(map: MapId = "hills", seed = 1337) {
     this.map = map;
+    this.scarps = new ScarpSet(map === "hills");
     const r = rng(seed);
     if (map === "embassy") {
       buildEmbassy(this, r);
@@ -178,6 +183,7 @@ export class MapLayout {
     }
     this.suburbs.forEach((s, i) => this.buildSuburb(s, i, r));
     this.buildCountryRoads();
+    this.buildScarpTracks();
     this.buildFields(r);
     this.buildMeadows(r);
   }
@@ -265,14 +271,79 @@ export class MapLayout {
     }
   }
 
+  /**
+   * Tracks run along the slopes: one at the foot (on the low side, beside the rubble) and, along the stone slopes, one
+   * on the top edge. Their ends join the nearest track when one is within reach, else they just end.
+   */
+  private buildScarpTracks() {
+    const country = this.roads.filter((rd) => rd.kind === "dirt");
+    /** The nearest point on an existing track within `reach` of p (at least a few metres away). */
+    const nearestTrack = (p: V2, reach: number): { q: V2; d: number } | null => {
+      let best: { q: V2; d: number } | null = null;
+      for (const rd of country) {
+        const dx = rd.b.x - rd.a.x, dz = rd.b.z - rd.a.z, l2 = dx * dx + dz * dz || 1;
+        const k = Math.max(0, Math.min(1, ((p.x - rd.a.x) * dx + (p.z - rd.a.z) * dz) / l2));
+        const q = { x: rd.a.x + dx * k, z: rd.a.z + dz * k };
+        const d = Math.hypot(q.x - p.x, q.z - p.z);
+        if (d < reach && (!best || d < best.d)) best = { q, d };
+      }
+      return best;
+    };
+    const lim = MAP_HALF + 1;
+    for (const sc of this.scarps.list) {
+      const lines = [this.scarps.offsetLine(sc, -(sc.w / 2 + 3.2 + 2.4))];
+      if (sc.kind === "stone") lines.push(this.scarps.offsetLine(sc, sc.w / 2 + 3.6));
+      lines.forEach((full, which) => {
+        // every third point of the curve: straight pieces about 6 m long
+        const pl = full.filter((_, i) => i % 3 === 0 || i === full.length - 1).filter((p) => Math.abs(p.x) < lim && Math.abs(p.z) < lim);
+        if (pl.length < 3) return;
+        // (only the track at the foot is joined to the network, by its nearer end, and by a short link only)
+        if (which === 0) {
+          const ends = [0, pl.length - 1].map((e) => ({ e, j: nearestTrack(pl[e], 30) })).filter((c) => c.j).sort((x, y) => x.j!.d - y.j!.d);
+          if (ends.length && ends[0].j!.d > 4) {
+            const c = ends[0];
+            if (c.e === 0) pl.unshift(c.j!.q);
+            else pl.push(c.j!.q);
+          }
+        }
+        for (let i = 0; i < pl.length - 1; i++) this.roads.push({ a: pl[i], b: pl[i + 1], w: 3.6, kind: "dirt" });
+      });
+    }
+  }
+
+  /**
+   * Rotation for a field or meadow at (x, z): parallel to the slope or track nearest to it (within reach), else `fallback`.
+   * (The local x axis of a rotated rectangle points along (cos rot, -sin rot).)
+   */
+  private alignedRot(x: number, z: number, fallback: number, r: () => number): number {
+    let best: { dx: number; dz: number; d: number } | null = this.scarps.tangentNear(x, z, 46);
+    for (const rd of this.roads) {
+      if (rd.kind !== "dirt") continue;
+      const dx = rd.b.x - rd.a.x, dz = rd.b.z - rd.a.z, l = Math.hypot(dx, dz) || 1;
+      const d = segDist(x, z, rd.a, rd.b);
+      if (d < 46 && (!best || d < best.d)) best = { dx: dx / l, dz: dz / l, d };
+    }
+    if (!best) return fallback;
+    return Math.atan2(-best.dz, best.dx) + (r() < 0.3 ? Math.PI / 2 : 0) + (r() - 0.5) * 0.06;
+  }
+
+  /** A rectangle (and its surroundings, `pad` metres) clear of the escarpments: centre and corners are checked. */
+  private clearOfScarps(cx: number, cz: number, hw: number, hd: number, rot: number, pad: number): boolean {
+    if (this.scarps.near(cx, cz, pad)) return false;
+    return ![[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].some(([sx, sz]) => {
+      const p = toWorld(cx, cz, rot, sx * hw, sz * hd);
+      return this.scarps.near(p.x, p.z, pad);
+    });
+  }
+
   private buildFields(r: () => number) {
     const bases = [this.playerBase, this.enemyBase];
     const baseAng = 0.35;
-    for (let tries = 0; tries < 900 && this.fields.length < 26; tries++) {
+    for (let tries = 0; tries < 2600 && this.fields.length < 26; tries++) {
       const hw = 8 + r() * 9, hd = 6 + r() * 7;
       const ext = Math.hypot(hw, hd);
       const cx = (r() * 2 - 1) * (MAP_HALF - 10), cz = (r() * 2 - 1) * (MAP_HALF - 10);
-      const rot = baseAng + (r() - 0.5) * 0.25 + (r() < 0.3 ? Math.PI / 2 : 0);
+      const rot = this.alignedRot(cx, cz, baseAng + (r() - 0.5) * 0.25 + (r() < 0.3 ? Math.PI / 2 : 0), r);
       // the whole field (and the hedge around it) keeps a passable strip to the edge of the map
       if (Math.abs(cx) + ext > MAP_HALF - 9 || Math.abs(cz) + ext > MAP_HALF - 9) continue;
       if (bases.some((b) => Math.hypot(cx - b.x, cz - b.z) < 22 + ext)) continue;
@@ -280,6 +351,7 @@ export class MapLayout {
       if (this.forests.some((f) => Math.hypot(cx - f.x, cz - f.z) < f.r + ext * 0.75)) continue;
       if (this.nearOutpost(cx, cz, ext + 6)) continue;
       if (this.nearestRoad(cx, cz).d < Math.min(hw, hd) + 1.5) continue;
+      if (!this.clearOfScarps(cx, cz, hw, hd, rot, 2.5)) continue;
       // fields must not overlap (the draped meshes would z-fight); keep room for a hedgerow in between
       const cand = { cx, cz, hw, hd, rot };
       if (this.fields.some((f) => rectsOverlap(cand, f, 3))) continue;
@@ -298,7 +370,8 @@ export class MapLayout {
       const hw = 8 + r() * 8, hd = 7 + r() * 6;
       const ext = Math.hypot(hw, hd);
       const cx = (r() * 2 - 1) * (MAP_HALF - 14), cz = (r() * 2 - 1) * (MAP_HALF - 14);
-      const rot = r() * Math.PI;
+      const rot = this.alignedRot(cx, cz, r() * Math.PI, r);
+      if (!this.clearOfScarps(cx, cz, hw, hd, rot, 2)) continue;
       if (bases.some((b) => Math.hypot(cx - b.x, cz - b.z) < 24 + ext * 0.6)) continue;
       if (this.suburbs.some((s) => Math.hypot(cx - s.x, cz - s.z) < s.r + ext * 0.5)) continue;
       if (this.forests.some((f) => Math.hypot(cx - f.x, cz - f.z) < f.r + ext * 0.45)) continue;

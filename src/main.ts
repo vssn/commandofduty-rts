@@ -43,6 +43,7 @@ import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { createCity } from "./world/city";
 import { createRoadMarkings } from "./world/roadMarkings";
+import { createScarpRocks } from "./world/scarpRocks";
 import { renderMapPreview } from "./ui/mapPreview";
 import { Terrain } from "./world/terrain";
 
@@ -86,6 +87,8 @@ const nav = new NavGrid();
 setBoot(0.18);
 await tick(); // the map is there
 const hedges = createHedges(scene, layout, terrain, env.shadows);
+// the escarpments of the hill country: stones scattered over the slopes (the realistic ground has its own rock texture)
+const scarpRocks = createScarpRocks(scene, layout, terrain);
 // the realistic graphics mode has its own field plants and trees, placed exactly like the classic ones
 const realCrops = new RealisticCrops(scene, env.shadows);
 createCrops(scene, layout, terrain, realCrops);
@@ -235,7 +238,7 @@ hud.onAudioChange = syncAudioUi;
 const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
   new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops,
   // hedges: green boxes in the classic look, dense shrubs here; the tall grass tussocks only here
-  { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); } },
+  { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); scarpRocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); scarpRocks.setRealistic(false); } },
   // cars, tractors and trailers, the base buildings and the outposts get their detailed models
   { enable: () => props.setDetail(true), disable: () => props.setDetail(false) },
   { enable: () => game.setBaseDetail(true), disable: () => game.setBaseDetail(false) },
