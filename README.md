@@ -1,7 +1,8 @@
 # Command of Duty
 
 2.5D-Echtzeitstrategie, gebaut mit Babylon.js, TypeScript und Vite.
-Low-Poly-Optik ohne Texturen, feste RTS-Kameraperspektive.
+Low-Poly-Optik (klassisch ohne Texturen, optional realistisch mit PBR), feste RTS-Kameraperspektive. Modi: Eroberung, Gefecht
+und Commandos auf den Karten Hügelland und Botschaftsquartier.
 
 ```bash
 npm install
@@ -403,6 +404,8 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 | Strg+1–9 / 1–9 | Gruppe speichern / abrufen (zweimal drücken zentriert die Kamera) |
 | N · B | MG-Nest · Poller errichten (Shift: mehrere) |
 | S · H | Stopp · zur Basis |
+| X · C (Commandos) | Tarnen · Sprengladung; Rechtsklick auf Gegner = Scharfschuss |
+| A (Gefecht) | Artillerieschlag, Ziel mit Linksklick wählen |
 | Esc / Button „Menü“ oben links | Pause: Musik-Lautstärke, Effekte & Funk an/aus, Grafik Klassisch/PBR, Weiter, zurück zum Hauptmenü (mit Rückfrage); Esc bricht zuerst eine laufende Zielauswahl ab |
 
 ## Aufbau
@@ -411,6 +414,8 @@ das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
 src/
   config.ts           Spielkonstanten (Kosten, Reichweite, HP, …)
   main.ts             Bootstrapping und Game Loop
+  style.css           Menüs, Seitenleiste, Cutscene-Leisten, Bestenliste
+  util/noise.ts       Zufall (mulberry32), smoothstep, Value-Noise, fbm
   world/
     layout.ts         Kartenlayout: Basen, Vororte, Straßen, Felder, Wälder
     terrain.ts        Flat-shaded Höhenfeld; Wege, Felder, Plätze per Mehrfachabtastung in die Dreiecke gefärbt;
@@ -429,12 +434,19 @@ src/
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
+    roadMarkings.ts   Straßen des Botschaftsquartiers: Asphaltkorn, Verschleiß, abgenutzte Markierungen (Bus-/Abbiegespuren, Zebrastreifen), gelb blinkende Ampeln
     embassy.ts        Layout der Karte „Botschaftsquartier“: Straßenraster, Villengärten, Park, Teiche, Wege, Häuserreihen
     city.ts           Pariser Altbauten und Stadtvillen (zusammengefasste Geometrie, Fassadentexturen), Teiche, Straßensperren
     cityModels.ts     U-Bahn-Station (Basis), Apotheke, Tiefgaragen-Ausfahrt
     agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
+    meadows.ts        Gras und Büschel auf den Wiesen (Heu, wild, Weide), klassisch und PBR
+    villageDecay.ts   Müll und Grasbüschel in den Dörfern („in Eile verlassen“)
+    pathMap.ts        Karte der Trampelpfade/Feldwege für die gebackenen Masken des PBR-Geländes
+    lawnTexture.ts    erzeugte Rasen-Textur-Schichten (in Scheiben, ohne den Browser zu blockieren)
+    barracksDetail.ts / outpostDetail.ts   Detailmodelle von Kaserne und Stellungen im PBR-Modus
+    rimPbr.ts / spotPbr.ts   Shader-Plugins: Randlicht der Figuren; Scheinwerfer, Drohnen und Laternen beleuchten die Szenerie
     pbr.ts            Grafik-Option PBR: Materialtausch Standard → PBR, lineare Farben, Atmosphäre (Tag), umkehrbar
     surfacePbr.ts     Texturen für Stellungen/Container im PBR-Modus (dreiseitige Projektion, Shader-Plugin)
     textureLayers.ts  Lädt Fototexturen (Farbe+Rauheit, Normalen) in Textur-Arrays
@@ -447,7 +459,8 @@ src/
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
-    commandos.ts      Commandos-Mission: Agent, Fähigkeiten, Sprengladungen, Verstecke, Patrouillen, Alarm, Scheinwerfer, Zeitlimit
+    commandos.ts      Commandos-Missionen: Agent, Fähigkeiten, Sprengladungen, Verstecke, Patrouillen, Alarm, Scheinwerfer, Zeitlimit; Botschaften, Dokumente, Deckung/Erkennung, Eskorte
+    muzzleFlash.ts    Mündungsfeuer, das den Boden ringsum beleuchtet
     artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
@@ -470,6 +483,8 @@ src/
     minimap.ts        Radar
     hud.ts            Seitenleiste, Meldungen, Sieg/Niederlage
     mapPreview.ts     Kartenplan für die Kartenwahl im Menü
+    scoreboard.ts     Commandos-Bestenliste je Karte (localStorage)
+    modeArt.ts        rendert die Bilder der Modus-Kacheln aus der Spielszene
     portraits.ts      rendert die Einheiten-Porträts der Bau-Kacheln und die Commandos-Fähigkeitskacheln (getarnter Agent, Sprengladung auf Jeep) aus den 3D-Modellen
 ```
 
