@@ -55,7 +55,7 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   Im Spiel heißen sie so (Seitenleiste, Meldungen, Sieg/Niederlage).
 - **Park** quer über die Kartenmitte: Kieswege um drei Teiche und hinaus zu den Boulevards (als eigene Fläche über
   dem Rasen mit glatten Kanten, `src/world/parkPaths.ts` – ins Gelände gemalt würden sie dessen Dreiecke bzw. die
-  Texel seiner Masken nachzeichnen und treppig wirken); die Teiche haben eine gepflasterte Einfassung aus Natursteinplatten
+  Texel seiner Masken nachzeichnen und treppig wirken); die Wege enden bündig an der Betonkante der Gehwege; die Teiche haben eine gepflasterte Einfassung aus Natursteinplatten
   (gleich breit rundum, mit einer niedrigen Steinkante zum Wasser); die Mulde des Teichs beginnt unter dem Pflaster, so dass
   der Rasen ringsum eben bleibt und das Ufer eine glatte Kurve ist statt der Zickzackkante von Wasser und Gelände), Baumgruppen, Büsche
   (massiv wie Hecken), sanft gewellter Rasen. Die übrigen Stellungen (Radar, Unterstände, Schützengräben, Wachtürme)

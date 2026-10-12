@@ -330,7 +330,7 @@ export class Terrain {
       const stripe = (Math.floor(fa.lx / fa.f.sw) & 1) === 0;
       return set(out, stripe ? fa.f.base : fa.f.stripe, 1 + (nz - 0.5) * 0.06);
     }
-    if (Math.abs(z) < L.park + 0.5 && Math.abs(x) < 99.5) {
+    if (Math.abs(z) < L.park && Math.abs(x) < 98.8) {
       mix(out, PARK_A, PARK_B, nz * 0.5 + 0.5);
       const pd = L.pondDepth(x, z);
       if (pd > -0.06) mix(out, out, SHORE, smoothstep(-0.06, 0.02, pd)); // (under the stone edging, see pondBank in city.ts)
@@ -393,7 +393,7 @@ export class Terrain {
       }
     }
 
-    if (city && Math.abs(z) < L.park + 4 && L.pathDistance(x, z) < -0.35) {
+    if (city && Math.abs(z) < L.park && Math.abs(x) < 98.8 && L.pathDistance(x, z) < -0.35) {
       // gravel paths through the park (a little narrower than the path drawn over them, see parkPaths.ts:
       // their stepped edge stays hidden underneath)
       set(out, PARK_PATH, 1 + nz * 0.08);
@@ -441,7 +441,7 @@ export class Terrain {
         return smoothstep(1.1, 0.7, d) * 0.92 * tufts;
       }
     }
-    if (city && !(Math.abs(z) < L.park + 0.5 && Math.abs(x) < 99.5)) {
+    if (city && !(Math.abs(z) < L.park && Math.abs(x) < 98.8)) {
       // the city outside the park is paved: pavements, squares, courtyards
       mix(out, PAVING, PAVING_B, nz);
       this.kind = Surface.Gravel;

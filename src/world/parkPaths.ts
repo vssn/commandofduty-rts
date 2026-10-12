@@ -1,5 +1,6 @@
 import { Color3, DynamicTexture, Mesh, StandardMaterial, Texture, VertexData, type Scene } from "@babylonjs/core";
 import { rng } from "../util/noise";
+import { RING, SIDEWALK } from "./embassy";
 import type { MapLayout } from "./layout";
 import type { Terrain } from "./terrain";
 
@@ -8,7 +9,8 @@ import type { Terrain } from "./terrain";
  * smooth edges: painted into the ground alone they would follow its triangles (classic look) or the
  * texels of its masks (realistic look) and show a stepped edge. Each straight piece is a strip following
  * the rolling lawn, each bend a round patch, all with the same ground-aligned texture, so where they
- * overlap nothing shows. (The ground keeps a narrower painted path underneath, for the minimap.)
+ * overlap nothing shows. Where they meet a pavement they end flush with its concrete edge. (The ground
+ * keeps a narrower painted path underneath, for the minimap.)
  */
 
 /** Metres per repeat of the gravel texture. */
@@ -51,7 +53,10 @@ export function createParkPaths(scene: Scene, layout: MapLayout, terrain: Terrai
   if (!layout.paths.length) return null;
   const pos: number[] = [], nor: number[] = [], uv: number[] = [], idx: number[] = [];
   /** A vertex on the ground (with the ground's slope as its normal). */
-  const vert = (x: number, z: number) => {
+  // the park ends at the concrete edge of the pavements: the paths stop there, flush with it
+  const limX = RING - 4 - SIDEWALK, limZ = layout.park;
+  const vert = (px: number, pz: number) => {
+    const x = Math.max(-limX, Math.min(limX, px)), z = Math.max(-limZ, Math.min(limZ, pz));
     const h = terrain.heightAt(x, z);
     const dx = terrain.heightAt(x + 0.5, z) - terrain.heightAt(x - 0.5, z), dz = terrain.heightAt(x, z + 0.5) - terrain.heightAt(x, z - 0.5);
     const l = Math.hypot(dx, 1, dz);
