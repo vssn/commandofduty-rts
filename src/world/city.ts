@@ -23,7 +23,8 @@ const STOREY = 3;
 const GROUND = 4.2;
 /** Facade tints: limestone, from warm cream to a cooler grey. */
 const STONE: RGB[] = [[0.93, 0.88, 0.78], [0.9, 0.86, 0.77], [0.88, 0.85, 0.8], [0.94, 0.9, 0.82], [0.85, 0.81, 0.73], [0.91, 0.89, 0.85]];
-const ZINC: RGB = [0.47, 0.5, 0.54];
+/** Light grey zinc of the roofs (it shimmers in the sun, see the roof material). */
+const ZINC: RGB = [0.7, 0.72, 0.75];
 
 /** Growing vertex buffers of one merged mesh. */
 class Geo {
@@ -267,22 +268,31 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
     const party = (e: Edge) => !villa && !h.mass && ((e.nx < -0.99) || (corner ? e.nz < -0.99 : e.nx > 0.99));
     const front = (e: Edge) => e.straight && (h.mass ? Math.abs(e.nx) > 0.99 || Math.abs(e.nz) > 0.99 : corner ? e.nx > 0.99 || e.nz > 0.99 : e.nz > 0.99);
     const edges = edgesOf(foot);
-    // walls, the ground floor of the blocks with shop fronts; u runs on round the building
-    let u = 0;
+    // walls, the ground floor of the blocks with shop fronts. A straight wall gets a whole number of
+    // window bays (stretched a little to fit), so it starts and ends with a pier: no window is cut at a
+    // corner. Round the curve of a rounded corner the bays run on continuously.
+    // A villa stands on a stone plinth; its rows of windows begin above it.
+    const plinthTop = y0 + 1.0, rowBase = y0 + 0.8;
+    let u = 0, s = 0;
     for (const e of edges) {
       const A = (y: number) => at(e.a[0], y, e.a[1]), B = (y: number) => at(e.b[0], y, e.b[1]);
-      const u0 = u / BAY, u1 = (u + e.len) / BAY;
+      const whole = e.straight;
+      const u0 = whole ? 0 : u / BAY, u1 = whole ? Math.max(1, Math.round(e.len / BAY)) : (u + e.len) / BAY;
       if (villa) {
-        const v = (y: number) => (y - y0 - 1.2) / STOREY;
-        walls.quad([A(yb), B(yb), B(yTop), A(yTop)], [[u0, v(yb)], [u1, v(yb)], [u1, v(yTop)], [u0, v(yTop)]], tint);
+        const v = (y: number) => (y - rowBase) / STOREY;
+        walls.quad([A(plinthTop), B(plinthTop), B(yTop), A(yTop)], [[u0, v(plinthTop)], [u1, v(plinthTop)], [u1, v(yTop)], [u0, v(yTop)]], tint);
       } else {
-        const s0 = u / 3.5, s1 = (u + e.len) / 3.5;
+        const s0 = whole ? 0 : s / 3.5, s1 = whole ? Math.max(1, Math.round(e.len / 3.5)) : (s + e.len) / 3.5;
         shops.quad([A(yb), B(yb), B(yG), A(yG)], [[s0, (yb - y0) / GROUND], [s1, (yb - y0) / GROUND], [s1, 1], [s0, 1]], tint);
         const v = (y: number) => (y - yG) / STOREY;
         walls.quad([A(yG), B(yG), B(yTop), A(yTop)], [[u0, 0], [u1, 0], [u1, v(yTop)], [u0, v(yTop)]], tint);
       }
-      u += e.len;
+      // (along the curve the bays carry on from piece to piece; a straight wall starts afresh)
+      u = whole ? 0 : u + e.len;
+      s = whole ? 0 : s + e.len;
     }
+    // the villa's plinth: rough grey stone, a hand's breadth proud of the walls, from below the ground
+    if (villa) prism(stone, at, offset(foot, -0.14), yb, plinthTop - yb, [tint[0] * 0.7, tint[1] * 0.69, tint[2] * 0.68]);
     // string course over the ground floor, the cornice under the roof
     prism(stone, at, offset(foot, -0.12), yG - 0.12, 0.24, cream);
     prism(stone, at, offset(foot, -0.3), yTop, 0.45, cream);
@@ -375,8 +385,11 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
   plain.metadata = { rough: 0.8 };
   const zinc = new StandardMaterial("parisZincMat", scene);
   zinc.diffuseTexture = zincTexture(scene);
-  zinc.specularColor = new Color3(0.12, 0.12, 0.13);
-  zinc.metadata = { rough: 0.38, metal: 0.55 };
+  // a metallic sheen: a broad, soft highlight in the classic look, a low roughness in the realistic one
+  zinc.specularColor = new Color3(0.42, 0.43, 0.45);
+  zinc.specularPower = 28;
+  // (little metal: without reflections of the sky a metallic roof turns dark - the light grey shows, the sun glints on it)
+  zinc.metadata = { rough: 0.3, metal: 0.18 };
   const ironMat = new StandardMaterial("parisIronMat", scene);
   ironMat.specularColor = new Color3(0.08, 0.08, 0.08);
   ironMat.metadata = { rough: 0.45, metal: 0.4 };
@@ -388,7 +401,10 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
   if (domes.length) {
     const d = Mesh.MergeMeshes(domes, true, true)!;
     d.name = "parisDomes";
-    d.material = mat(scene, [0.4, 0.45, 0.5], { rough: 0.35, metal: 0.6 });
+    const domeMat = mat(scene, [0.66, 0.69, 0.73], { rough: 0.26, metal: 0.2 });
+    domeMat.specularColor = new Color3(0.5, 0.5, 0.52);
+    domeMat.specularPower = 36;
+    d.material = domeMat;
     d.isPickable = false;
     d.receiveShadows = true;
     d.freezeWorldMatrix();

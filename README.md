@@ -47,7 +47,7 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
 - **Raster:** Ringstraße, Boulevards (10 m) und Seitenstraßen mit breiten Gehwegen und Bordsteinen, parkenden Autos,
   Straßenlaternen und Platanen entlang der Boulevards.
 - **Quartiere** um die Startpunkte: Blöcke als Villengärten – Rasen in Mähstreifen mit Kiesweg am Rand und Hecke ringsum
-  (die Logik der Felder des Hügellands), darin drei- und vierstöckige Stadtvillen.
+  (die Logik der Felder des Hügellands), darin drei- und vierstöckige Stadtvillen auf einem Steinsockel (die Fensterreihen beginnen darüber). Jede gerade Wand hat eine ganze Zahl Fensterachsen, so sitzt an den Hauskanten immer ein Mauerpfeiler statt eines angeschnittenen Fensters.
 - **Basis** ist der Ausgang einer **U-Bahn-Station** auf einem gepflasterten Platz: ein Glaspavillon in Metro-Grün mit
   Treppenabgang (dort kommen die Truppen herauf), Metro-Laternen mit Schild, Fassadenband in Teamfarbe, Sandsackwall wie
   bei der Kaserne. Das **Feldlazarett** ist eine nahe **Apotheke** (Ladenpavillon, grüne Markisen, leuchtendes Kreuz),
@@ -62,7 +62,7 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   liegen hier. Die Teiche sind Hindernisse.
 - **Rand:** Häuserblöcke aus Pariser Altbauten (vier bis sieben Geschosse) schließen die Karte ab: helle
   Kalksteinfassaden mit hohen Fenstern und Eisengeländern, ein Erdgeschoss mit Rundbogen-Läden, Gesims, durchlaufende
-  Eisenbalkone, graue Zink-Mansarddächer mit Gauben und Schornsteinen. Jeder Block hat an seinen Ecken **Eckhäuser mit
+  Eisenbalkone, hellgraue, im Licht schimmernde Zink-Mansarddächer mit Gauben und Schornsteinen. Jeder Block hat an seinen Ecken **Eckhäuser mit
   abgerundeter Ecke** (Fassade, Gesims, Mansarde und Balkone laufen um die Rundung, darüber oft eine Kuppel), dazwischen
   Reihenhäuser um einen Innenhof; zu kleine Blöcke sind ein einziger Baukörper mit vier gerundeten Ecken. Die Häuser sind
   massiv und verdecken die Sicht. Die Straßen führen zwischen den Blöcken hinaus (auch an den Kartenecken) und enden am
