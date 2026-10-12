@@ -27,7 +27,8 @@ führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 ## Karten
 
 Jeder Modus – **Eroberung**, **Gefecht** und **Commandos** – fragt nach der Karte: **Hügelland** (die bisherige Karte)
-oder **Botschaftsquartier**. Die Kacheln zeigen einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`),
+oder **Botschaftsquartier**; für Eroberung gibt es zusätzlich das **Kohlekraftwerk** (eine Karte zeigt sich nur bei den
+Modi, für die sie gemacht ist). Die Kacheln zeigen einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`),
 und beschreiben sie so, wie der gewählte Modus sie nutzt. Im **Gefecht im Botschaftsquartier** stehen die festen Truppen
 vor beiden U-Bahn-Stationen, jede Seite hält den Radarturm im Park auf ihrer Seite. Die Bilder der Moduskacheln werden aus
 der geladenen Karte gerendert; in der Stadt hat jede ihren eigenen Bildausschnitt (die U-Bahn-Station von der Straße aus,
@@ -45,6 +46,37 @@ der Hang braun bzw. grau gefärbt und mit **Steinpolygonen** übersät (Thin Ins
 liegen **graue Fels-Texturen** (bei den erdigen Hängen die Erdtextur) **kantengenau** auf dem Geröll: Die Fläche des Gerölls wird
 als vorzeichenbehaftete Distanz zum Rand mit ins Boden-Raster gebacken (1024², wie bei den Straßen), der Shader zeichnet den Rand
 daraus scharf und glatt.
+
+**Kohlekraftwerk** (`src/world/power.ts`, `powerPlant.ts`, `src/game/decks.ts`; nur Eroberung): eine asymmetrische
+Industriekarte am Hafen, bewusst schräg angelegt: Die Anlage ist um 10° gedreht, der Südkai liegt im Winkel von 10° zur
+Kamera, der Westkai läuft spitz mit 75° zur oberen Kartenmitte zu.
+- **Mitte:** das Kraftwerk – Maschinenhalle mit Kesselhaus (das Erdgeschoss ist offen und begehbar, nur die Stützen
+  stehen im Weg; die Geschosse darüber mit Turbinen und Kessel sind durchscheinend gezeichnet), der Kühlturm mit
+  Dampffahne und der Schornstein (beide nicht begehbar).
+- **Kohleband:** Neben den Gleisen steht ein Kohlebunker (Stahlbehälter auf Betonstützen mit Trichter, Leiter und
+  Geländer, oben ein Kohlehaufen). Unter seinem Auslass beginnt das Förderband und steigt in einer Stahlgalerie zum
+  Kesselhaus: im ersten Stück offen (Fachwerk, Gurt auf Tragrollen, Kohle darauf), danach verkleidet mit Fensterband,
+  auf Fachwerkböcken mit Kreuzverbänden (nicht in den Kreisen der Stellungen).
+- **Kohle** (`src/world/coal.ts`) auf Waggons, Bunker und Band: klassisch ein Haufen kleiner, gegeneinander verdrehter
+  Würfel (Thin Instances), im PBR-Modus ein facettierter Haufen mit Buckeln und körniger, glitzernder Textur.
+- **Stege (obere Ebene, 6,5 m):** Galerien laufen an den Längsseiten der Halle entlang und führen als Stege auf Stützen
+  nach Osten bzw. Westen hinaus, knicken ab und enden an Plattformen nahe den Startpunkten. Unter den Stegen kann man
+  hindurchgehen und stehen – Einheiten können also **darunter und darüber** stehen. Jede Einheit kennt ihre Ebene; die
+  obere Ebene hat ein eigenes Navigationsgitter, Wege zwischen den Ebenen führen über die nächste passende **Treppe**
+  (acht Stück: an den Hallenenden, an den Knicken und an den Plattformen). Ein Klick auf einen Steg schickt die Einheiten
+  nach oben, ein Klick auf den Boden darunter nach unten. Treppen sind nur zu Fuß begehbar, Geländewagen bleiben unten.
+  Wer oben steht, sieht weiter (der Nebel des Krieges rechnet mit der Augenhöhe); Einheiten verschiedener Ebenen
+  drängeln sich nicht gegenseitig weg. Zielkreis und Befehlslinie liegen auf der angeklickten Ebene. Granaten fliegen auf die Ebene
+  ihres Ziels (verfehlen sie den Steg, fallen sie hinunter); die Explosion trifft nur, wer auf ihrer Höhe steht – der
+  Steg schirmt die Einheiten darunter ab und umgekehrt.
+- **Stellungen** verteilt: Radartürme und Wachtürme auf den Plattformen der Stege, ein Unterstand unter der Halle und
+  weitere in der Anlage, Schützengräben, Werkstatt und Feldlazarett nahe jeder Basis.
+- **Rand:** Kaikanten mit Pollern im Süden, Westen und Norden (Wasser dahinter); vom Nordkai laufen Wasser-Pipelines auf
+  Stützen zum Kühlturm. Im Osten grünes Land, Hügel mit Wald jenseits der Karte.
+- **Startpunkte:** im Norden ein Gleisfeld mit drei Gleisen parallel zum Nordkai, zwei Kohlezügen (einer mit Lok); im Süden ein
+  Umspannwerk mit Transformatoren und Portal, dessen Leitungen über Hochspannungsmasten nach Osten aus der Karte führen.
+- In der Anlage Asphalt und Beton, außen Rasen – im PBR-Modus ein feiner, gemähter Rasen (Gras in feinerem Raster,
+  flachere Halme, kaum Flecken), passend zu den feinen Bauten der Karte.
 
 **Botschaftsquartier** (`src/world/embassy.ts`, `city.ts`, `cityModels.ts`): eine Innenstadt, wie das Hügelland
 punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung der eigenen).
@@ -460,6 +492,9 @@ src/
     embassy.ts        Layout der Karte „Botschaftsquartier“: Straßenraster, Villengärten, Park, Teiche, Wege, Häuserreihen
     city.ts           Pariser Altbauten und Stadtvillen (zusammengefasste Geometrie, Fassadentexturen), Teiche, Straßensperren
     cityModels.ts     U-Bahn-Station (Basis), Apotheke, Tiefgaragen-Ausfahrt
+    power.ts          Layout der Karte „Kohlekraftwerk“: Ebenen, Treppen, Kais, Gleise, Umspannwerk, Stellungen
+    powerPlant.ts     Bauten des Kraftwerks: Halle (durchscheinend), Kühlturm, Schornstein, Mauern, Treppen, Kohlebunker und -band, Züge, Masten
+    coal.ts           Kohlehaufen: Würfel (klassisch) bzw. facettierter Haufen (PBR)
     agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
@@ -478,6 +513,7 @@ src/
     game.ts           Spielzustand, Auswahl, Befehle, Kampf, Separation
     unit.ts           Soldaten-Logik (Bewegen, Zielerfassung, Feuern, Sterben)
     barracks.ts       Kaserne mit Produktionsschleife und Sammelpunkt; zerstört fliegt sie in einer Explosionskette in die Luft
+    decks.ts          Obere Ebene des Kraftwerks: eigenes Navigationsgitter der Stege, Wege über die Treppen
     nav.ts            Navigationsgitter (Infanterie- und Fahrzeugebene) + A* mit Pfadglättung
     fog.ts            Fog of War: Sichtstrahlen, Sichtblocker, erforscht/sichtbar
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)

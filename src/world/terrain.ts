@@ -2,6 +2,7 @@ import { Color3, DynamicTexture, Mesh, Scene, StandardMaterial, Texture, VertexB
 import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
 import { SIDEWALK } from "./embassy";
+import { inBox, inWater, quayDistance } from "./power";
 import { toLocal, type MapLayout, type RGB } from "./layout";
 import { SCREE_RANGE } from "./scarps";
 
@@ -161,6 +162,8 @@ export class Terrain {
       // the park's ponds lie in level ground (the hollow itself is dug afterwards)
       ...L.ponds.map((p) => ({ x: p.x, z: p.z, r: Math.max(p.rx, p.rz) + 2, f: 8, h: 0 })),
     ];
+    // (the power station's ground is laid out level by hand: decks, stairs and quays keep their edges)
+    if (L.plant) this.zones.length = 0;
     for (const zn of this.zones) zn.h = this.baseHeight(zn.x, zn.z);
 
     const n1 = this.n + 1;
@@ -175,9 +178,21 @@ export class Terrain {
 
   private baseHeight(x: number, z: number): number {
     if (this.layout.map === "embassy") return this.cityHeight(x, z);
+    if (this.layout.plant) return this.powerHeight(x, z);
     let h = fbm(x * 0.0105 + 5.3, z * 0.0105 - 2.1, 4, 3) * 15;
     h += Math.sin(x * 0.021 + 0.6) * Math.cos(z * 0.018 - 0.4) * 2.5;
     return h + this.border(x, z);
+  }
+
+  /**
+   * The power station: level ground (the raised walkways are built over it, see powerPlant.ts), the
+   * harbour basins beyond the quays (south, west, north) and green hills rising beyond the map to the east.
+   */
+  private powerHeight(x: number, z: number): number {
+    const P = this.layout.plant!;
+    if (inWater(P, x, z)) return -8;
+    const east = smoothstep(MAP_HALF + 4, MAP_HALF + 70, x);
+    return east * (14 + fbm(x * 0.02, z * 0.02, 3, 61) * 10);
   }
 
   /** The city: level streets and squares, gently rolling lawns in the park. */
@@ -236,6 +251,7 @@ export class Terrain {
   }
 
   private heightFn(x: number, z: number): number {
+    if (this.layout.plant) return this.baseHeight(x, z);
     let h = this.baseHeight(x, z);
     let flat = 0;
     for (const zn of this.zones) {
@@ -272,6 +288,14 @@ export class Terrain {
   private groundColor(x: number, z: number, h: number, slope: number, out: RGB): RGB {
     const L = this.layout;
     if (L.map === "embassy") return this.cityGround(x, z, h, out);
+    if (L.plant) {
+      // the power station: grass, greener on the hills; the harbour floor deep under the water
+      const nz = valueNoise(x * 0.08, z * 0.08, 5) * 0.6 + valueNoise(x * 0.3, z * 0.3, 9) * 0.4;
+      if (h < -1) return mix(out, [0.28, 0.27, 0.22], DEPTH_HAZE, 0.6);
+      mix(out, GRASS_LOW, GRASS_A, nz * 0.5 + 0.5);
+      if (slope > 0.4) mix(out, out, [0.6, 0.59, 0.55], 0.8); // (the concrete walls' footing)
+      return out;
+    }
     const nz = valueNoise(x * 0.08, z * 0.08, 5) * 0.6 + valueNoise(x * 0.3, z * 0.3, 9) * 0.4;
     mix(out, GRASS_A, GRASS_B, nz * 0.5 + 0.5);
     const low = smoothstep(2, -6, h);
@@ -393,6 +417,11 @@ export class Terrain {
       }
     }
 
+    if (L.plant) {
+      const w = this.powerDecal(x, z, nz, out);
+      if (w > 0) return w;
+    }
+
     if (city && Math.abs(z) < L.park && Math.abs(x) < 98.8 && L.pathDistance(x, z) < -0.35) {
       // gravel paths through the park (a little narrower than the path drawn over them, see parkPaths.ts:
       // their stepped edge stays hidden underneath)
@@ -447,6 +476,45 @@ export class Terrain {
       this.kind = Surface.Gravel;
       return 1;
     }
+    return 0;
+  }
+
+  /**
+   * The power station's paving: concrete on the decks, stairs and quays and round the hall and the
+   * cooling tower, asphalt over the rest of the plant's compound, ballast under the tracks, gravel in
+   * the transformer yard. Returns the opacity (0 = grass).
+   */
+  private powerDecal(x: number, z: number, nz: number, out: RGB): number {
+    const P = this.layout.plant!;
+    const concrete: RGB = [0.62, 0.61, 0.57], asphalt: RGB = [0.33, 0.33, 0.34], ballast: RGB = [0.36, 0.33, 0.3], gravel: RGB = [0.58, 0.56, 0.52];
+    this.kind = Surface.Gravel;
+    const Q = P.quays;
+    if (Math.min(quayDistance(Q.south, x, z), quayDistance(Q.west, x, z), quayDistance(Q.north, x, z)) < 8) {
+      set(out, concrete, 0.98 + nz * 0.06);
+      return 1;
+    }
+    const o = quayDistance(Q.north, x, z), T = P.tracks;
+    if (x > T.x0 - 4 && o > T.offsets[0] - 2.6 && o < T.offsets[T.offsets.length - 1] + 2.6) {
+      set(out, ballast, 1 + nz * 0.1);
+      return 1;
+    }
+    if (inBox(P.transformer, x, z)) {
+      set(out, gravel, 1 + nz * 0.08);
+      return 1;
+    }
+    if (inBox(P.hall, x, z, 5) || Math.hypot(x - P.tower.x, z - P.tower.z) < P.tower.r + 5) {
+      set(out, concrete, 1 + nz * 0.05);
+      return 1;
+    }
+    const l = toLocal(P.centre.x, P.centre.z, P.rot, x, z), c = P.compound;
+    if (l.x > c.x0 - 1 && l.x < c.x1 + 1 && l.z > c.z0 - 1 && l.z < c.z1 + 1) {
+      // asphalt with patches of newer and older surfacing, fraying a little into the grass at its edge
+      const patch = valueNoise(x * 0.07, z * 0.07, 71);
+      set(out, asphalt, 1 + nz * 0.07 + (patch > 0.3 ? 0.08 : patch < -0.35 ? -0.06 : 0));
+      const edge = Math.min(l.x - c.x0, c.x1 - l.x, l.z - c.z0, c.z1 - l.z) + nz * 1.5;
+      return smoothstep(-0.5, 1.5, edge);
+    }
+    this.kind = Surface.Natural;
     return 0;
   }
 

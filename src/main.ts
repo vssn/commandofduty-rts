@@ -42,6 +42,7 @@ import { loadAgentModel } from "./world/agentModel";
 import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { createCity } from "./world/city";
+import { createPowerPlant } from "./world/powerPlant";
 import { createRoadMarkings } from "./world/roadMarkings";
 import { createParkPaths } from "./world/parkPaths";
 import { createScarpRocks } from "./world/scarpRocks";
@@ -74,7 +75,7 @@ const agentModel = loadAgentModel(scene).catch((e) => console.warn("agent model 
 
 // the map: chosen in the menu (the page is loaded again with it; `start` then starts that mode at once)
 const params = new URLSearchParams(location.search);
-const MAP: MapId = params.get("map") === "embassy" ? "embassy" : "hills";
+const MAP: MapId = (["embassy", "power"] as const).find((m) => m === params.get("map")) ?? "hills";
 const autoStart = (["base", "skirmish", "commandos"] as const).find((m) => m === params.get("start")) ?? null;
 if (autoStart) {
   params.delete("start");
@@ -98,6 +99,9 @@ createMeadowGrass(scene, layout, terrain, realCrops);
 // tall tussocks of grass along the meadows' edges: scenery only, they are no obstacle
 const tussocks = createMeadowTussocks(scene, layout, terrain, env.shadows);
 createHouses(scene, layout, terrain, env.shadows, nav);
+// the power station: its works, quays, decks and stairs (they also shape the navigation grid)
+const plant = MAP === "power" ? createPowerPlant(scene, layout, terrain, env.shadows, nav) : null;
+const plantWorks = plant?.obstacles ?? [];
 // the city map: apartment blocks, villas, ponds, road blocks
 if (MAP === "embassy") {
   createCity(scene, layout, terrain, env.shadows, nav);
@@ -141,6 +145,7 @@ game.cover = new CoverMap(
     ...layout.outposts.map((o) => ({ x: o.x, z: o.z, hw: 2.5, hd: 2.5, rot: o.rot })),
     // containers, cabins, vehicles and machinery give cover too
     ...props.filter((p) => p.height >= 1.4),
+    ...plantWorks,
   ],
 );
 
@@ -160,6 +165,7 @@ for (const b of game.buildings) fog.blockRect(b.x, b.z, 6, 4, b.rot, 7);
 for (const o of layout.outposts) if (o.kind === "workshop") fog.blockRect(o.x, o.z, 3.5, 3, o.rot, 5.3);
 for (const o of layout.outposts) if (o.kind === "radar") fog.blockCircle(o.x, o.z, 2.6, 7.4); // the radome
 for (const p of props) if (p.height >= 2.4) fog.blockRect(p.x, p.z, p.hw, p.hd, p.rot, p.height); // containers, garages
+for (const p of plantWorks) fog.blockRect(p.x, p.z, p.hw, p.hd, p.rot, p.height); // wagons, transformers, cooling tower, chimney
 game.sightBonusOf = (u) => fog.sightBonus(u);
 game.canSee = (x, z) => fog.isVisible(x, z);
 
@@ -241,6 +247,8 @@ const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
   new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops,
   // hedges: green boxes in the classic look, dense shrubs here; the tall grass tussocks only here
   { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); scarpRocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); scarpRocks.setRealistic(false); } },
+  // the power station's coal: piled cubes in the classic look, lumpy mounds here
+  { enable: () => plant?.setRealistic(true), disable: () => plant?.setRealistic(false) },
   // cars, tractors and trailers, the base buildings and the outposts get their detailed models
   { enable: () => props.setDetail(true), disable: () => props.setDetail(false) },
   { enable: () => game.setBaseDetail(true), disable: () => game.setBaseDetail(false) },
@@ -646,6 +654,8 @@ const showMaps = (on: boolean, mode: GameMode = "base") => {
   menuModes.hidden = on;
   menuMaps.hidden = !on;
   if (!on) return;
+  // (a map lists the modes it is made for: the power station only for conquest)
+  for (const el of menuMaps.querySelectorAll<HTMLElement>("[data-map]")) el.hidden = !!el.dataset.modes && !el.dataset.modes.split(",").includes(mode);
   document.getElementById("maps-title")!.textContent = `${MODE_TITLES[mode]} – Karte wählen`;
   for (const el of menuMaps.querySelectorAll<HTMLElement>(".mode-text")) {
     el.dataset.textBase ??= el.innerHTML;
@@ -664,7 +674,7 @@ if (MAP === "embassy") for (const el of document.querySelectorAll<HTMLElement>("
 // the build date in the menu's footer
 document.getElementById("build-date")!.textContent = ` · Build ${new Date(__BUILD_DATE__).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 document.getElementById("menu-kicker")!.textContent = `Herbstoffensive · Einsatzgebiet ${MAP_NAMES[MAP]}`;
-for (const m of ["hills", "embassy"] as MapId[]) {
+for (const m of ["hills", "embassy", "power"] as MapId[]) {
   (document.getElementById(`map-img-${m}`) as HTMLImageElement).src = renderMapPreview(m === MAP ? layout : new MapLayout(m));
 }
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)

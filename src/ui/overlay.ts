@@ -112,7 +112,7 @@ export class Overlay {
       const u = l.unit;
       const from = this.project(u.x, u.y + 0.25, u.z);
       const tx = l.target ? l.target.x : l.x, tz = l.target ? l.target.z : l.z;
-      const ty = l.target ? l.target.y + 0.25 : game.terrain.heightAt(tx, tz) + 0.25;
+      const ty = (l.target ? l.target.y : l.y) + 0.25;
       const to = this.project(tx, ty, tz);
       if (!from || !to) continue;
       const alpha = 1 - l.t / ORDER_LINE_LIFE;

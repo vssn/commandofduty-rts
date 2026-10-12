@@ -53,6 +53,8 @@ class TerrainSplatPlugin extends MaterialPluginBase {
     private readonly meadow: RawTexture,
     private readonly scree: RawTexture,
     private readonly half: number,
+    /** A fine, evenly mown lawn instead of the meadow grass (the power station: its works are fine too). */
+    private readonly fineLawn = false,
   ) {
     super(material, "TerrainSplat", 210, { TERRAINSPLAT: false });
     this._enable(true);
@@ -166,8 +168,10 @@ bool tsUse1 = tsDec.a * tsK.r > 0.003 || tsRd.y < 3.0 || tsRd.x < 2.7 || tsPd < 
 bool tsUse2 = tsDec.a * tsK.g > 0.003;
 bool tsUse3 = tsDec.a * tsK.b > 0.003 || tsRd.x < tsAa.x + 0.02;
 bool tsUse4 = tsDec.a * tsK.a > 0.003 || tsRd.x < 0.62 + tsAa.x || tsRd.y < 1.0;
-vec4 tsA0 = textureGrad(tsAlbedo, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0]}, tsDy * ${tiles[0]});
-vec3 tsN0 = textureGrad(tsNormal, vec3(tsP * ${tiles[0]}, 0.0), tsDx * ${tiles[0]}, tsDy * ${tiles[0]}).xyz;
+// (a fine lawn: the grass read at a finer scale - short, dense blades)
+const float tsLawnSc = ${this.fineLawn ? "2.4" : "1.0"};
+vec4 tsA0 = textureGrad(tsAlbedo, vec3(tsP * ${tiles[0]} * tsLawnSc, 0.0), tsDx * ${tiles[0]} * tsLawnSc, tsDy * ${tiles[0]} * tsLawnSc);
+vec3 tsN0 = textureGrad(tsNormal, vec3(tsP * ${tiles[0]} * tsLawnSc, 0.0), tsDx * ${tiles[0]} * tsLawnSc, tsDy * ${tiles[0]} * tsLawnSc).xyz;
 // meadows: the blades' length follows the meadow's height class - the grass texture is read at a
 // coarser (tall) or finer (mown) scale
 vec4 tsMd = texture(tsMeadow, tsUv) * tsIn;
@@ -233,6 +237,9 @@ if (tsRock > 0.003) {
 mat2 tsRotM = mat2(0.6, 0.8, -0.8, 0.6);
 vec4 tsA0m = textureGrad(tsAlbedo, vec3(tsRotM * tsP * 0.043, 0.0), tsRotM * tsDx * 0.043, tsRotM * tsDy * 0.043);
 vec3 tsGrass = tsDetail(tsA0, tsMean0) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.6);
+${this.fineLawn ? `// the fine lawn: calmer - less contrast in the blades, flatter, only faint patches
+tsGrass = mix(vec3(1.0), tsDetail(tsA0, tsMean0), 0.6) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.22);
+tsN0 = mix(vec3(0.5, 0.5, 1.0), tsN0, 0.45);` : ""}
 // a fresher, sunnier meadow green than the map's base colour
 tsGrass *= vec3(1.04, 1.16, 0.78);
 float tsFlW = 0.0;
@@ -396,7 +403,7 @@ export class RealisticTerrain {
     mat.metallic = 0;
     mat.roughness = 0.9;
     mat.backFaceCulling = false;
-    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half);
+    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half, !!this.occluders().layout.plant);
     this.material = mat;
     mesh.material = mat;
 

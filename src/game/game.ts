@@ -18,6 +18,7 @@ import type { NavGrid } from "./nav";
 import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
+import { Decks, type PathPoint } from "./decks";
 import { agentModelReady } from "../world/agentModel";
 import { createSubwayMesh } from "../world/cityModels";
 import { AgentView } from "./agentView";
@@ -27,7 +28,7 @@ export type WeaponKind = "rifle" | "mg" | "sniper";
 export interface Tracer { ax: number; ay: number; az: number; bx: number; by: number; bz: number; t: number; hit: boolean; kind: WeaponKind }
 interface Marker { outer: InstancedMesh; inner: InstancedMesh; t: number }
 /** Short-lived line from a unit to the point (or target) it was just ordered to. */
-export interface OrderLine { unit: Unit; x: number; z: number; target: Target | null; t: number }
+export interface OrderLine { unit: Unit; x: number; y: number; z: number; target: Target | null; t: number }
 
 export type GameEvent =
   | "unitReady" | "unitLost" | "noCredits" | "baseAttacked" | "unitsAttacked" | "win" | "lose"
@@ -51,6 +52,8 @@ export class Game {
   readonly orderLines: OrderLine[] = [];
   result: "win" | "lose" | null = null;
   readonly outposts: Outpost[];
+  /** The power station's raised walkways (a second level units can stand on), or null. */
+  readonly decks: Decks | null;
   readonly playerBarracks: Barracks;
   readonly enemyBarracks: Barracks;
   readonly effects: Effects;
@@ -154,8 +157,11 @@ export class Game {
       for (let i = 0; i < n; i++) if (layout.nearestRoad(-MAP_HALF + i + 0.5, -MAP_HALF + j + 0.5).d < 0.2) this.roadGrid[i + j * n] = 1;
     }
     nav.setRoads(this.roadGrid); // vehicles prefer roads and tracks
-    this.outposts = layout.outposts.map((o) => new Outpost(o, scene, terrain, shadows));
+    this.decks = layout.plant ? new Decks(layout.plant, nav) : null;
+    this.outposts = layout.outposts.map((o) => new Outpost(o, scene, terrain, shadows, (x, z, l) => this.surfaceY(x, z, l)));
     for (const o of layout.outposts) {
+      // (an outpost on a walkway blocks the walkway's grid)
+      const nav = this.navOf(o.level ?? 0);
       if (o.kind === "tower" || o.kind === "bunker") nav.blockRect(o.x, o.z, 2, 2, o.rot, 0.5);
       if (o.kind === "workshop") nav.blockRect(o.x, o.z, 3.5, 3, o.rot, 0.6);
       if (o.kind === "radar") {
@@ -600,7 +606,35 @@ export class Game {
 
   // ---------------------------------------------------------------- commands
 
-  commandMove(units: Iterable<Unit>, p: V2, attackMove = false, showMarker = true) {
+  // ---------------------------------------------------------------- levels (power station)
+
+  /** The navigation grid of a level (the ground's, or the walkways'). */
+  navOf(level: 0 | 1) {
+    return level === 1 && this.decks ? this.decks.nav : this.nav;
+  }
+
+  /** Height of the ground - or of the walkway / stair - at a point on a level. */
+  surfaceY(x: number, z: number, level: 0 | 1 = 0): number {
+    if (level === 1 && this.decks) {
+      const h = this.decks.height(x, z);
+      if (h !== null) return h;
+    }
+    return this.terrain.heightAt(x, z);
+  }
+
+  /** The level a point most likely means (a point over a walkway: up on it). */
+  levelAt(x: number, z: number): 0 | 1 {
+    return this.decks && this.decks.height(x, z) !== null ? 1 : 0;
+  }
+
+  /** A unit's route to (tx, tz) on level `tl` (vehicles stay on the ground; across levels over a stair). */
+  route(u: Unit, tx: number, tz: number, tl: 0 | 1 = 0): PathPoint[] {
+    if (!this.decks || u.isVehicle) return this.nav.findPath(u.x, u.z, tx, tz, u.navLayer);
+    return this.decks.route(u.x, u.z, u.level, tx, tz, tl, this.nav);
+  }
+
+  commandMove(units: Iterable<Unit>, p: V2, attackMove = false, showMarker = true, level?: 0 | 1) {
+    const lvl = level ?? this.levelAt(p.x, p.z);
     const list = [...units].filter((u) => u.alive && !u.vehicle && !u.isStructure);
     if (!list.length) return;
     let cx = 0, cz = 0;
@@ -621,7 +655,7 @@ export class Game {
       const inRow = row === rows - 1 ? list.length - row * cols : cols;
       const ox = (col - (inRow - 1) / 2) * sp;
       const oz = -(row - (rows - 1) / 2) * sp;
-      slots.push(this.nav.freePoint(p.x + rx * ox + dx * oz, p.z + rz * ox + dz * oz));
+      slots.push({ ...this.navOf(lvl).freePoint(p.x + rx * ox + dx * oz, p.z + rz * ox + dz * oz), level: lvl } as PathPoint);
     }
 
     // greedy nearest assignment keeps paths from crossing too much
@@ -634,10 +668,10 @@ export class Game {
       }
       free.delete(best!);
       best!.orderMove(s, attackMove, this);
-      if (showMarker) this.addOrderLine(best!, s.x, s.z, null);
+      if (showMarker) this.addOrderLine(best!, s.x, s.z, null, lvl);
     }
     if (showMarker) {
-      this.addMarker(p.x, p.z, false);
+      this.addMarker(p.x, p.z, false, lvl);
       this.emit("commanded", PLAYER);
     }
   }
@@ -653,7 +687,7 @@ export class Game {
       u.orderAttack(t);
       this.addOrderLine(u, t.x, t.z, t);
     }
-    this.addMarker(t.x, t.z, true);
+    this.addMarker(t.x, t.z, true, t instanceof Unit ? t.level : 0);
     this.emit("commanded", PLAYER);
   }
 
@@ -716,7 +750,7 @@ export class Game {
       m.orderHeal(patient, this);
       this.addOrderLine(m, patient.x, patient.z, patient);
     }
-    this.addMarker(patient.x, patient.z, false);
+    this.addMarker(patient.x, patient.z, false, patient.level);
     this.emit("commanded", PLAYER);
     return true;
   }
@@ -742,16 +776,17 @@ export class Game {
     for (const u of units) u.stop();
   }
 
-  private addOrderLine(unit: Unit, x: number, z: number, target: Target | null) {
+  /** (`level`: the level the destination is on - a walkway's, or the ground under it) */
+  private addOrderLine(unit: Unit, x: number, z: number, target: Target | null, level: 0 | 1 = 0) {
     // a new order replaces the unit's previous line
     const i = this.orderLines.findIndex((l) => l.unit === unit);
     if (i >= 0) this.orderLines.splice(i, 1);
-    this.orderLines.push({ unit, x, z, target, t: 0 });
+    this.orderLines.push({ unit, x, y: this.surfaceY(x, z, level), z, target, t: 0 });
   }
 
-  private addMarker(x: number, z: number, attack: boolean) {
+  private addMarker(x: number, z: number, attack: boolean, level: 0 | 1 = 0) {
     const tpl = attack ? this.attackMarkerTpl : this.moveMarkerTpl;
-    const y = this.terrain.heightAt(x, z) + 0.3;
+    const y = this.surfaceY(x, z, level) + 0.3;
     const outer = tpl.createInstance("marker");
     const inner = tpl.createInstance("markerCore");
     outer.position.set(x, y, z);
@@ -973,6 +1008,7 @@ export class Game {
       const a = active[i];
       for (let j = i + 1; j < active.length; j++) {
         const b = active[j];
+        if (a.level !== b.level) continue; // (one on a walkway, the other underneath)
         const min = a.radius + b.radius + 0.05;
         let dx = b.x - a.x, dz = b.z - a.z;
         const d2 = dx * dx + dz * dz;
@@ -991,12 +1027,12 @@ export class Game {
     const lim = MAP_HALF - 1;
     for (const u of active) {
       // never end up inside a building, trunk or hedge: slide along it, or step back
-      const L = u.navLayer;
-      if (this.nav.isBlocked(u.x, u.z, L)) {
-        if (!this.nav.isBlocked(u.x, u.pz, L)) u.z = u.pz;
-        else if (!this.nav.isBlocked(u.px, u.z, L)) u.x = u.px;
-        else if (!this.nav.isBlocked(u.px, u.pz, L)) { u.x = u.px; u.z = u.pz; }
-        else ({ x: u.x, z: u.z } = this.nav.freePoint(u.x, u.z, L)); // stuck inside: pop out
+      const L = u.navLayer, nv = this.navOf(u.level);
+      if (nv.isBlocked(u.x, u.z, L)) {
+        if (!nv.isBlocked(u.x, u.pz, L)) u.z = u.pz;
+        else if (!nv.isBlocked(u.px, u.z, L)) u.x = u.px;
+        else if (!nv.isBlocked(u.px, u.pz, L)) { u.x = u.px; u.z = u.pz; }
+        else ({ x: u.x, z: u.z } = nv.freePoint(u.x, u.z, L)); // stuck inside: pop out
       }
       u.x = Math.min(Math.max(u.x, -lim), lim);
       u.z = Math.min(Math.max(u.z, -lim), lim);

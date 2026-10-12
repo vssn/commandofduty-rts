@@ -6,6 +6,7 @@ import { HOUSE_BODY, HOUSE_ROOF, toLocal, toWorld, type MapLayout, type RGB } fr
 import { brickBox, brickFaceUV, brickMaterial, createRoofTiles, type RoofSpec } from "./masonry";
 import { createGable, mat, ROOF_ROUGH } from "./models";
 import type { RealisticTrees } from "./floraPbr";
+import { powerGreen } from "./power";
 import type { Terrain } from "./terrain";
 
 export interface TreeInfo { x: number; z: number; conifer: boolean; color: RGB }
@@ -159,8 +160,10 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
 
   const trees: TreeInfo[] = [];
   const city = layout.map === "embassy";
+  const power = layout.map === "power";
   const free = (x: number, z: number, housePad = 1.8) =>
     !layout.fieldAt(x, z) &&
+    (!power || powerGreen(layout, x, z)) &&
     (!city || (layout.pondDepth(x, z) < -0.2 && layout.pathDistance(x, z) > 1.2)) &&
     layout.nearestRoad(x, z).d > 1.6 &&
     !layout.scarps.near(x, z, 1.2) &&
@@ -198,6 +201,7 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
   for (let k = 0; k < 140; k++) {
     const x = (r() * 2 - 1) * (MAP_HALF - 4), z = (r() * 2 - 1) * (MAP_HALF - 4);
     if (city && !layout.inPark(x, z, 2)) continue; // (in the city only the park has them)
+    if (power && r() < 0.6) continue; // (fewer at the power station)
     if (layout.suburbs.some((s) => Math.hypot(x - s.x, z - s.z) < s.r - 6)) continue;
     if (free(x, z)) place(x, z, r() < 0.2);
   }
@@ -246,6 +250,7 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     const e = Math.max(Math.abs(x), Math.abs(z));
     if (e < MAP_HALF + 3) continue;
     const h = terrain.heightAt(x, z);
+    if (power && h < 1) continue; // (the power station: only on the hills to the east, not in the water)
     const slope = Math.hypot(terrain.heightAt(x + 1, z) - terrain.heightAt(x - 1, z), terrain.heightAt(x, z + 1) - terrain.heightAt(x, z - 1)) / 2;
     if (slope > 0.55 || (h > 34 && z > MAP_HALF)) continue; // not on the snowy mountain tops
     if (valueNoise(x * 0.04, z * 0.04, 21) < (h < -30 ? 0.2 : -0.15)) continue;

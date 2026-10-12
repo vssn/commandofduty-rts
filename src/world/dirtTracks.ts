@@ -266,7 +266,8 @@ export function createDirtTracks(scene: Scene, layout: MapLayout, terrain: Terra
     return Math.abs(l.x) < f.hw + 1 && Math.abs(l.z) < f.hd + 1;
   });
   const paths: BandLine[] = [];
-  for (const o of layout.outposts) {
+  // (none at the power station: paved plant, decks and stairs)
+  for (const o of layout.map === "power" ? [] : layout.outposts) {
     const candidates = layout.roads
       .map((r) => closestOnSegment(o, r.a, r.b))
       .filter((c) => c.d > 9 && c.d < 70)

@@ -3,6 +3,7 @@ import { COMBAT, GRENADE, JEEP_MG, MEDIC, ROAD, SLOPE, UNITS, type Team, type Un
 import type { V2 } from "../world/layout";
 import type { Game } from "./game";
 import type { NavLayer } from "./nav";
+import type { PathPoint } from "./decks";
 import type { Outpost } from "./outpost";
 import type { UnitView } from "./views";
 
@@ -22,6 +23,11 @@ export interface Target {
   hp: number;
   maxHp: number;
   alive: boolean;
+}
+
+/** The level a target stands on (buildings: the ground). */
+function levelOf(t: Target): 0 | 1 {
+  return (t as { level?: 0 | 1 }).level ?? 0;
 }
 
 function wrapAngle(a: number): number {
@@ -55,7 +61,11 @@ export class Unit implements Target {
   /** Set once the death animation has finished and the meshes are gone. */
   removed = false;
 
-  path: V2[] = [];
+  path: PathPoint[] = [];
+  /** The level the unit stands on (power station: 0 the ground, 1 a raised walkway or stair). */
+  level: 0 | 1 = 0;
+  /** The level of where it is going (for new routes on the way). */
+  private goalLevel: 0 | 1 = 0;
   dest: V2 | null = null;
   target: Target | null = null;
   explicitTarget = false;
@@ -178,7 +188,7 @@ export class Unit implements Target {
   orderHeal(patient: Unit, g: Game) {
     this.stop();
     this.patient = patient;
-    this.path = g.nav.findPath(this.x, this.z, patient.x, patient.z, this.navLayer);
+    this.path = this.go(g, patient.x, patient.z, patient.level);
     this.repathT = 0.8;
   }
 
@@ -191,7 +201,7 @@ export class Unit implements Target {
     this.boarding = null;
     this.attackMove = attackMove;
     this.dest = { x: p.x, z: p.z };
-    this.path = g.nav.findPath(this.x, this.z, p.x, p.z, this.navLayer);
+    this.path = this.go(g, p.x, p.z, (p as PathPoint).level ?? g.levelAt(p.x, p.z));
     this.stuckT = 0;
   }
 
@@ -211,7 +221,7 @@ export class Unit implements Target {
   orderBoard(jeep: Unit, g: Game) {
     this.stop();
     this.boarding = jeep;
-    this.path = g.nav.findPath(this.x, this.z, jeep.x, jeep.z, this.navLayer);
+    this.path = this.go(g, jeep.x, jeep.z, 0);
     this.repathT = 0.8;
   }
 
@@ -253,7 +263,7 @@ export class Unit implements Target {
   private loseTarget(g: Game) {
     this.target = null;
     this.explicitTarget = false;
-    if (this.attackMove && this.dest) this.path = g.nav.findPath(this.x, this.z, this.dest.x, this.dest.z, this.navLayer);
+    if (this.attackMove && this.dest) this.path = this.go(g, this.dest.x, this.dest.z, this.goalLevel);
     else if (!this.isVehicle) this.path = [];
   }
 
@@ -361,7 +371,7 @@ export class Unit implements Target {
           this.repathT -= dt;
           if (this.repathT <= 0 || this.path.length === 0) {
             this.repathT = 0.8;
-            this.path = g.nav.findPath(this.x, this.z, t.x, t.z, this.navLayer);
+            this.path = this.go(g, t.x, t.z, levelOf(t));
           }
           moving = true;
         }
@@ -385,14 +395,20 @@ export class Unit implements Target {
   /** Speed multiplier for slope and ground (roads) in walking direction (dx, dz normalised); also updates `grade`. */
   private slopeFactor(dx: number, dz: number, g: Game): number {
     const look = this.isVehicle ? 1.5 : 0.8;
-    const h0 = g.terrain.heightAt(this.x, this.z);
-    const h1 = g.terrain.heightAt(this.x + dx * look, this.z + dz * look);
+    const h0 = g.surfaceY(this.x, this.z, this.level);
+    const h1 = g.surfaceY(this.x + dx * look, this.z + dz * look, this.level);
     this.grade = (h1 - h0) / look;
     const k = this.isVehicle ? SLOPE.vehicle : 1;
     const f = this.grade > 0 ? 1 - this.grade * SLOPE.uphill * k : 1 - this.grade * SLOPE.downhill * k;
     const slope = Math.min(SLOPE.max, Math.max(SLOPE.min, f));
     // on roads and dirt tracks level ground is as fast as walking downhill
     return Math.min(ROAD.cap, slope * g.groundSpeed(this.x, this.z));
+  }
+
+  /** A route to (tx, tz) on level `tl`, remembered for new routes on the way. */
+  private go(g: Game, tx: number, tz: number, tl: 0 | 1): PathPoint[] {
+    this.goalLevel = tl;
+    return g.route(this, tx, tz, tl);
   }
 
   private followPath(dt: number, g: Game) {
@@ -402,7 +418,8 @@ export class Unit implements Target {
     const last = this.path.length === 1;
     const reach = this.isVehicle ? (last ? 1.0 : 2.2) : last ? 0.3 : 0.9;
     if (dist < reach) {
-      this.path.shift();
+      const done = this.path.shift()!;
+      if (done.level !== undefined) this.level = done.level; // onto a stair, or off it
       if (!this.path.length && !this.target) { this.attackMove = false; this.dest = null; }
       return;
     }
@@ -471,7 +488,7 @@ export class Unit implements Target {
         this.repathT -= dt;
         if (this.repathT <= 0 || this.path.length === 0) {
           this.repathT = 0.8;
-          this.path = g.nav.findPath(this.x, this.z, p.x, p.z, this.navLayer);
+          this.path = this.go(g, p.x, p.z, p.level);
         }
         moving = true;
       } else {
@@ -500,8 +517,11 @@ export class Unit implements Target {
   private replan(g: Game) {
     const goal = this.path[this.path.length - 1] ?? this.dest;
     if (!goal) return;
-    const from = g.nav.freePoint(this.x, this.z, this.navLayer);
-    this.path = g.nav.findPath(from.x, from.z, goal.x, goal.z, this.navLayer);
+    const from = g.navOf(this.level).freePoint(this.x, this.z, this.navLayer);
+    const [x, z] = [this.x, this.z];
+    [this.x, this.z] = [from.x, from.z];
+    this.path = this.go(g, goal.x, goal.z, this.goalLevel);
+    [this.x, this.z] = [x, z];
     // step onto free ground first if the unit stands in an obstacle's margin
     if (Math.hypot(from.x - this.x, from.z - this.z) > 0.05) this.path.unshift(from);
   }
@@ -521,7 +541,7 @@ export class Unit implements Target {
     this.repathT -= dt;
     if (this.repathT <= 0 || this.path.length === 0) {
       this.repathT = 0.8;
-      this.path = g.nav.findPath(this.x, this.z, jeep.x, jeep.z, this.navLayer);
+      this.path = this.go(g, jeep.x, jeep.z, 0);
     }
     this.followPath(dt, g);
     this.moving = true;
@@ -574,7 +594,7 @@ export class Unit implements Target {
     } else {
       this.stuckT = 0;
     }
-    this.y = g.terrain.heightAt(this.x, this.z);
+    this.y = g.surfaceY(this.x, this.z, this.level);
     this.view.sync(this, dt, moved, g.terrain);
     this.ring.position.set(this.x, this.y + 0.3, this.z);
     this.ring.isVisible = this.selected;
@@ -618,7 +638,7 @@ export class Unit implements Target {
     d = Math.max(d, GRENADE.minDistance);
     const scatter = GRENADE.scatterBase + d * GRENADE.scatterPerUnit;
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * scatter;
-    g.effects.throwGrenade(this, this.x + dx * d + Math.cos(a) * r, this.z + dz * d + Math.sin(a) * r);
+    g.effects.throwGrenade(this, this.x + dx * d + Math.cos(a) * r, this.z + dz * d + Math.sin(a) * r, t instanceof Unit ? t.level : 0);
   }
 
   kill() {

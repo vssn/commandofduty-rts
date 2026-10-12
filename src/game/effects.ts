@@ -12,6 +12,8 @@ interface Grenade {
   thrower: Unit;
   tx: number;
   tz: number;
+  /** The level aimed at: on a walkway (power station) the grenade lands on it, unless it misses it. */
+  level: 0 | 1;
   /** Counts down to release, then flight time. */
   delay: number;
   t: number;
@@ -75,15 +77,23 @@ export class Effects {
     shadows.addShadowCaster(this.tpl.debris);
   }
 
-  throwGrenade(thrower: Unit, tx: number, tz: number) {
-    this.grenades.push({ thrower, tx, tz, delay: RELEASE, t: 0, flight: 0, sx: 0, sy: 0, sz: 0, ty: 0, apex: 0, mesh: null });
+  throwGrenade(thrower: Unit, tx: number, tz: number, level: 0 | 1 = 0) {
+    // (scattered off the walkway it falls to the ground)
+    if (level === 1 && this.game.decks?.height(tx, tz) == null) level = 0;
+    this.grenades.push({ thrower, tx, tz, level, delay: RELEASE, t: 0, flight: 0, sx: 0, sy: 0, sz: 0, ty: 0, apex: 0, mesh: null });
   }
 
-  /** Blast at (x, z): damages every unit in range, friend or foe, plus buildings. */
-  explode(x: number, z: number, damage: number, radius: number, by: Unit | null, size = 1) {
+  /**
+   * Blast at (x, z): damages every unit in range, friend or foe, plus buildings. `y`: its height where
+   * that is not the ground (on a walkway); then only what is at that height is hit, the walkway's slab
+   * shields those under it (and the other way round).
+   */
+  explode(x: number, z: number, damage: number, radius: number, by: Unit | null, size = 1, y?: number) {
     const g = this.game;
+    const at = y ?? g.terrain.heightAt(x, z);
     for (const u of g.units) {
       if (!u.alive || u.vehicle) continue;
+      if (g.decks && Math.abs(u.y - at) > 3) continue;
       const d = Math.hypot(u.x - x, u.z - z) - (u.isVehicle ? u.radius * 0.5 : 0);
       if (d > radius) continue;
       const falloff = 1 - 0.6 * Math.max(0, d) / radius;
@@ -92,7 +102,7 @@ export class Effects {
     for (const b of g.buildings) {
       if (b.alive && Math.hypot(b.x - x, b.z - z) - b.radius < radius) g.damage(b, damage * 0.7, by);
     }
-    this.spawnBlast(x, z, size);
+    this.spawnBlast(x, z, size, at);
     this.onExplosion?.(x, z, size);
   }
 
@@ -117,9 +127,8 @@ export class Effects {
    * flung out in arcs, glowing sparks, earth dust crawling along the ground and a column of smoke
    * that rises and lingers for several seconds. `size` scales everything (grenade 1, shell 1.5, charge 2.4).
    */
-  private spawnBlast(x: number, z: number, size: number) {
+  private spawnBlast(x: number, z: number, size: number, y: number) {
     const T = this.tpl;
-    const y = this.game.terrain.heightAt(x, z);
     const r = () => Math.random();
 
     if (this.real.active) {
@@ -202,8 +211,11 @@ export class Effects {
    */
   private drape(tpl: Mesh, x: number, y: number, z: number, radius: number): Mesh {
     const terrain = this.game.terrain;
+    // up on a walkway the mark lies flat on it
+    const raised = y - terrain.heightAt(x, z) > 1;
+    const floor = (px: number, pz: number) => (raised ? y : terrain.heightAt(px, pz));
     const rings = 7, seg = 28, turn = Math.random() * Math.PI * 2;
-    const pos: number[] = [0, terrain.heightAt(x, z) - y + 0.08, 0];
+    const pos: number[] = [0, floor(x, z) - y + 0.08, 0];
     const uv: number[] = [0.5, 0.5];
     const idx: number[] = [];
     for (let k = 1; k <= rings; k++) {
@@ -211,7 +223,7 @@ export class Effects {
       for (let s = 0; s < seg; s++) {
         const a = (s / seg) * Math.PI * 2;
         const px = Math.cos(a) * r, pz = Math.sin(a) * r;
-        pos.push(px, terrain.heightAt(x + px, z + pz) - y + 0.08, pz);
+        pos.push(px, floor(x + px, z + pz) - y + 0.08, pz);
         uv.push(0.5 + Math.cos(a + turn) * f * 0.5, 0.5 + Math.sin(a + turn) * f * 0.5);
       }
     }
@@ -255,7 +267,7 @@ export class Effects {
         gr.sx = th.x + Math.sin(th.heading) * 0.4;
         gr.sz = th.z + Math.cos(th.heading) * 0.4;
         gr.sy = th.y + 2.4;
-        gr.ty = g.terrain.heightAt(gr.tx, gr.tz) + 0.15;
+        gr.ty = g.surfaceY(gr.tx, gr.tz, gr.level) + 0.15;
         const dist = Math.hypot(gr.tx - gr.sx, gr.tz - gr.sz);
         gr.flight = 0.55 + dist * 0.045;
         gr.apex = 1.5 + dist * 0.22;
@@ -275,7 +287,7 @@ export class Effects {
       if (k >= 1) {
         m.dispose();
         this.grenades.splice(i, 1);
-        this.explode(gr.tx, gr.tz, UNITS.grenadier.damage, GRENADE.radius, gr.thrower.alive ? gr.thrower : null);
+        this.explode(gr.tx, gr.tz, UNITS.grenadier.damage, GRENADE.radius, gr.thrower.alive ? gr.thrower : null, 1, gr.ty - 0.15);
       }
     }
 

@@ -178,9 +178,16 @@ export class InputController {
     return b && b.alive ? b : null;
   }
 
-  private groundAt(x: number, y: number) {
+  /** The point under the cursor: on a raised walkway or stair (power station, `level` 1) if one is in front, else on the ground. */
+  private groundAt(x: number, y: number): { x: number; z: number; level: 0 | 1 } | null {
+    if (this.game.decks) {
+      const deck = this.scene.pick(x, y, (m) => !!m.metadata?.deck);
+      if (deck?.hit && deck.pickedPoint && this.game.decks.height(deck.pickedPoint.x, deck.pickedPoint.z) !== null) {
+        return { x: deck.pickedPoint.x, z: deck.pickedPoint.z, level: 1 };
+      }
+    }
     const hit = this.scene.pick(x, y, (m) => m === this.game.terrain.mesh);
-    return hit?.hit && hit.pickedPoint ? { x: hit.pickedPoint.x, z: hit.pickedPoint.z } : null;
+    return hit?.hit && hit.pickedPoint ? { x: hit.pickedPoint.x, z: hit.pickedPoint.z, level: 0 } : null;
   }
 
   private click(x: number, y: number, shift: boolean) {
@@ -276,7 +283,7 @@ export class InputController {
       // medics onto a wounded comrade; the rest of the selection moves along to him
       if (own && this.canHeal(own) && g.commandHeal(g.selection, own)) {
         const others = [...g.selection].filter((u) => u.type !== "medic");
-        if (others.length) g.commandMove(others, { x: own.x, z: own.z }, false, false);
+        if (others.length) g.commandMove(others, { x: own.x, z: own.z }, false, false, own.level);
         return;
       }
       const enemy = this.unitAt(x, y, "enemy");
@@ -284,7 +291,7 @@ export class InputController {
       const b = this.buildingAt(x, y);
       if (b && b.team !== PLAYER) return g.commandAttack(g.selection, b);
       const p = this.groundAt(x, y);
-      if (p) g.commandMove(g.selection, p);
+      if (p) g.commandMove(g.selection, p, false, true, p.level);
     } else if (g.selectedBuilding) {
       const p = this.groundAt(x, y);
       if (p) g.selectedBuilding.rally = g.nav.freePoint(p.x, p.z);

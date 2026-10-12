@@ -112,7 +112,7 @@ export class FogOfWar {
   /** Extra sight range from standing above the surrounding terrain. */
   sightBonus(u: Unit): number {
     const base = SIGHT[u.type];
-    const h = this.groundAt(u.x, u.z);
+    const h = Math.max(this.groundAt(u.x, u.z), u.y); // (up on a walkway: its height)
     let around = 0;
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
@@ -148,10 +148,10 @@ export class FogOfWar {
    * Casts sight rays from (ox, oz) with the eye `eye` units above the ground. `occlusion` = false
    * gives unobstructed all-round vision (barracks, outposts).
    */
-  private reveal(ox: number, oz: number, radius: number, eye: number, occlusion = true) {
+  private reveal(ox: number, oz: number, radius: number, eye: number, occlusion = true, base?: number) {
     const rays = Math.ceil(radius * 6.5);
     const step = 0.7;
-    const eyeY = this.groundAt(ox, oz) + eye;
+    const eyeY = (base ?? this.groundAt(ox, oz)) + eye;
     for (let r = 0; r < rays; r++) {
       const a = (r / rays) * Math.PI * 2;
       const dx = Math.cos(a), dz = Math.sin(a);
@@ -179,11 +179,11 @@ export class FogOfWar {
     this.visible.fill(0);
     for (const u of g.units) {
       if (!u.alive || u.team !== PLAYER || u.vehicle) continue;
-      this.reveal(u.x, u.z, SIGHT[u.type] + this.sightBonus(u), EYE[u.type]);
+      this.reveal(u.x, u.z, SIGHT[u.type] + this.sightBonus(u), EYE[u.type], true, u.level === 1 ? u.y : undefined);
     }
     // the barracks and captured outposts have all-round vision: nothing blocks their view
     for (const b of g.buildings) if (b.alive && b.team === PLAYER) this.reveal(b.x, b.z, SIGHT.barracks, 8, false);
-    for (const o of g.outposts) if (o.owner === PLAYER) this.reveal(o.x, o.z, SIGHT.outpost, 6, false);
+    for (const o of g.outposts) if (o.owner === PLAYER) this.reveal(o.x, o.z, SIGHT.outpost, 6, false, o.y);
     for (let k = 0; k < this.visible.length; k++) if (this.visible[k]) this.explored[k] = 1;
   }
 

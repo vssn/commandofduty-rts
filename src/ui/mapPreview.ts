@@ -1,5 +1,6 @@
 import { MAP_HALF, OUTPOSTS } from "../config";
 import { toWorld, type MapLayout, type RGB } from "../world/layout";
+import { alongNorth, inWater } from "../world/power";
 
 const css = (c: RGB, k = 1) => `rgb(${c.map((v) => Math.round(Math.min(1, v * k) * 255)).join(",")})`;
 
@@ -29,6 +30,32 @@ export function renderMapPreview(L: MapLayout, width = 480, height = 300): strin
     g.closePath();
     g.fill();
   };
+  const PL = L.plant;
+  const P2 = P;
+  /** A rotated rectangle (as the layout's boxes). */
+  const box = (b: { x: number; z: number; hw: number; hd: number; rot: number }, color: string) => {
+    g.fillStyle = color;
+    g.beginPath();
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) g.lineTo(...P2(toWorld(b.x, b.z, b.rot, sx * b.hw, sz * b.hd).x, toWorld(b.x, b.z, b.rot, sx * b.hw, sz * b.hd).z));
+    g.closePath();
+    g.fill();
+  };
+  if (PL) {
+    // the power station: water beyond the slanted quays, the paved compound, the yards
+    const img = g.getImageData(0, 0, width, height);
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        const x = (px - width / 2) / k, z = (height / 2 - py) / k;
+        if (!inWater(PL, x, z)) continue;
+        const i = (px + py * width) * 4;
+        img.data[i] = 0x4f; img.data[i + 1] = 0x74; img.data[i + 2] = 0x87;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    const c = PL.compound;
+    box({ x: toWorld(PL.centre.x, PL.centre.z, PL.rot, (c.x0 + c.x1) / 2, (c.z0 + c.z1) / 2).x, z: toWorld(PL.centre.x, PL.centre.z, PL.rot, (c.x0 + c.x1) / 2, (c.z0 + c.z1) / 2).z, hw: (c.x1 - c.x0) / 2, hd: (c.z1 - c.z0) / 2, rot: PL.rot }, "#55565a");
+    box(PL.transformer, "#94908a");
+  }
   for (const f of L.fields) {
     g.fillStyle = f.garden ? "#6c8c42" : css(f.base, 0.95);
     poly(f.cx, f.cz, f.rot, f.hw, f.hd);
@@ -43,13 +70,24 @@ export function renderMapPreview(L: MapLayout, width = 480, height = 300): strin
     g.stroke();
   };
   for (const r of L.roads) line(r.a, r.b, r.w + (city ? 4 : 0), r.kind === "asphalt" ? (city ? "#4a4a4e" : "#55555a") : "#8a6a42");
-  for (const p of L.paths) line(p.a, p.b, p.w, "#c7b98f");
-  g.fillStyle = "#4f7487";
-  for (const p of L.ponds) {
+  if (PL) {
+    // walkways and stairs (light concrete, the stairs a little darker), the hall, the cooling tower and chimney, the trains
+    for (const d of PL.decks) box(d, "#c9c5bb");
+    for (const s of PL.stairs) box(s, "#a7a399");
+    box(PL.hall, "#7d8a92");
+    g.fillStyle = "#bdbab2";
     g.beginPath();
-    const [x, y] = P(p.x, p.z);
-    g.ellipse(x, y, p.rx * k, p.rz * k, -p.rot, 0, Math.PI * 2);
+    g.arc(...P2(PL.tower.x, PL.tower.z), PL.tower.r * k, 0, Math.PI * 2);
     g.fill();
+    g.fillStyle = "#a33";
+    g.beginPath();
+    g.arc(...P2(PL.chimney.x, PL.chimney.z), Math.max(1.5, PL.chimney.r * k), 0, Math.PI * 2);
+    g.fill();
+    const rot = Math.atan2(-PL.quays.north.d.z, PL.quays.north.d.x);
+    for (const w of PL.wagons) box({ ...alongNorth(PL, w.x, PL.tracks.offsets[w.track]), hw: 6, hd: 1.5, rot }, "#2a2420");
+    for (const pl of PL.pipes) for (let i = 0; i < pl.length - 1; i++) line(pl[i], pl[i + 1], 1.2, "#6b8a6b");
+    line(PL.conveyor.a, PL.conveyor.b, 1.4, "#8a8d92");
+    box(PL.bunker, "#55585d");
   }
   g.fillStyle = "#3e5a2a";
   for (const f of L.forests) {

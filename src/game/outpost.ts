@@ -61,7 +61,12 @@ export class Outpost {
   /** Seconds until the owner may be warned again that this outpost is being taken. */
   private warnCooldown = 0;
 
-  constructor(spec: OutpostSpec, scene: Scene, terrain: Terrain, shadows: ShadowGenerator) {
+  /** On which level it lies (power station: 1 on a raised walkway's platform); only soldiers there count. */
+  readonly level: 0 | 1;
+
+  constructor(spec: OutpostSpec, scene: Scene, terrain: Terrain, shadows: ShadowGenerator, surface?: (x: number, z: number, level: 0 | 1) => number) {
+    this.level = spec.level ?? 0;
+    const ground = (x: number, z: number) => (surface ? surface(x, z, this.level) : terrain.heightAt(x, z));
     const cfg = OUTPOSTS[spec.kind];
     this.kind = spec.kind;
     this.look = spec.look ?? null;
@@ -70,7 +75,7 @@ export class Outpost {
     this.radius = cfg.radius;
     this.x = spec.x;
     this.z = spec.z;
-    this.y = terrain.heightAt(spec.x, spec.z);
+    this.y = ground(spec.x, spec.z);
     this.rot = spec.rot;
     this.production = spec.kind === "workshop" ? new Production(["jeep"]) : spec.kind === "hospital" ? new Production(["medic"]) : null;
     this.spawn = toWorld(spec.x, spec.z, spec.rot, 0, 6.5);
@@ -97,7 +102,7 @@ export class Outpost {
     this.ring.position.set(spec.x, this.y + 0.3, spec.z);
 
     const polePos = toWorld(spec.x, spec.z, spec.rot, this.radius * 0.55, -this.radius * 0.55);
-    const poleY = terrain.heightAt(polePos.x, polePos.z);
+    const poleY = ground(polePos.x, polePos.z);
     const pole = MeshBuilder.CreateCylinder("outpostPole", { height: 6, diameter: 0.14, tessellation: 6 }, scene);
     pole.position.set(polePos.x, poleY + 3, polePos.z);
     pole.material = mat(scene, [0.7, 0.7, 0.7]);
@@ -113,7 +118,7 @@ export class Outpost {
     // three more flagpoles on the edge of the area; bare until the outpost has an owner
     for (const a of [0.5, 2.6, 4.6]) {
       const p = toWorld(spec.x, spec.z, spec.rot, Math.sin(a) * this.radius * 0.88, Math.cos(a) * this.radius * 0.88);
-      const y = terrain.heightAt(p.x, p.z);
+      const y = ground(p.x, p.z);
       const bannerPole = MeshBuilder.CreateCylinder("bannerPole", { height: 4, diameter: 0.1, tessellation: 6 }, scene);
       bannerPole.position.set(p.x, y + 2, p.z);
       bannerPole.material = mat(scene, [0.62, 0.6, 0.55]);
@@ -224,7 +229,7 @@ export class Outpost {
     // the commandos agent is a saboteur: he neither takes outposts nor stops the enemy from holding them
     // (in the city he does: holding one brings soldiers over to his side)
     const agentCounts = g.commandos?.kind === "documents";
-    const occupants = g.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && (u.type !== "agent" || agentCounts) && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
+    const occupants = g.units.filter((u) => u.alive && !u.vehicle && !u.isStructure && (u.type !== "agent" || agentCounts) && u.level === this.level && Math.hypot(u.x - this.x, u.z - this.z) <= this.radius);
     for (const u of occupants) inside[u.team]++;
     this.contested = inside[0] > 0 && inside[1] > 0;
     if (this.contested) return; // enemy soldier present: progress is frozen, nobody heals

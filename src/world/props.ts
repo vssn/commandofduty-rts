@@ -1,5 +1,6 @@
 import { MeshBuilder, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { MAP_HALF } from "../config";
+import { conveyorDistance, inBox } from "./power";
 import type { NavGrid } from "../game/nav";
 import { rng } from "../util/noise";
 import { toLocal, toWorld, type MapLayout, type RGB } from "./layout";
@@ -296,6 +297,9 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
     }
     if (inField(x, z, 1.5)) return false;
     if (layout.outposts.some((o) => Math.hypot(o.x - x, o.z - z) < 9 + rad)) return false;
+    // (power station: nothing under the walkways, nothing in front of a stair)
+    const P = layout.plant;
+    if (P && (P.decks.some((d) => inBox(d, x, z, rad + 1)) || P.stairs.some((st) => inBox(st, x, z, rad + 4)) || inBox(P.bunker, x, z, rad + 3) || conveyorDistance(P, x, z) < rad + 3)) return false;
     if ([layout.playerBase, layout.enemyBase].some((b) => Math.hypot(b.x - x, b.z - z) < 20 + rad)) return false;
     return !placed.some((p) => Math.hypot(p.x - x, p.z - z) < p.rad + rad + 0.6);
   };

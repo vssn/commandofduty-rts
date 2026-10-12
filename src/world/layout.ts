@@ -1,6 +1,7 @@
 import { MAP_HALF, OUTPOSTS, type MapId, type OutpostKind } from "../config";
 import { rng, smoothstep, valueNoise } from "../util/noise";
 import { buildEmbassy } from "./embassy";
+import { buildPower, type PowerPlant } from "./power";
 import { ScarpSet } from "./scarps";
 
 export interface V2 { x: number; z: number }
@@ -19,7 +20,7 @@ export interface Meadow { cx: number; cz: number; hw: number; hd: number; rot: n
 export interface Forest { x: number; z: number; r: number; conifer: number }
 export interface Suburb { x: number; z: number; rot: number; r: number }
 /** `look`: the city map's version of the outpost (a pharmacy for the field hospital, an underground car park's exit for the workshop). */
-export interface OutpostSpec { kind: OutpostKind; x: number; z: number; rot: number; look?: "pharmacy" | "garage" }
+export interface OutpostSpec { kind: OutpostKind; x: number; z: number; rot: number; look?: "pharmacy" | "garage"; level?: 0 | 1 }
 /**
  * A building. Village houses are drawn with brick walls and a gable roof; `style` marks the city's
  * buildings (see city.ts): "paris" - Parisian apartment blocks in rows, "villa" - free-standing town
@@ -170,6 +171,9 @@ export class MapLayout {
   /** The park's extent (z from -park to +park); 0 on the hill country. */
   park = 0;
 
+  /** The power station map: the plant, its decks, stairs, quays and yards (null on the other maps). */
+  plant: PowerPlant | null = null;
+
   /** The escarpments (terrace and hill edges) of the hill country; none on the city map. */
   readonly scarps: ScarpSet;
 
@@ -179,6 +183,10 @@ export class MapLayout {
     const r = rng(seed);
     if (map === "embassy") {
       buildEmbassy(this, r);
+      return;
+    }
+    if (map === "power") {
+      buildPower(this);
       return;
     }
     this.suburbs.forEach((s, i) => this.buildSuburb(s, i, r));
