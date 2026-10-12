@@ -658,6 +658,8 @@ for (const el of document.querySelectorAll<HTMLElement>("#menu-maps [data-map]")
 }
 // the city map's names for the base and the production outposts
 if (MAP === "embassy") for (const el of document.querySelectorAll<HTMLElement>("[data-city]")) el.textContent = el.dataset.city!;
+// the build date in the menu's footer
+document.getElementById("build-date")!.textContent = ` · Build ${new Date(__BUILD_DATE__).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 document.getElementById("menu-kicker")!.textContent = `Herbstoffensive · Einsatzgebiet ${MAP_NAMES[MAP]}`;
 for (const m of ["hills", "embassy"] as MapId[]) {
   (document.getElementById(`map-img-${m}`) as HTMLImageElement).src = renderMapPreview(m === MAP ? layout : new MapLayout(m));
