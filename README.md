@@ -26,8 +26,12 @@ führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
 
 ## Karten
 
-**Eroberung** fragt nach der Karte: **Hügelland** (die bisherige Karte) oder **Botschaftsquartier**. Die Kacheln zeigen
-einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`). Gefecht spielt im Hügelland; „Commandos“ fragt ebenfalls nach der Karte (siehe unten).
+Jeder Modus – **Eroberung**, **Gefecht** und **Commandos** – fragt nach der Karte: **Hügelland** (die bisherige Karte)
+oder **Botschaftsquartier**. Die Kacheln zeigen einen Plan der Karte, gezeichnet aus ihrem Layout (`src/ui/mapPreview.ts`),
+und beschreiben sie so, wie der gewählte Modus sie nutzt. Im **Gefecht im Botschaftsquartier** stehen die festen Truppen
+vor beiden U-Bahn-Stationen, jede Seite hält den Radarturm im Park auf ihrer Seite. Die Bilder der Moduskacheln werden aus
+der geladenen Karte gerendert; in der Stadt hat jede ihren eigenen Bildausschnitt (die U-Bahn-Station von der Straße aus,
+das Gefecht im Park statt im Villengarten vor der Basis).
 Eine andere Karte als die geladene wird mit der Seite neu aufgebaut (`?map=embassy`, `&start=base` startet den Modus
 danach sofort); der Kopf des Hauptmenüs nennt das geladene Einsatzgebiet.
 

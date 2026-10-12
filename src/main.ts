@@ -637,22 +637,23 @@ const requestStart = (mode: GameMode, map: MapId = "hills") => {
   starting = true;
   void artDone.catch(() => undefined).then(() => startGame(mode)); // also if the artwork failed
 };
-// "Eroberung" and "Commandos" first ask for the map (Gefecht is played on the hill country); the cards describe
-// the map as the mode in question uses it
+// every mode first asks for the map; the cards describe the map as the mode in question uses it
 const menuMaps = document.getElementById("menu-maps")!;
-let mapsFor: "base" | "commandos" = "base";
-const showMaps = (on: boolean, mode: "base" | "commandos" = "base") => {
+let mapsFor: GameMode = "base";
+const MODE_TITLES: Record<GameMode, string> = { base: "Eroberung", skirmish: "Gefecht", commandos: "Commandos" };
+const showMaps = (on: boolean, mode: GameMode = "base") => {
   mapsFor = mode;
   menuModes.hidden = on;
   menuMaps.hidden = !on;
   if (!on) return;
-  document.getElementById("maps-title")!.textContent = `${mode === "base" ? "Eroberung" : "Commandos"} – Karte wählen`;
-  for (const el of menuMaps.querySelectorAll<HTMLElement>("[data-text-commandos]")) {
+  document.getElementById("maps-title")!.textContent = `${MODE_TITLES[mode]} – Karte wählen`;
+  for (const el of menuMaps.querySelectorAll<HTMLElement>(".mode-text")) {
     el.dataset.textBase ??= el.innerHTML;
-    el.innerHTML = mode === "commandos" ? el.dataset.textCommandos! : el.dataset.textBase;
+    el.innerHTML = (mode === "commandos" ? el.dataset.textCommandos : mode === "skirmish" ? el.dataset.textSkirmish : undefined) ?? el.dataset.textBase;
   }
 };
 document.getElementById("mode-conquest")!.addEventListener("click", () => showMaps(true, "base"));
+document.getElementById("mode-skirmish")!.addEventListener("click", () => showMaps(true, "skirmish"));
 document.getElementById("mode-commandos")!.addEventListener("click", () => showMaps(true, "commandos"));
 document.getElementById("maps-back")!.addEventListener("click", () => showMaps(false));
 for (const el of document.querySelectorAll<HTMLElement>("#menu-maps [data-map]")) {
@@ -666,7 +667,6 @@ document.getElementById("menu-kicker")!.textContent = `Herbstoffensive · Einsat
 for (const m of ["hills", "embassy"] as MapId[]) {
   (document.getElementById(`map-img-${m}`) as HTMLImageElement).src = renderMapPreview(m === MAP ? layout : new MapLayout(m));
 }
-document.getElementById("mode-skirmish")!.addEventListener("click", () => requestStart("skirmish"));
 // while the artwork renders, the fly-over must not move the sun (the shadow frustum follows it)
 let renderingArt = true;
 const artDone = renderModeArt(engine, scene, game, env.followFocus, { setNight, streetLights }).finally(() => {

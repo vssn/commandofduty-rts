@@ -8,9 +8,10 @@ import { Searchlight, type StreetLights } from "../world/lighting";
 const SIZE = { width: 640, height: 400 };
 
 /**
- * Renders the two artworks of the mode selection from the live battlefield (before the game starts):
- * "Eroberung" shows the player's sandbagged barracks with its garrison, "Gefecht" a staged fire fight
- * with jeeps, kneeling soldiers and a shell exploding. Temporary units are removed afterwards.
+ * Renders the artworks of the mode selection from the live battlefield (before the game starts), on
+ * whichever map is loaded: "Eroberung" shows the player's sandbagged base with its garrison, "Gefecht" a
+ * staged fire fight with jeeps, kneeling soldiers and a shell exploding (on the city map in the park),
+ * "Commandos" the agent at night. Temporary units are removed afterwards.
  */
 export async function renderModeArt(
   engine: Engine,
@@ -38,17 +39,21 @@ export async function renderModeArt(
   scene.fogColor = sky;
 
   // --- Eroberung: the fortified barracks from the front-left, garrison in front of the gate
+  // (in the city: from above the street in front of the metro station, clear of the villa behind it)
+  const city = game.layout.map === "embassy";
   const b = game.playerBarracks;
   const front = toWorld(b.x, b.z, b.rot, 0, 6);
   const conquest = await shoot(
-    new Vector3(b.x - 20, y(b.x, b.z) + 17, b.z + 28),
+    city ? new Vector3(b.x - 10, y(b.x, b.z) + 22, b.z + 26) : new Vector3(b.x - 20, y(b.x, b.z) + 17, b.z + 28),
     new Vector3(front.x, y(front.x, front.z) + 1, front.z),
-    0.72,
+    city ? 0.8 : 0.72,
   );
 
   // --- Gefecht: a staged skirmish on open ground in front of the base
   const temp: Unit[] = [];
-  const at = toWorld(b.x, b.z, b.rot, 6, 44);
+  // (in the city the ground in front of the base is a villa garden: the battle is fought in the park,
+  // seen from above the boulevard, the radar on the left, the watchtower and a pond behind the enemy)
+  const at = city ? { x: -45, z: -20 } : toWorld(b.x, b.z, b.rot, 6, 44);
   const place = (type: UnitType, team: 0 | 1, lx: number, lz: number, heading: number, stance: Unit["stance"] = "stand") => {
     const p = game.nav.freePoint(at.x + lx, at.z + lz, type === "jeep" ? 1 : 0);
     const u = game.spawnUnit(type, team, p.x, p.z);
@@ -91,7 +96,7 @@ export async function renderModeArt(
   boom(1, 19, 2.0, 0.25);
   boom(-3, 11, 1.7, 0.09);
   const skirmish = await shoot(
-    new Vector3(at.x - 8, y(at.x, at.z) + 9.5, at.z - 19),
+    new Vector3(at.x - 8, y(at.x, at.z) + (city ? 11 : 9.5), at.z - 19),
     new Vector3(at.x + 1, y(at.x, at.z + 8), at.z + 11),
     0.78,
   );
