@@ -53,7 +53,11 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   bei der Kaserne. Das **Feldlazarett** ist eine nahe **Apotheke** (Ladenpavillon, grüne Markisen, leuchtendes Kreuz),
   die **Werkstatt** die Ausfahrt einer **Tiefgarage** (Betonportal mit dunkler Einfahrt, Rampe, Schranke, P-Schild).
   Im Spiel heißen sie so (Seitenleiste, Meldungen, Sieg/Niederlage).
-- **Park** quer über die Kartenmitte: Kieswege um drei Teiche und hinaus zu den Boulevards, Baumgruppen, Büsche
+- **Park** quer über die Kartenmitte: Kieswege um drei Teiche und hinaus zu den Boulevards (als eigene Fläche über
+  dem Rasen mit glatten Kanten, `src/world/parkPaths.ts` – ins Gelände gemalt würden sie dessen Dreiecke bzw. die
+  Texel seiner Masken nachzeichnen und treppig wirken); die Teiche haben eine gepflasterte Einfassung aus Natursteinplatten
+  (gleich breit rundum, mit einer niedrigen Steinkante zum Wasser); die Mulde des Teichs beginnt unter dem Pflaster, so dass
+  der Rasen ringsum eben bleibt und das Ufer eine glatte Kurve ist statt der Zickzackkante von Wasser und Gelände), Baumgruppen, Büsche
   (massiv wie Hecken), sanft gewellter Rasen. Die übrigen Stellungen (Radar, Unterstände, Schützengräben, Wachtürme)
   liegen hier. Die Teiche sind Hindernisse.
 - **Rand:** Häuserblöcke aus Pariser Altbauten (vier bis sieben Geschosse) schließen die Karte ab: helle
@@ -240,7 +244,7 @@ und derselben Extraktion – nur das Ziel ist ein anderes (Werte: `EMBASSY_OPS` 
 `src/game/commandos.ts`):
 - **Auftrag: drei Botschaften aufsuchen und dort die Dokumente bergen** (14 Minuten). Botschaften sind die Stadtvillen
   an der Parkseite (die Villen der beiden Reihen am Park); **welche drei, wird bei jedem Einsatz ausgelost** – verteilt
-  und vom Landeplatz aus zu Fuß erreichbar. Eine Fahne auf dem Dach markiert sie (nach dem Fund grün), auf der Minimap
+  und vom Landeplatz aus zu Fuß erreichbar. Eine Fahne in der Farbe des Gegners (rot) auf dem Dach markiert sie (nach dem Fund grün), auf der Minimap
   erscheint ein Umschlag mit pulsierendem Ring, im Spiel „Botschaft n · Dokumente“ samt Fortschritt. Die Dokumente sind
   gesichert, wenn der Agent vier Sekunden am Eingang der Villa steht (Ring auf dem Boden; verlässt er ihn, sinkt der Fortschritt).
 - **Bewachung:** Die Stellungen (Park, Apotheke, Tiefgarage) sind in Feindeshand, jede mit zwei Wachen; zwischen ihnen
@@ -445,6 +449,7 @@ src/
     masonry.ts        Ziegeltextur für Wände (maßstabsgetreue UVs) und Dachziegel als Thin Instances
     hedges.ts         Hecken entlang der Felder (Wege und Felder sind ins Gelände-Raster eingefärbt)
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
+    parkPaths.ts      Kieswege im Park des Botschaftsquartiers (Fläche über dem Gelände, glatte Kanten)
     roadMarkings.ts   Straßen des Botschaftsquartiers: Asphaltkorn, Verschleiß, abgenutzte Markierungen (Bus-/Abbiegespuren, Zebrastreifen), gelb blinkende Ampeln
     scarps.ts         Böschungen des Hügellands: Verlauf, Höhenstufe, Geröllfläche (Distanz zum Rand), Abstandsprüfungen
     scarpRocks.ts     Steinpolygone auf den Böschungen (klassischer Modus)

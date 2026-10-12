@@ -395,7 +395,8 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
     shadows.addShadowCaster(d);
   }
 
-  // ---- the park's ponds: still, dark water
+  // ---- the park's ponds: still, dark water in a paved stone edging (see pondBank)
+  const banks: Mesh[] = [];
   const water = new StandardMaterial("pondWater", scene);
   water.diffuseColor = new Color3(0.24, 0.34, 0.36);
   water.specularColor = new Color3(0.55, 0.6, 0.62);
@@ -412,6 +413,7 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
     disc.isPickable = false;
     disc.receiveShadows = true;
     disc.freezeWorldMatrix();
+    banks.push(pondBank(scene, terrain, p.x, p.z, p.rx, p.rz, p.rot));
     // nobody wades through: the water is an obstacle (the shore is not) - filled with circles along its long axis
     const n = Math.ceil(Math.max(p.rx, p.rz) / 2);
     for (let k = -n; k <= n; k++) {
@@ -422,6 +424,16 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
       const c = toWorld(p.x, p.z, p.rot, p.rx >= p.rz ? t * along * 0.92 : 0, p.rx >= p.rz ? 0 : t * along * 0.92);
       nav.blockCircle(c.x, c.z, cross * 0.85);
     }
+  }
+
+  if (banks.length) {
+    const bankMat = new StandardMaterial("pondBankMat", scene);
+    bankMat.diffuseTexture = bankTexture(scene);
+    bankMat.specularColor = new Color3(0.05, 0.05, 0.05);
+    bankMat.backFaceCulling = false;
+    bankMat.zOffset = -1;
+    bankMat.metadata = { surface: "concrete", rough: 0.8 };
+    for (const b of banks) b.material = bankMat;
   }
 
   // ---- road blocks where the streets leave the map: concrete barriers, a striped plank across
@@ -442,4 +454,85 @@ export function createCity(scene: Scene, layout: MapLayout, terrain: Terrain, sh
   bm.specularColor = Color3.Black();
   bm.metadata = { surface: "concrete", rough: 0.85 };
   barrier.mesh("roadBlocks", scene, bm, shadows);
+}
+
+/** Flagstones for the ponds' edging: irregular light stones in rows, darker joints. */
+function bankTexture(scene: Scene): DynamicTexture {
+  const S = 256;
+  const t = new DynamicTexture("pondPaving", { width: S, height: S }, scene, true);
+  const g = t.getContext() as CanvasRenderingContext2D;
+  const r = rng(909);
+  g.fillStyle = "#6f6a60"; // joints
+  g.fillRect(0, 0, S, S);
+  const rows = 4, rh = S / rows;
+  for (let j = 0; j < rows; j++) {
+    let x = -r() * 40;
+    while (x < S) {
+      const w = 44 + r() * 40;
+      const c = Math.round(178 + (r() - 0.5) * 34);
+      g.fillStyle = `rgb(${c},${Math.round(c * 0.97)},${Math.round(c * 0.91)})`;
+      // (drawn twice across the edge so the texture tiles)
+      for (const ox of [0, -S, S]) g.fillRect(x + ox + 2, j * rh + 2, w - 4, rh - 4);
+      x += w;
+    }
+  }
+  const img = g.getImageData(0, 0, S, S);
+  for (let i = 0; i < S * S; i++) {
+    const n = (r() - 0.5) * 22;
+    for (let k = 0; k < 3; k++) img.data[i * 4 + k] = Math.max(0, Math.min(255, img.data[i * 4 + k] + n));
+  }
+  g.putImageData(img, 0, 0);
+  t.update(true);
+  t.wrapU = t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.anisotropicFilteringLevel = 8;
+  return t;
+}
+
+/**
+ * The edging of a pond: a band of flagstones of even width round the water, level with the lawn,
+ * and a low stone face down to the water. Where the flat water met the ground their edge zigzagged
+ * along the ground's triangles; the ground's hollow now begins under the paving, so the lawn outside
+ * stays level and the shore is a clean curve of stone.
+ */
+function pondBank(scene: Scene, terrain: Terrain, cx: number, cz: number, rx: number, rz: number, rot: number): Mesh {
+  const seg = 96, inner = -0.25, outer = 1.2, top = 0.07;
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [], idx: number[] = [];
+  // points on the water's ellipse, moved along its normal by a fixed distance (an even band)
+  const at = (a: number, off: number) => {
+    const ex = Math.cos(a) * rx, ez = Math.sin(a) * rz;
+    let nx = Math.cos(a) / rx, nz = Math.sin(a) / rz;
+    const l = Math.hypot(nx, nz);
+    nx /= l; nz /= l;
+    return { p: toWorld(cx, cz, rot, ex + nx * off, ez + nz * off), n: toWorld(0, 0, rot, nx, nz) };
+  };
+  let along = 0, prev: { x: number; z: number } | null = null;
+  for (let s = 0; s <= seg; s++) {
+    const a = (s / seg) * Math.PI * 2;
+    const i = at(a, inner), o = at(a, outer);
+    if (prev) along += Math.hypot(o.p.x - prev.x, o.p.z - prev.z);
+    prev = o.p;
+    const yG = terrain.heightAt(o.p.x, o.p.z);
+    const y = Math.max(yG, 0) + top;
+    // the paving (u round the pond, v across the band), then the stone face down into the water
+    pos.push(i.p.x, y, i.p.z, o.p.x, y, o.p.z, i.p.x, y, i.p.z, i.p.x, POND_LEVEL - 0.15, i.p.z);
+    nor.push(0, 1, 0, 0, 1, 0, -i.n.x, 0, -i.n.z, -i.n.x, 0, -i.n.z);
+    const u = along / 1.6;
+    uv.push(u, 0, u, (outer - inner) / 1.6, u, 0, u, 0.35);
+  }
+  for (let s = 0; s < seg; s++) {
+    const a = s * 4, b = a + 4;
+    idx.push(a, b, a + 1, a + 1, b, b + 1); // paving
+    idx.push(a + 2, a + 3, b + 2, b + 2, a + 3, b + 3); // face
+  }
+  const m = new Mesh("pondBank", scene);
+  const vd = new VertexData();
+  vd.positions = new Float32Array(pos);
+  vd.normals = new Float32Array(nor);
+  vd.uvs = new Float32Array(uv);
+  vd.indices = new Uint32Array(idx);
+  vd.applyToMesh(m);
+  m.isPickable = false;
+  m.receiveShadows = true;
+  m.freezeWorldMatrix();
+  return m;
 }

@@ -248,7 +248,8 @@ export class Terrain {
     // the ponds' hollows: a soft shore, a flat bottom below the water
     if (this.layout.ponds.length) {
       const d = this.layout.pondDepth(x, z);
-      if (d > -0.3) h -= 1.7 * smoothstep(-0.25, 0.4, d);
+      // (the hollow begins under the stone edging drawn round the water, see pondBank in city.ts: the lawn stays level)
+      if (d > -0.1) h -= 1.7 * smoothstep(-0.07, 0.25, d);
     }
     return h;
   }
@@ -332,7 +333,7 @@ export class Terrain {
     if (Math.abs(z) < L.park + 0.5 && Math.abs(x) < 99.5) {
       mix(out, PARK_A, PARK_B, nz * 0.5 + 0.5);
       const pd = L.pondDepth(x, z);
-      if (pd > -0.15) mix(out, out, SHORE, smoothstep(-0.15, 0.02, pd));
+      if (pd > -0.06) mix(out, out, SHORE, smoothstep(-0.06, 0.02, pd)); // (under the stone edging, see pondBank in city.ts)
       if (h < POND_LEVEL - 0.1) mix(out, out, DEPTH_HAZE, 0.5);
       for (const f of L.forests) {
         const d = Math.hypot(x - f.x, z - f.z);
@@ -392,8 +393,9 @@ export class Terrain {
       }
     }
 
-    if (city && Math.abs(z) < L.park + 4 && L.pathDistance(x, z) < 0) {
-      // gravel paths through the park
+    if (city && Math.abs(z) < L.park + 4 && L.pathDistance(x, z) < -0.35) {
+      // gravel paths through the park (a little narrower than the path drawn over them, see parkPaths.ts:
+      // their stepped edge stays hidden underneath)
       set(out, PARK_PATH, 1 + nz * 0.08);
       this.kind = Surface.Gravel;
       return 1;

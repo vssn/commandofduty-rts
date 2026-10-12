@@ -43,6 +43,7 @@ import { RealisticCrops, RealisticTrees } from "./world/floraPbr";
 import { createHouses, createVegetation } from "./world/scenery";
 import { createCity } from "./world/city";
 import { createRoadMarkings } from "./world/roadMarkings";
+import { createParkPaths } from "./world/parkPaths";
 import { createScarpRocks } from "./world/scarpRocks";
 import { renderMapPreview } from "./ui/mapPreview";
 import { Terrain } from "./world/terrain";
@@ -101,6 +102,7 @@ createHouses(scene, layout, terrain, env.shadows, nav);
 if (MAP === "embassy") {
   createCity(scene, layout, terrain, env.shadows, nav);
   createRoadMarkings(scene, layout, terrain, nav);
+  createParkPaths(scene, layout, terrain); // the park's gravel paths with smooth edges
 }
 const realTrees = new RealisticTrees(scene, env.shadows);
 const trees = createVegetation(scene, layout, terrain, env.shadows, realTrees);

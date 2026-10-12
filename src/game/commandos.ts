@@ -5,7 +5,7 @@ import { COMPOUND } from "../world/fortification";
 import { toWorld, type HouseSpec, type V2 } from "../world/layout";
 import { createGlowSpot, Searchlight } from "../world/lighting";
 import { MAX_SPOTS, type SpotLight } from "../world/spotPbr";
-import { createChargeMesh, mat } from "../world/models";
+import { createChargeMesh, mat, TEAM_COLOR } from "../world/models";
 import { EXTRACT_RADIUS, ExtractionFlare, pickExtractionPoint } from "./extraction";
 import type { Game } from "./game";
 import type { Outpost } from "./outpost";
@@ -1028,11 +1028,12 @@ export class CommandosMission {
         chosen.push(h);
       }
     }
-    const flags: [number, number, number][] = [[0.85, 0.15, 0.15], [0.2, 0.45, 0.9], [0.95, 0.75, 0.15]];
+    // every embassy flies the enemy's colour (red) - until the documents are secured
+    const flagC = TEAM_COLOR[ENEMY] as [number, number, number];
     chosen.forEach((h, i) => {
       const door = doorOf(h);
       const post = { destroyed: false };
-      const { flag, flagMat } = this.flagMesh(h, flags[i % flags.length]);
+      const { flag, flagMat } = this.flagMesh(h, flagC);
       this.embassies.push({ name: `Botschaft ${i + 1}`, villa: h, door, taken: false, progress: 0, post, flag, flagMat });
       const at = (lx: number, lz: number) => {
         const p = toWorld(h.x, h.z, h.rot, lx, lz);
