@@ -3,6 +3,7 @@ import {
   type AbstractEngine, type Material, type MaterialDefines, type Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import { ROAD_RANGE, type Terrain } from "./terrain";
+import { SCREE_RANGE } from "./scarps";
 import { bakeMeadowMap, bakeOcclusion, bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
 import type { MapLayout, V2 } from "./layout";
 import { loadTextureLayers, type TextureLayers } from "./textureLayers";
@@ -50,6 +51,7 @@ class TerrainSplatPlugin extends MaterialPluginBase {
     private readonly roads: RawTexture,
     private readonly paths: RawTexture,
     private readonly meadow: RawTexture,
+    private readonly scree: RawTexture,
     private readonly half: number,
   ) {
     super(material, "TerrainSplat", 210, { TERRAINSPLAT: false });
@@ -73,11 +75,11 @@ class TerrainSplatPlugin extends MaterialPluginBase {
   isReadyForSubMesh(): boolean {
     const l = this.layers;
     if (!l) return true;
-    return l.albedo.isReady() && l.normal.isReady() && this.decal.isReady() && this.kind.isReady() && this.roads.isReady() && this.paths.isReady() && this.meadow.isReady();
+    return l.albedo.isReady() && l.normal.isReady() && this.decal.isReady() && this.kind.isReady() && this.roads.isReady() && this.paths.isReady() && this.meadow.isReady() && this.scree.isReady();
   }
 
   getSamplers(samplers: string[]) {
-    samplers.push("tsAlbedo", "tsNormal", "tsDecal", "tsKind", "tsRoads", "tsPaths", "tsMeadow");
+    samplers.push("tsAlbedo", "tsNormal", "tsDecal", "tsKind", "tsRoads", "tsPaths", "tsMeadow", "tsScree");
   }
 
   getUniforms() {
@@ -105,6 +107,7 @@ uniform float tsHalf;
     ubo.setTexture("tsRoads", this.roads);
     ubo.setTexture("tsPaths", this.paths);
     ubo.setTexture("tsMeadow", this.meadow);
+    ubo.setTexture("tsScree", this.scree);
   }
 
   getCustomCode(shaderType: string) {
@@ -119,6 +122,7 @@ uniform sampler2D tsKind;
 uniform sampler2D tsRoads;
 uniform sampler2D tsPaths;
 uniform sampler2D tsMeadow;
+uniform sampler2D tsScree;
 vec3 tsLin(vec3 c) { return pow(c, vec3(2.2)); }
 /** Detail of a layer relative to its mean colour (1 = unchanged), slightly toned down. */
 vec3 tsDetail(vec4 a, vec3 mean) { return mix(vec3(1.0), tsLin(a.rgb) / max(mean, vec3(0.002)), 0.9); }
@@ -145,6 +149,12 @@ vec2 tsAa = fwidth(tsRd) * 0.75 + 0.015;
 vec4 tsPth = texture(tsPaths, tsUv);
 float tsPd = mix(${PATH_RANGE.toFixed(1)}, (tsPth.r * 2.0 - 1.0) * ${PATH_RANGE.toFixed(1)}, tsIn);
 float tsPAa = fwidth(tsPd) * 0.75 + 0.015;
+// the escarpments' rubble: the baked distance to its edge (metres, negative inside) keeps the rock's edge crisp and
+// true to the slope at any angle; g says how brown the bank is
+vec4 tsScr = texture(tsScree, tsUv);
+float tsScD = mix(${SCREE_RANGE.toFixed(1)}, (tsScr.r * 2.0 - 1.0) * ${SCREE_RANGE.toFixed(1)}, tsIn);
+float tsScAa = fwidth(tsScD) * 0.75 + 0.015;
+float tsScW = smoothstep(tsScAa, -tsScAa, tsScD);
 // The layers, each in its own scale and slightly turned so the repeats do not line up. Only the
 // layers that show at this pixel are read (the rest has zero weight): the texture reads are the
 // main cost of the ground. Explicit gradients keep the filtering right inside the branches.
@@ -152,7 +162,7 @@ vec2 tsDx = dFdx(tsP), tsDy = dFdy(tsP);
 mat2 tsRot1 = mat2(0.96, 0.28, -0.28, 0.96);
 mat2 tsRotAs = mat2(cos(tsAng), -sin(tsAng), sin(tsAng), cos(tsAng));
 vec2 tsAsUv = tsRotAs * tsP * ${tiles[3]};
-bool tsUse1 = tsDec.a * tsK.r > 0.003 || tsRd.y < 3.0 || tsRd.x < 2.7 || tsPd < 1.6;
+bool tsUse1 = tsDec.a * tsK.r > 0.003 || tsRd.y < 3.0 || tsRd.x < 2.7 || tsPd < 1.6 || tsScW * tsScr.g > 0.003;
 bool tsUse2 = tsDec.a * tsK.g > 0.003;
 bool tsUse3 = tsDec.a * tsK.b > 0.003 || tsRd.x < tsAa.x + 0.02;
 bool tsUse4 = tsDec.a * tsK.a > 0.003 || tsRd.x < 0.62 + tsAa.x || tsRd.y < 1.0;
@@ -207,7 +217,7 @@ if (tsUse4) {
 // rock: projected from above on gentle slopes, from the side on steep faces
 vec3 tsGeo = normalize(vNormalW);
 float tsSlope = 1.0 - clamp(tsGeo.y, 0.0, 1.0);
-float tsRock = smoothstep(0.16, 0.42, tsSlope);
+float tsRock = max(smoothstep(0.16, 0.42, tsSlope), tsScW);
 vec2 tsSide = mix(vPositionW.xy, vPositionW.zy, step(abs(tsGeo.z), abs(tsGeo.x)));
 float tsSteep = smoothstep(0.35, 0.65, tsSlope);
 vec2 tsRockUv = mix(tsP, tsSide, tsSteep) * ${tiles[5]};
@@ -249,6 +259,13 @@ vec3 tsCol = mix(surfaceAlbedo * tsNat, tsLin(tsDec.rgb) * tsPaint, tsDec.a);
 tsCol = mix(tsCol, tsFlC, tsFlW * (1.0 - tsDec.a));
 float tsRough = mix(mix(tsA0.a, tsA5.a, tsRock), dot(tsK, vec4(tsA1.a, tsA2.a, tsA3.a, tsA4.a)), tsDec.a);
 vec3 tsNm = mix(mix(tsN0, tsN5, tsRock), tsK.r * tsN1 + tsK.g * tsN2 + tsK.b * tsN3 + tsK.a * tsN4, tsDec.a);
+// the rubble itself: grey rock texture (brown earth texture on the earth banks), in its own colours so the edge is clean
+vec3 tsStoneC = tsLin(vec3(0.5, 0.48, 0.44)) * tsDetail(tsA5, tsMean5) * mix(0.82, 1.12, tsA0m.g);
+vec3 tsEarthC = tsLin(vec3(0.5, 0.36, 0.22)) * tsDetail(tsA1, tsMean1) * mix(0.85, 1.1, tsA0m.g);
+float tsScM = tsScW * (1.0 - tsDec.a);
+tsCol = mix(tsCol, mix(tsStoneC, tsEarthC, tsScr.g), tsScM);
+tsRough = mix(tsRough, mix(tsA5.a, tsA1.a, tsScr.g), tsScM);
+tsNm = mix(tsNm, mix(tsN5, tsN1, tsScr.g), tsScM);
 float tsJag = (tsA0m.g - 0.5) * 0.5; // a little irregularity for the worn verges
 // Footpaths (trampled earth), drawn here too: bare soil in the middle, worn grass at the irregular edges.
 // Drawn first, so a farm track a path runs into covers its end.
@@ -335,7 +352,7 @@ export class RealisticTerrain {
   private plugin: TerrainSplatPlugin | null = null;
   private classic: { material: Material | null; normals: Float32Array; colors: Float32Array } | null = null;
   private ground: { normals: Float32Array; colors: Float32Array } | null = null;
-  private masks: { decal: RawTexture; kind: RawTexture; roads: RawTexture; paths: RawTexture; meadow: RawTexture; half: number } | null = null;
+  private masks: { decal: RawTexture; kind: RawTexture; roads: RawTexture; paths: RawTexture; meadow: RawTexture; scree: RawTexture; half: number } | null = null;
   private arrays: TextureLayers | null = null;
 
   constructor(private readonly scene: Scene, private readonly terrain: Terrain, private readonly footpaths: () => PathLine[],
@@ -369,7 +386,7 @@ export class RealisticTerrain {
         t.wrapU = t.wrapV = Texture.CLAMP_ADDRESSMODE;
         return t;
       };
-      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(this.bakePaths(m.res, m.half), "groundPaths"), meadow: tex(bakeMeadowMap(this.occluders().layout, 512, m.half), "groundMeadows", 512), half: m.half };
+      this.masks = { decal: tex(m.decal, "groundDecal"), kind: tex(m.kind, "groundKind"), roads: tex(m.roads, "groundRoads"), paths: tex(this.bakePaths(m.res, m.half), "groundPaths"), meadow: tex(bakeMeadowMap(this.occluders().layout, 512, m.half), "groundMeadows", 512), scree: tex(m.scree, "groundScree"), half: m.half };
     }
     mesh.setVerticesData(VertexBuffer.NormalKind, this.ground.normals);
     mesh.setVerticesData(VertexBuffer.ColorKind, this.ground.colors);
@@ -379,7 +396,7 @@ export class RealisticTerrain {
     mat.metallic = 0;
     mat.roughness = 0.9;
     mat.backFaceCulling = false;
-    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.half);
+    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half);
     this.material = mat;
     mesh.material = mat;
 

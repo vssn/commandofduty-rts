@@ -3,6 +3,7 @@ import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
 import { SIDEWALK } from "./embassy";
 import { toLocal, type MapLayout, type RGB } from "./layout";
+import { SCREE_RANGE } from "./scarps";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
 /** Cliff faces and the mountain wall. */
@@ -16,6 +17,9 @@ const ROCK: RGB = [0.5, 0.44, 0.34];
 const LITTER: RGB = [0.46, 0.3, 0.14];
 const LAWN: RGB = [0.46, 0.55, 0.26];
 const ASPHALT: RGB = [0.28, 0.28, 0.3];
+/** The escarpments' slopes: grey rubble and brown earth (the classic look; rocks are scattered over them). */
+const SCREE_STONE: RGB = [0.5, 0.48, 0.44];
+const SCREE_EARTH: RGB = [0.5, 0.36, 0.22];
 const CURB: RGB = [0.62, 0.6, 0.56];
 const DIRT: RGB = [0.55, 0.41, 0.26];
 const CONCRETE: RGB = [0.6, 0.58, 0.53];
@@ -124,7 +128,7 @@ export type Surface = (typeof Surface)[keyof typeof Surface];
  * `decal` holds the surface colour (rgb) and its opacity (a), `kind` the share of each surface kind
  * (r dirt, g field, b asphalt, a gravel).
  */
-export interface SurfaceMaps { res: number; half: number; decal: Uint8Array; kind: Uint8Array; roads: Uint8Array }
+export interface SurfaceMaps { res: number; half: number; decal: Uint8Array; kind: Uint8Array; roads: Uint8Array; scree: Uint8Array }
 
 /** Range (metres) of the road distances baked for the realistic ground. */
 export const ROAD_RANGE = 4;
@@ -233,10 +237,14 @@ export class Terrain {
 
   private heightFn(x: number, z: number): number {
     let h = this.baseHeight(x, z);
+    let flat = 0;
     for (const zn of this.zones) {
       const w = smoothstep(zn.r + zn.f, zn.r, Math.hypot(x - zn.x, z - zn.z));
       h = lerp(h, zn.h, w);
+      flat = Math.max(flat, w);
     }
+    // the escarpments: their steps fade out towards the levelled ground of bases, villages and outposts
+    if (this.layout.scarps.list.length) h += this.layout.scarps.height(x, z) * (1 - flat);
     // the ponds' hollows: a soft shore, a flat bottom below the water
     if (this.layout.ponds.length) {
       const d = this.layout.pondDepth(x, z);
@@ -276,6 +284,18 @@ export class Terrain {
     if (cliff > 0) mix(out, out, ROCK_DARK, cliff * (0.85 + nz * 0.15));
     if (h > 30 && z > MAP_HALF - 10) mix(out, out, SNOW, smoothstep(34, 52, h + nz * 6) * (1 - cliff * 0.6));
     if (h < -6) mix(out, out, DEPTH_HAZE, smoothstep(-6, -55, h) * 0.85);
+
+    // escarpments: the slope and the rubble at its foot - brown earth or grey stone, darker where steep
+    if (L.scarps.list.length) {
+      const sc = L.scarps.cover(x, z);
+      if (sc && sc.d < 1) {
+        const rock: RGB = [0, 0, 0];
+        mix(rock, SCREE_STONE, SCREE_EARTH, sc.brown);
+        const k = 1 - slope * 0.28 + (nz - 0.5) * 0.12;
+        rock[0] *= k; rock[1] *= k; rock[2] *= k;
+        mix(out, out, rock, smoothstep(0.9, -0.5, sc.d));
+      }
+    }
 
     // meadows: each kind has its own colour, its tone its own variation (the realistic ground and
     // the classic one both start from this natural colour)
@@ -466,6 +486,10 @@ export class Terrain {
   bakeSurfaces(res = 1024): SurfaceMaps {
     const half = MAP_HALF + 12, step = (half * 2) / res;
     const decal = new Uint8Array(res * res * 4), kind = new Uint8Array(res * res * 4), roads = new Uint8Array(res * res * 4);
+    // the escarpments' rubble: the signed distance to its edge (r, as for the roads) and how brown it is (g)
+    const scree = new Uint8Array(res * res * 4);
+    const hasScarps = this.layout.scarps.list.length > 0;
+    const encScree = (d: number) => Math.round(Math.min(1, Math.max(0, d / SCREE_RANGE * 0.5 + 0.5)) * 255);
     const enc = (d: number) => Math.round(Math.min(1, Math.max(0, d / ROAD_RANGE * 0.5 + 0.5)) * 255);
     const d: RGB = [0, 0, 0];
     for (let j = 0; j < res; j++) {
@@ -474,6 +498,10 @@ export class Terrain {
         const x = -half + (i + 0.5) * step;
         const w = this.decalAt(x, z, d, false);
         const o = (i + j * res) * 4;
+        const sc = hasScarps ? this.layout.scarps.cover(x, z) : null;
+        scree[o] = sc ? encScree(sc.d) : 255;
+        scree[o + 1] = sc ? Math.round(Math.min(1, Math.max(0, sc.brown)) * 255) : 0;
+        scree[o + 3] = 255;
         // the bases' gravel pads cover the roads leading to them
         const pad = this.onPad && w > 0.5;
         const asphalt = this.layout.nearestOfKind(x, z, "asphalt", ROAD_RANGE);
@@ -493,7 +521,7 @@ export class Terrain {
         if (this.kind > 0) kind[o + this.kind - 1] = 255;
       }
     }
-    return { res, half, decal, kind, roads };
+    return { res, half, decal, kind, roads, scree };
   }
 
   /**
