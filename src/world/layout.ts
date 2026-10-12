@@ -292,7 +292,7 @@ export class MapLayout {
     const lim = MAP_HALF + 1;
     for (const sc of this.scarps.list) {
       const lines = [this.scarps.offsetLine(sc, -(sc.w / 2 + 3.2 + 2.4))];
-      if (sc.kind === "stone") lines.push(this.scarps.offsetLine(sc, sc.w / 2 + 3.6));
+      if (sc.drop >= 4) lines.push(this.scarps.offsetLine(sc, sc.w / 2 + 3.6));
       lines.forEach((full, which) => {
         // every third point of the curve: straight pieces about 6 m long
         const pl = full.filter((_, i) => i % 3 === 0 || i === full.length - 1).filter((p) => Math.abs(p.x) < lim && Math.abs(p.z) < lim);

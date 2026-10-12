@@ -33,10 +33,10 @@ danach sofort); der Kopf des Hauptmenüs nennt das geladene Einsatzgebiet.
 
 **Hügelland – Böschungen** (`src/world/scarps.ts`): Terrassen- und Hügelkanten, an denen das Gelände auf wenigen Metern um
 3 bis 4,5 m ansteigt (acht Stück, Kontrollpunkte im Code; die Stufe läuft zu den Enden und zu den eingeebneten Flächen von
-Basen, Dörfern und Stellungen hin aus, ihr Rand ist unregelmäßig). Ein Hang ist **steinern** (steil, grauer Schutt und Fels) oder
-**erdig** (flacher, brauner Hang mit wenigen Steinen). Alles andere richtet sich danach: Felder und Wiesen liegen **parallel**
+Basen, Dörfern und Stellungen hin aus, ihr Rand ist unregelmäßig). Alle acht Hänge sind **erdig**: braune Hänge mit verstreuten Steinen (die höheren sind steiler, 4,5 m auf 5,5 m; `ScarpKind "stone"`
+für graue Steinhänge ist im Code noch vorgesehen, aktuell aber ungenutzt). Alles andere richtet sich danach: Felder und Wiesen liegen **parallel**
 zum nächsten Weg oder zur nächsten Kante und halten Abstand, auf den Hängen wächst nichts, und **Feldwege** laufen am Fuß jeder
-Böschung entlang (bei den steinernen auch oben an der Kante) und werden, wenn eins nahe ist, ans Wegenetz angeschlossen. Klassisch ist
+Böschung entlang (bei den hohen auch oben an der Kante) und werden, wenn eins nahe ist, ans Wegenetz angeschlossen. Klassisch ist
 der Hang braun bzw. grau gefärbt und mit **Steinpolygonen** übersät (Thin Instances, `src/world/scarpRocks.ts`); im PBR-Modus
 liegen **graue Fels-Texturen** (bei den erdigen Hängen die Erdtextur) **kantengenau** auf dem Geröll: Die Fläche des Gerölls wird
 als vorzeichenbehaftete Distanz zum Rand mit ins Boden-Raster gebacken (1024², wie bei den Straßen), der Shader zeichnet den Rand

@@ -42,13 +42,13 @@ interface Control { pts: [number, number][]; drop: number; w: number; kind: Scar
  * away from the woods and the villages (the ground fades flat towards bases, villages and outposts).
  */
 const CONTROLS: Control[] = [
-  { pts: [[-122, -66], [-108, -61], [-95, -61]], drop: 4.5, w: 5.5, kind: "stone" },
+  { pts: [[-122, -66], [-108, -61], [-95, -61]], drop: 4.5, w: 5.5, kind: "earth" },
   { pts: [[56, -71], [72, -66], [90, -69], [112, -73]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[26, 63], [44, 69], [62, 69]], drop: 4.5, w: 5.5, kind: "stone" },
+  { pts: [[26, 63], [44, 69], [62, 69]], drop: 4.5, w: 5.5, kind: "earth" },
   { pts: [[-121, 50], [-106, 57], [-90, 52]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[106, -36], [101, -20], [102, -6]], drop: 4.5, w: 5.5, kind: "stone" },
+  { pts: [[106, -36], [101, -20], [102, -6]], drop: 4.5, w: 5.5, kind: "earth" },
   { pts: [[-121, -14], [-113, -3], [-110, 10]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[-52, 113], [-35, 106], [-20, 108]], drop: 4.5, w: 5.5, kind: "stone" },
+  { pts: [[-52, 113], [-35, 106], [-20, 108]], drop: 4.5, w: 5.5, kind: "earth" },
   { pts: [[-6, -113], [14, -108], [32, -105]], drop: 3, w: 7, kind: "earth" },
 ];
 
