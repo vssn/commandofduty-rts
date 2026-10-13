@@ -40,17 +40,17 @@ export function buildPowerLawns(L: MapLayout, P: PowerPlant) {
 
   // ---- bare earth: worn and bald patches in the lawn, more of them near the posts and walkways
   P.earth.length = 0;
-  for (let tries = 0; tries < 400 && P.earth.length < 14; tries++) {
+  for (let tries = 0; tries < 900 && P.earth.length < 24; tries++) {
     const x = (r() * 2 - 1) * lim, z = (r() * 2 - 1) * lim, rx = 2.5 + r() * 5, rz = 1.8 + r() * 3.2, rot = r() * Math.PI;
-    if (!green(x, z, rx, rz, rot, 1.5) || P.earth.some((e) => Math.hypot(e.x - x, e.z - z) < 14)) continue;
+    if (!green(x, z, rx, rz, rot, 1.5) || P.earth.some((e) => Math.hypot(e.x - x, e.z - z) < 11)) continue;
     P.earth.push({ x, z, rx, rz, rot });
   }
 
   // ---- dry patches: sun-baked, yellowish, thin grass
   const dry: Meadow[] = [];
-  for (let tries = 0; tries < 500 && dry.length < 9; tries++) {
-    const hw = 5 + r() * 7, hd = 4 + r() * 5, x = (r() * 2 - 1) * lim, z = (r() * 2 - 1) * lim, rot = r() * Math.PI;
-    if (!green(x, z, hw, hd, rot, 1) || dry.some((m) => Math.hypot(m.cx - x, m.cz - z) < 16)) continue;
+  for (let tries = 0; tries < 800 && dry.length < 13; tries++) {
+    const hw = 6 + r() * 8, hd = 5 + r() * 6, x = (r() * 2 - 1) * lim, z = (r() * 2 - 1) * lim, rot = r() * Math.PI;
+    if (!green(x, z, hw, hd, rot, 1) || dry.some((m) => Math.hypot(m.cx - x, m.cz - z) < 14)) continue;
     dry.push({ cx: x, cz: z, hw, hd, rot, kind: "dry", height: 0.25, tone: 0.05 + r() * 0.15 });
   }
 
@@ -86,7 +86,7 @@ export function buildPowerLawns(L: MapLayout, P: PowerPlant) {
       n--;
     }
   };
-  rects(7, ["mown"], [11, 8, 8, 6], [0.8, 0.98]);
+  rects(9, ["mown"], [11, 8, 8, 6], [0.8, 0.98]);
   rects(5, ["pasture", "hay", "wild"], [8, 6, 6, 5], [0.45, 0.85]);
 
   // (the list is read front to back: the small, specific things first, the big panels last)

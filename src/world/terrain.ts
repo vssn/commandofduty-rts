@@ -303,8 +303,10 @@ export class Terrain {
         out[0] *= 1 - t * (t < 0 ? 0.8 : 0.35); out[1] *= 1 + t * (t < 0 ? 0.5 : 0.18); out[2] *= 1 - t * 0.2;
         if (m.kind === "mown") {
           // mowing stripes along the plant's hall; the cut grass is a little lighter and fresher than the rough
-          const a = L.plant.rot, k = 1 + 0.085 * md.cover * (Math.sin((x * Math.sin(a) + z * Math.cos(a)) * 1.9) > 0 ? 1 : -1);
-          out[0] *= k; out[1] *= k * 1.02; out[2] *= k;
+          const a = L.plant.rot, k = 1 + 0.11 * md.cover * (Math.sin((x * Math.sin(a) + z * Math.cos(a)) * 1.9) > 0 ? 1 : -1);
+          // (a fresh, even green clearly set off from the rough grass round it, with a darker mowing line at its edge)
+          const edge = 1 - 0.14 * smoothstep(0.55, 0.15, md.cover) * smoothstep(0.02, 0.15, md.cover);
+          out[0] *= k * 0.9 * edge; out[1] *= k * 1.1 * edge; out[2] *= k * 0.88 * edge;
         }
       }
       if (slope > 0.4) mix(out, out, [0.6, 0.59, 0.55], 0.8); // (the concrete walls' footing)
