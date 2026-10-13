@@ -55,6 +55,8 @@ class TerrainSplatPlugin extends MaterialPluginBase {
     private readonly half: number,
     /** A fine, evenly mown lawn instead of the meadow grass (the power station: its works are fine too). */
     private readonly fineLawn = false,
+    /** Direction across which the mown stripes alternate (the power station: along its hall). */
+    private readonly stripeDir: [number, number] = [0.62, 0.78],
   ) {
     super(material, "TerrainSplat", 210, { TERRAINSPLAT: false });
     this._enable(true);
@@ -251,7 +253,7 @@ if (tsMdW > 0.02) {
   tsGrass = mix(tsGrass, vec3(dot(tsGrass, vec3(0.333))) * vec3(1.02, 1.0, 0.9), 0.22 * tsMd.a * tsMdW);
   // mown: light and dark stripes
   float tsMown = (1.0 - smoothstep(0.15, 0.4, tsMd.g)) * tsMdW;
-  tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(0.62, 0.78)) * 1.9);
+  tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(${this.stripeDir[0].toFixed(3)}, ${this.stripeDir[1].toFixed(3)})) * 1.9);
   // flowers: small light dots, mostly white, some yellow
   vec2 tsCell = floor(tsP * 6.0);
   float tsHs = fract(sin(dot(tsCell, vec2(12.9898, 78.233))) * 43758.5453);
@@ -403,7 +405,7 @@ export class RealisticTerrain {
     mat.metallic = 0;
     mat.roughness = 0.9;
     mat.backFaceCulling = false;
-    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half, !!this.occluders().layout.plant);
+    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half, !!this.occluders().layout.plant, this.occluders().layout.plant ? [Math.sin(this.occluders().layout.plant!.rot), Math.cos(this.occluders().layout.plant!.rot)] : undefined);
     this.material = mat;
     mesh.material = mat;
 

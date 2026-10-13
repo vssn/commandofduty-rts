@@ -9,6 +9,7 @@ const KINDS: Record<Exclude<MeadowKind, "mown">, { step: number; h: [number, num
   hay: { step: 0.62, h: [0.5, 1.0], plant: "cereal", width: [0.22, 0.34], color: [0.74, 0.68, 0.36] },
   wild: { step: 0.7, h: [0.35, 0.85], plant: "shoots", width: [0.26, 0.42], color: [0.52, 0.56, 0.3] },
   pasture: { step: 0.95, h: [0.12, 0.32], plant: "shoots", width: [0.26, 0.4], color: [0.45, 0.52, 0.29] },
+  dry: { step: 1.1, h: [0.1, 0.26], plant: "shoots", width: [0.2, 0.34], color: [0.66, 0.58, 0.32] },
 };
 
 /**
