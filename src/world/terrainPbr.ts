@@ -255,6 +255,7 @@ if (tsMdW > 0.02) {
   tsGrass = mix(tsGrass, vec3(dot(tsGrass, vec3(0.333))) * vec3(1.02, 1.0, 0.9), 0.22 * tsMd.a * tsMdW);
   // mown: light and dark stripes
   float tsMown = (1.0 - smoothstep(0.15, 0.4, tsMd.g)) * tsMdW;
+  tsGrass *= mix(vec3(1.0), vec3(0.93, 0.84, 0.92), tsMown); // (cut grass: calmer, less saturated)
   tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(${lawnStyle.stripe[0].toFixed(3)}, ${lawnStyle.stripe[1].toFixed(3)})) * 1.9);
   // flowers: small light dots, mostly white, some yellow
   vec2 tsCell = floor(tsP * 6.0);
