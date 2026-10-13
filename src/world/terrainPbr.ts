@@ -30,6 +30,12 @@ const vec3 = (c: readonly number[]) => `vec3(${c.map((v) => v.toFixed(3)).join("
 
 let layersPromise: Promise<TextureLayers> | null = null;
 
+/**
+ * How the lawn looks on the map being played: a fine, evenly mown lawn instead of the meadow grass (the power station: its
+ * works are fine too), and the direction across which the mown stripes alternate (there: along the hall).
+ */
+const lawnStyle: { fine: boolean; stripe: [number, number] } = { fine: false, stripe: [0.62, 0.78] };
+
 /** Starts loading and generating the ground textures in the background (the realistic mode then finds them ready). */
 export function preloadGroundTextures(scene: Scene) {
   layersPromise ??= loadTextureLayers(scene, LAYERS.map((l) => `terrain/${l.name}`));
@@ -53,8 +59,6 @@ class TerrainSplatPlugin extends MaterialPluginBase {
     private readonly meadow: RawTexture,
     private readonly scree: RawTexture,
     private readonly half: number,
-    /** A fine, evenly mown lawn instead of the meadow grass (the power station: its works are fine too). */
-    private readonly fineLawn = false,
   ) {
     super(material, "TerrainSplat", 210, { TERRAINSPLAT: false });
     this._enable(true);
@@ -169,7 +173,7 @@ bool tsUse2 = tsDec.a * tsK.g > 0.003;
 bool tsUse3 = tsDec.a * tsK.b > 0.003 || tsRd.x < tsAa.x + 0.02;
 bool tsUse4 = tsDec.a * tsK.a > 0.003 || tsRd.x < 0.62 + tsAa.x || tsRd.y < 1.0;
 // (a fine lawn: the grass read at a finer scale - short, dense blades)
-const float tsLawnSc = ${this.fineLawn ? "2.4" : "1.0"};
+const float tsLawnSc = ${lawnStyle.fine ? "2.4" : "1.0"};
 vec4 tsA0 = textureGrad(tsAlbedo, vec3(tsP * ${tiles[0]} * tsLawnSc, 0.0), tsDx * ${tiles[0]} * tsLawnSc, tsDy * ${tiles[0]} * tsLawnSc);
 vec3 tsN0 = textureGrad(tsNormal, vec3(tsP * ${tiles[0]} * tsLawnSc, 0.0), tsDx * ${tiles[0]} * tsLawnSc, tsDy * ${tiles[0]} * tsLawnSc).xyz;
 // meadows: the blades' length follows the meadow's height class - the grass texture is read at a
@@ -237,7 +241,7 @@ if (tsRock > 0.003) {
 mat2 tsRotM = mat2(0.6, 0.8, -0.8, 0.6);
 vec4 tsA0m = textureGrad(tsAlbedo, vec3(tsRotM * tsP * 0.043, 0.0), tsRotM * tsDx * 0.043, tsRotM * tsDy * 0.043);
 vec3 tsGrass = tsDetail(tsA0, tsMean0) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.6);
-${this.fineLawn ? `// the fine lawn: calmer - less contrast in the blades, flatter, only faint patches
+${lawnStyle.fine ? `// the fine lawn: calmer - less contrast in the blades, flatter, only faint patches
 tsGrass = mix(vec3(1.0), tsDetail(tsA0, tsMean0), 0.6) * mix(vec3(1.0), tsDetail(tsA0m, tsMean0), 0.22);
 tsN0 = mix(vec3(0.5, 0.5, 1.0), tsN0, 0.45);` : ""}
 // a fresher, sunnier meadow green than the map's base colour
@@ -251,7 +255,8 @@ if (tsMdW > 0.02) {
   tsGrass = mix(tsGrass, vec3(dot(tsGrass, vec3(0.333))) * vec3(1.02, 1.0, 0.9), 0.22 * tsMd.a * tsMdW);
   // mown: light and dark stripes
   float tsMown = (1.0 - smoothstep(0.15, 0.4, tsMd.g)) * tsMdW;
-  tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(0.62, 0.78)) * 1.9);
+  tsGrass *= mix(vec3(1.0), vec3(0.93, 0.84, 0.92), tsMown); // (cut grass: calmer, less saturated)
+  tsGrass *= 1.0 + 0.11 * tsMown * sin(dot(tsP, vec2(${lawnStyle.stripe[0].toFixed(3)}, ${lawnStyle.stripe[1].toFixed(3)})) * 1.9);
   // flowers: small light dots, mostly white, some yellow
   vec2 tsCell = floor(tsP * 6.0);
   float tsHs = fract(sin(dot(tsCell, vec2(12.9898, 78.233))) * 43758.5453);
@@ -403,7 +408,11 @@ export class RealisticTerrain {
     mat.metallic = 0;
     mat.roughness = 0.9;
     mat.backFaceCulling = false;
-    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half, !!this.occluders().layout.plant);
+    // (set before the plugin is made: the shader code is generated while its base class is being constructed)
+    const plant = this.occluders().layout.plant;
+    lawnStyle.fine = !!plant;
+    lawnStyle.stripe = plant ? [Math.sin(plant.rot), Math.cos(plant.rot)] : [0.62, 0.78];
+    this.plugin = new TerrainSplatPlugin(mat, this.masks.decal, this.masks.kind, this.masks.roads, this.masks.paths, this.masks.meadow, this.masks.scree, this.masks.half);
     this.material = mat;
     mesh.material = mat;
 

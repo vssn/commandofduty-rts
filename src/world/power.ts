@@ -1,5 +1,6 @@
 import { MAP_HALF } from "../config";
 import { toLocal, toWorld, type MapLayout, type OutpostSpec, type V2 } from "./layout";
+import { buildPowerLawns } from "./powerLawns";
 
 /**
  * The Kohlekraftwerk (coal-fired power station): an asymmetric map by a harbour, laid out at angles.
@@ -48,6 +49,8 @@ export interface PowerPlant {
   pipes: V2[][];
   /** The coal bunker by the sidings (the wagons are emptied into it); the conveyor starts under it. */
   bunker: Box;
+  /** Patches of bare earth in the lawns (ellipses; see powerLawns.ts). */
+  earth: { x: number; z: number; rx: number; rz: number; rot: number }[];
   /** The coal conveyor: from the bunker's outlet (a) up to the boiler house (b, at height `top`). */
   conveyor: { a: V2; b: V2; top: number };
 }
@@ -152,6 +155,7 @@ export function buildPower(L: MapLayout) {
     pipes: [],
     bunker: { x: 0, z: 0, hw: 3.6, hd: 3.6, rot: -3.4 * DEG },
     conveyor: { a: { x: 0, z: 0 }, b: W(22, 0), top: 26 },
+    earth: [],
   };
   // the bunker beside the sidings, south of the last track; the conveyor leaves it towards the boiler house
   Object.assign(P.bunker, alongNorth(P, 12, 20));
@@ -206,6 +210,9 @@ export function buildPower(L: MapLayout) {
     { x: 96, z: 86, r: 6, conifer: 0.5 }, { x: -60, z: 10, r: 6, conifer: 0.3 }, { x: -78, z: -40, r: 6, conifer: 0.2 },
     { x: -62, z: -72, r: 6, conifer: 0.3 }, { x: 78, z: 64, r: 6, conifer: 0.3 },
   );
+
+  // ---- the lawns: mown panels, long-grass verges, dry patches, bare earth
+  buildPowerLawns(L, P);
 }
 
 /** Green (unpaved, dry) ground where trees may grow: outside the plant and its yards, off the walkways. */
