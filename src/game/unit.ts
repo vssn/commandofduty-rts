@@ -342,7 +342,13 @@ export class Unit implements Target {
     const t = this.target;
     if (t) {
       const d = Math.hypot(t.x - this.x, t.z - this.z) - (t.kind === "building" ? t.radius : 0);
-      if (d <= g.rangeOf(this, t)) {
+      // a walkway's floor between the unit and its target (power station): an ordered target is gone after, one
+      // it picked itself is dropped for another
+      const blocked = d <= g.rangeOf(this, t) && !g.lineOfFire(this, t);
+      if (blocked && !this.explicitTarget) {
+        this.loseTarget(g);
+        moving = this.path.length > 0;
+      } else if (d <= g.rangeOf(this, t) && !blocked) {
         fighting = true;
         if (this.isVehicle) {
           // the gunner fires on the move; an explicit attack order makes the driver stop

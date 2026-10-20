@@ -2,7 +2,7 @@ import { createBarracksDetail } from "../world/barracksDetail";
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SIGHT, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
-import { toWorld, type MapLayout, type V2 } from "../world/layout";
+import { toLocal, toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
   createAuraTemplate, createBarracksMesh, createBollardMesh, createMgNestMesh, createPennant, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun,
   createDroneBody, createDroneRotor, createJeepWheel, createRing, createSoldierTemplates, createTankHull, createTankTurret, JEEP_DIM, NEST_DIM, TANK_DIM,
@@ -19,6 +19,11 @@ import { Outpost } from "./outpost";
 import type { Production } from "./production";
 import { Unit, type Target } from "./unit";
 import { Decks, type PathPoint } from "./decks";
+import { DECK_H, inBox } from "../world/power";
+
+/** Shots between the power station's levels: the walkways' floors and the stairs count as a slab this thick (m),
+ * the walkways reaching this far beyond their edges (see lineOfFire). */
+const SHOT_SLAB = 0.8, SHOT_MARGIN = 1.8;
 import { agentModelReady } from "../world/agentModel";
 import { createSubwayMesh } from "../world/cityModels";
 import { AgentView } from "./agentView";
@@ -825,6 +830,72 @@ export class Game {
     }
   }
 
+  /**
+   * Whether `u` can shoot at `t` past the power station's walkways and stairs: between the levels the line from its
+   * eyes to the target (sampled every quarter metre) must not pass through a walkway's floor or a stair - counted as a
+   * slab SHOT_SLAB thick under their surface, reaching SHOT_MARGIN beyond a walkway's edges (its edge, railing and
+   * supports) and a little beyond a stair's sides. So nobody under a walkway or near it hits those on top (nor they
+   * him); one down below needs some distance, and one up there fires down only from near the edge, at targets
+   * well away from it.
+   */
+  lineOfFire(u: Unit, t: Target): boolean {
+    const P = this.layout.plant;
+    if (!P || !this.decks) return true;
+    const tl = t instanceof Unit ? t.level : 0;
+    if (tl === u.level) return true;
+    const ax = u.x, ay = u.y + (u.isVehicle ? 2.2 : 1.6), az = u.z;
+    const bx = t.x, by = t.y + t.aimY, bz = t.z;
+    // (steps of a quarter metre along the whole line, height included: a steep shot must not skip the slab)
+    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay, bz - az) / 0.25));
+    for (let i = 1; i < n; i++) {
+      const k = i / n, x = ax + (bx - ax) * k, y = ay + (by - ay) * k, z = az + (bz - az) * k;
+      if (y <= DECK_H && y >= DECK_H - SHOT_SLAB && P.decks.some((d) => inBox(d, x, z, SHOT_MARGIN))) return false;
+      for (const st of P.stairs) {
+        const l = toLocal(st.x, st.z, st.rot, x, z);
+        if (Math.abs(l.x) > st.hw + 0.6 || Math.abs(l.z) > st.hd + 0.6) continue;
+        const h = DECK_H * Math.min(1, Math.max(0, (l.z + st.hd) / (2 * st.hd)));
+        if (y <= h && y >= h - SHOT_SLAB) return false;
+      }
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- the air (drop cutscene, drones)
+
+  /** The power station's tall works anything in the air flies round, with `margin`: the cooling tower and the chimney. */
+  tallWorks(margin: number): { x: number; z: number; r: number }[] {
+    const P = this.layout.plant;
+    if (!P) return [];
+    return [{ x: P.tower.x, z: P.tower.z, r: P.tower.r + margin }, { x: P.chimney.x, z: P.chimney.z, r: P.chimney.r + margin * 0.75 }];
+  }
+
+  /**
+   * The lowest anything in the air may pass over a point because of what stands there (-Infinity where nothing
+   * does): houses and villas, and on the power station its hall, walkways, stairs, conveyor, coal bunker, tower and
+   * chimney - each with a few metres to spare.
+   */
+  skyline(x: number, z: number): number {
+    const L = this.layout;
+    let top = -Infinity;
+    for (const h of L.houses.length || L.outerHouses.length ? [...L.houses, ...L.outerHouses] : []) {
+      if (Math.abs(x - h.x) > 20 || Math.abs(z - h.z) > 20) continue;
+      const l = toLocal(h.x, h.z, h.rot, x, z);
+      if (Math.abs(l.x) < h.w / 2 + 2 && Math.abs(l.z) < h.d / 2 + 2) top = Math.max(top, this.terrain.heightAt(h.x, h.z) + h.h + h.roofH + 3);
+    }
+    const P = L.plant;
+    if (P) {
+      if (inBox(P.hall, x, z, 3)) top = Math.max(top, P.hall.boilerHeight + 3);
+      if (P.decks.some((d) => inBox(d, x, z, 2)) || P.stairs.some((st) => inBox(st, x, z, 2))) top = Math.max(top, DECK_H + 3);
+      if (inBox(P.bunker, x, z, 2)) top = Math.max(top, 14);
+      const a = P.conveyor.a, b = P.conveyor.b, dx = b.x - a.x, dz = b.z - a.z;
+      const k = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz)));
+      if (Math.hypot(x - a.x - dx * k, z - a.z - dz * k) < 4) top = Math.max(top, 2.4 + (P.conveyor.top - 2.4) * k + 6);
+      if (Math.hypot(x - P.tower.x, z - P.tower.z) < P.tower.r + 4) top = Math.max(top, P.tower.height + 6);
+      if (Math.hypot(x - P.chimney.x, z - P.chimney.z) < P.chimney.r + 3) top = Math.max(top, P.chimney.height + 4);
+    }
+    return top;
+  }
+
   /** Whether a unit of `team` (or an outpost it holds) has `o` within its sight. */
   private spotted(o: Unit, team: Team): boolean {
     const S = SIGHT as Record<string, number>;
@@ -845,6 +916,8 @@ export class Game {
       // (the computer's units see without fog; one that reaches beyond its own sight - the RPG - still needs a
       // comrade or outpost of its side to spot the target, as the player's do)
       if (!sees && d > (SIGHT as Record<string, number>)[u.type] && !this.spotted(o, u.team)) continue;
+      // (nor through a walkway's floor)
+      if (d < bd && !this.lineOfFire(u, o)) continue;
       if (this.spotRange && d >= this.spotRange(u, o, range)) continue;
       if (this.spotGate && d < range && !this.spotGate(u, o)) continue;
       if (d < bd) { bd = d; best = o; }

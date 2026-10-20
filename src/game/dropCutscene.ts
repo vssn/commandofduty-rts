@@ -477,6 +477,16 @@ export class DropCutscene {
     const start = way[0].add(d0.scale(ext));
     const all = [start, way[0].add(d0.scale(ext * 0.5)), ...way];
     this.pts = Curve3.CreateCatmullRomSpline(all, 24, false).getPoints();
+    // the power station's cooling tower and chimney are too tall to sink past: the path swings round them
+    for (const tall of this.game.tallWorks(9)) {
+      for (const q of this.pts) {
+        const dx = q.x - tall.x, dz = q.z - tall.z, d = Math.hypot(dx, dz);
+        if (d < tall.r && d > 1e-3) {
+          q.x = tall.x + (dx / d) * tall.r;
+          q.z = tall.z + (dz / d) * tall.r;
+        }
+      }
+    }
     this.cum.push(0);
     for (let i = 1; i < this.pts.length; i++) this.cum.push(this.cum[i - 1] + Vector3.Distance(this.pts[i - 1], this.pts[i]));
     this.total = this.cum[this.cum.length - 1];
@@ -487,7 +497,8 @@ export class DropCutscene {
       const t = i * dtT;
       this.at(this.fTab[i] * this.total, p);
       const clear = Math.min(10, altitude(t) * 0.8);
-      next = Math.max(next, this.terrain.heightAt(p.x, p.z) + clear);
+      // (over buildings and works, not through them)
+      next = Math.max(next, this.terrain.heightAt(p.x, p.z) + clear, this.game.skyline(p.x, p.z));
       this.floorTab[i] = next;
     }
 
@@ -728,6 +739,7 @@ export class DropCutscene {
   }
 
   // ------------------------------------------------------------------ path
+
 
   private share(t: number): number {
     const i = Math.min(this.fTab.length - 1, Math.max(0, t / 0.02));

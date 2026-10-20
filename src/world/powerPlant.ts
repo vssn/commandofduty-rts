@@ -237,10 +237,20 @@ export function createPowerPlant(scene: Scene, layout: MapLayout, terrain: Terra
     const r = T.r * 0.62 + (T.r - T.r * 0.62) * Math.pow((y - waist) / waist, 2) * (y < waist ? 1 : 1.8);
     shape.push(new Vector3(r, y + 3, 0));
   }
+  // (see-through: it is tall and wide, and stands in the camera's way - the units behind it stay in sight)
   const shell = MeshBuilder.CreateLathe("coolingTower", { shape, tessellation: 48, sideOrientation: Mesh.DOUBLESIDE }, scene);
   shell.position.set(T.x, gy(T.x, T.z), T.z);
-  shell.material = mat(scene, [0.74, 0.73, 0.7], { surface: "concrete", rough: 0.9 });
-  parts.list.push(shell);
+  const shellMat = new StandardMaterial("coolingTowerMat", scene);
+  shellMat.diffuseColor = new Color3(0.78, 0.77, 0.74);
+  shellMat.specularColor = Color3.Black();
+  shellMat.alpha = 0.4;
+  shellMat.backFaceCulling = false;
+  shellMat.metadata = { rough: 0.9 };
+  // (drawn after a depth-only pass: its near and far side sort right, no flicker where they overlap)
+  shellMat.needDepthPrePass = true;
+  shell.material = shellMat;
+  shell.isPickable = false;
+  shell.freezeWorldMatrix();
   for (let k = 0; k < 24; k++) {
     const a = (k / 24) * Math.PI * 2;
     parts.box(0.6, 3.2, 0.6, T.x + Math.cos(a) * T.r * 0.99, gy(T.x, T.z) + 1.5, T.z + Math.sin(a) * T.r * 0.99, [0.5, 0.49, 0.46], -a);

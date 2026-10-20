@@ -65,7 +65,11 @@ export class Birds {
   private time = 0;
   private enabled = true;
 
-  constructor(scene: Scene, private readonly terrain: Terrain, trees: TreeInfo[]) {
+  /**
+   * `solids`: tall round works the birds fly round, not through (the power station's cooling tower and chimney):
+   * upright cylinders of radius `r` up to height `h`.
+   */
+  constructor(scene: Scene, private readonly terrain: Terrain, trees: TreeInfo[], private readonly solids: { x: number; z: number; r: number; h: number }[] = []) {
     const wing = wingTemplate(scene);
     for (let f = 0; f < 4; f++) {
       const n = 7 + Math.floor(Math.random() * 7);
@@ -99,6 +103,18 @@ export class Birds {
     for (const h of this.hoppers) h.bird.node.setEnabled(on);
   }
 
+  /** A bird inside one of the solids slides round its side (pushed out to the rim, which it then follows). */
+  private clear(x: number, y: number, z: number): [number, number] {
+    for (const s of this.solids) {
+      if (y > s.h) continue;
+      const dx = x - s.x, dz = z - s.z, d = Math.hypot(dx, dz);
+      if (d >= s.r) continue;
+      const k = d > 1e-3 ? s.r / d : 0;
+      return d > 1e-3 ? [s.x + dx * k, s.z + dz * k] : [s.x + s.r, s.z];
+    }
+    return [x, z];
+  }
+
   private crown(t: TreeInfo): number {
     return this.terrain.heightAt(t.x, t.z) + (t.conifer ? 7.6 : 6.3);
   }
@@ -126,7 +142,9 @@ export class Birds {
         // bursts of flapping, then gliding with wings slightly raised
         const flapping = Math.sin(T * 0.5 + b.phase) > -0.2;
         const flap = flapping ? Math.sin(T * 11 + b.phase * 3) : 0.25;
-        b.pose(x, f.alt + oy + Math.sin(T * 0.9 + b.phase) * 0.6, z, heading, bank, flap);
+        const y = f.alt + oy + Math.sin(T * 0.9 + b.phase) * 0.6;
+        const [cx, cz] = this.clear(x, y, z);
+        b.pose(cx, y, cz, heading, bank, flap);
       });
     }
     for (const h of this.hoppers) {
@@ -153,7 +171,8 @@ export class Birds {
       const x = h.from.x + (h.to.x - h.from.x) * k, z = h.from.z + (h.to.z - h.from.z) * k;
       const y = this.crown(h.from) * (1 - k) + this.crown(h.to) * k + Math.sin(k * Math.PI) * h.peak;
       const heading = Math.atan2(h.to.x - h.from.x, h.to.z - h.from.z);
-      h.bird.pose(x, y, z, heading, 0, Math.sin(T * 16 + h.bird.phase), 0);
+      const [cx, cz] = this.clear(x, y, z);
+      h.bird.pose(cx, y, cz, heading, 0, Math.sin(T * 16 + h.bird.phase), 0);
     }
   }
 }

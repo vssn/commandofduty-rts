@@ -69,7 +69,11 @@ Industriekarte am Hafen, bewusst schräg angelegt: Die Anlage ist um 10° gedreh
 Kamera, der Westkai läuft spitz mit 75° zur oberen Kartenmitte zu.
 - **Mitte:** das Kraftwerk – Maschinenhalle mit Kesselhaus (das Erdgeschoss ist offen und begehbar, nur die Stützen
   stehen im Weg; die Geschosse darüber mit Turbinen und Kessel sind durchscheinend gezeichnet), der Kühlturm mit
-  Dampffahne und der Schornstein (beide nicht begehbar).
+  Dampffahne und der Schornstein (beide nicht begehbar). Der Kühlturm ist durchscheinend gezeichnet (er ist groß und
+  stünde der Kamera sonst im Weg; seine Stützen bleiben fest), die Vogelschwärme fliegen um ihn und den Schornstein herum. Auch im Commandos-Modus fliegt nichts mehr durch Bauten:
+  Der Agent gleitet beim Absprung um Kühlturm und Schornstein herum und über Halle, Stege, Kohleband, Bunker und Häuser
+  hinweg (auch im Botschaftsquartier), die Aufklärungsdrohnen weichen den beiden Türmen seitlich aus und steigen über
+  Halle, Stege, Kohleband und Häuser, bevor sie sie erreichen, und sinken dahinter wieder auf ihre Flughöhe.
 - **Kohleband:** Neben den Gleisen steht ein Kohlebunker (Stahlbehälter auf Betonstützen mit Trichter, Leiter und
   Geländer, oben ein Kohlehaufen). Unter seinem Auslass beginnt das Förderband und steigt in einer Stahlgalerie zum
   Kesselhaus: im ersten Stück offen (Fachwerk, Gurt auf Tragrollen, Kohle darauf), danach verkleidet mit Fensterband,
@@ -83,7 +87,13 @@ Kamera, der Westkai läuft spitz mit 75° zur oberen Kartenmitte zu.
   (acht Stück: an den Hallenenden, an den Knicken und an den Plattformen). Ein Klick auf einen Steg schickt die Einheiten
   nach oben, ein Klick auf den Boden darunter nach unten. Treppen sind nur zu Fuß begehbar, Geländewagen bleiben unten.
   Wer oben steht, sieht weiter (der Nebel des Krieges rechnet mit der Augenhöhe); Einheiten verschiedener Ebenen
-  drängeln sich nicht gegenseitig weg. Zielkreis und Befehlslinie liegen auf der angeklickten Ebene. Granaten fliegen auf die Ebene
+  drängeln sich nicht gegenseitig weg. **Kein Schuss durch Steg oder Treppe:** Zwischen den Ebenen wird die Linie vom Auge des
+  Schützen zum Ziel in Viertelmeterschritten abgetastet; sie darf nicht durch den Boden eines Stegs oder einer Treppe
+  gehen – gerechnet als 0,8 m dicke Platte unter der Oberfläche, bei Stegen 1,8 m über die Kante hinaus (Kante, Geländer,
+  Stützen), bei Treppen 0,6 m über die Seiten. Wer unten steht, trifft einen Gegner an der Stegkante erst ab rund 8 m
+  Abstand zum Steg, einen in der Mitte einer 5 m breiten Galerie erst ab rund 15 m (und umgekehrt); oben schießt man von
+  der Kante aus auf Ziele mit Abstand. Solche Ziele werden gar nicht erst gewählt; ein ausdrücklich befohlenes Ziel wird
+  verfolgt – über die Treppe. Zielkreis und Befehlslinie liegen auf der angeklickten Ebene. Granaten fliegen auf die Ebene
   ihres Ziels (verfehlen sie den Steg, fallen sie hinunter); die Explosion trifft nur, wer auf ihrer Höhe steht – der
   Steg schirmt die Einheiten darunter ab und umgekehrt.
 - **Stellungen** verteilt: Radartürme und Wachtürme auf den Plattformen der Stege, ein Unterstand unter der Halle und

@@ -126,7 +126,12 @@ createScarpBarrier(scene, layout, terrain, env.shadows, nav);
 const props = createProps(scene, layout, terrain, env.shadows, nav);
 // the villages look left in a hurry: rubbish in the streets and gardens, a few tufts of grass at the walls
 createVillageDecay(scene, layout, terrain, env.shadows, props);
-const birds = new Birds(scene, terrain, trees);
+// (on the power station they fly round the cooling tower and the chimney, its widest part and a margin)
+const birdSolids = layout.plant ? [
+  { x: layout.plant.tower.x, z: layout.plant.tower.z, r: layout.plant.tower.r + 5, h: layout.plant.tower.height + 6 },
+  { x: layout.plant.chimney.x, z: layout.plant.chimney.z, r: layout.plant.chimney.r + 4, h: layout.plant.chimney.height + 3 },
+] : [];
+const birds = new Birds(scene, terrain, trees, birdSolids);
 // farm tracks with ruts, a grassy middle strip and puddles
 const tracks = createDirtTracks(scene, layout, terrain, nav);
 setBoot(0.58);

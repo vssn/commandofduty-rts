@@ -241,6 +241,7 @@ export class PbrMode {
     p.backFaceCulling = m.backFaceCulling;
     p.zOffset = m.zOffset;
     p.disableDepthWrite = m.disableDepthWrite;
+    p.needDepthPrePass = m.needDepthPrePass;
     p.alphaMode = m.alphaMode;
     p.fogEnabled = m.fogEnabled;
     // parts made of wood, fabric, concrete, metal or earth get a matching photo texture

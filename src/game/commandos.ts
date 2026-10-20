@@ -1336,7 +1336,8 @@ export class CommandosMission {
         tz = d.lastSeen.z + ((u.z - d.lastSeen.z) / back) * 4;
         speed = D.chase;
       } else {
-        if (Math.hypot(d.wp.x - u.x, d.wp.z - u.z) < 3) d.wp = this.droneWaypoint();
+        // (a waypoint inside the power station's cooling tower or chimney cannot be reached: another one)
+        if (Math.hypot(d.wp.x - u.x, d.wp.z - u.z) < 3 || g.tallWorks(6).some((w) => Math.hypot(d.wp.x - w.x, d.wp.z - w.z) < w.r)) d.wp = this.droneWaypoint();
         tx = d.wp.x;
         tz = d.wp.z;
         speed = D.speed;
@@ -1352,9 +1353,21 @@ export class CommandosMission {
         while (turn < -Math.PI) turn += Math.PI * 2;
         u.heading += Math.max(-dt * 3, Math.min(dt * 3, turn));
       }
-      // the light: on the agent while tracking, otherwise sweeping the ground ahead of the drone
+      // round the tall works (sliding along their side), up over buildings and works, down again behind them
+      for (const w of g.tallWorks(6)) {
+        const ox = u.x - w.x, oz = u.z - w.z, od = Math.hypot(ox, oz);
+        if (od < w.r && od > 1e-3) {
+          u.x = w.x + (ox / od) * w.r;
+          u.z = w.z + (oz / od) * w.r;
+        }
+      }
       const ground = g.terrain.heightAt(u.x, u.z);
-      d.light.moveTo(u.x, ground + D.altitude - 0.2, u.z);
+      // (looking a few metres ahead, so it is up before it gets there)
+      const ahead = g.skyline(u.x + Math.sin(u.heading) * 6, u.z + Math.cos(u.heading) * 6);
+      const climb = Math.max(D.altitude, Math.max(g.skyline(u.x, u.z), ahead) - ground);
+      u.altitude += (climb - u.altitude) * Math.min(1, dt * (climb > u.altitude ? 3 : 1));
+      // the light: on the agent while tracking, otherwise sweeping the ground ahead of the drone
+      d.light.moveTo(u.x, ground + u.altitude - 0.2, u.z);
       if (d.mode === "track" && d.lastSeen) {
         d.light.aim(sees ? a.x : d.lastSeen.x, sees ? a.z : d.lastSeen.z);
       } else {
