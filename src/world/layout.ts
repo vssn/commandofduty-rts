@@ -15,8 +15,9 @@ export interface Field { cx: number; cz: number; hw: number; hd: number; rot: nu
  * green areas: each has its own blade length (`height` 0 mown .. 1 tall), tone (`tone` 0 dry .. 1
  * lush) and, for the wild ones, flowers.
  */
-export type MeadowKind = "mown" | "pasture" | "hay" | "wild";
-export interface Meadow { cx: number; cz: number; hw: number; hd: number; rot: number; kind: MeadowKind; height: number; tone: number }
+export type MeadowKind = "mown" | "pasture" | "hay" | "wild" | "dry";
+/** `strip`: a narrow verge with a fine edge (the power station), not a broad ragged meadow. */
+export interface Meadow { cx: number; cz: number; hw: number; hd: number; rot: number; kind: MeadowKind; height: number; tone: number; strip?: boolean }
 export interface Forest { x: number; z: number; r: number; conifer: number }
 export interface Suburb { x: number; z: number; rot: number; r: number }
 /** `look`: the city map's version of the outpost (a pharmacy for the field hospital, an underground car park's exit for the workshop). */
@@ -472,8 +473,8 @@ export class MapLayout {
       if (ax > 1.2 || az > 1.2) continue;
       // a rounded rectangle; the edge distance (in metres) wobbles with noise so it looks grown, not drawn
       const d = Math.pow(Math.pow(ax, 3) + Math.pow(az, 3), 1 / 3);
-      const edge = (1 - d) * Math.min(m.hw, m.hd) + (valueNoise(x * 0.25, z * 0.25, 31) - 0.5) * 5;
-      const cover = smoothstep(0, 3.5, edge);
+      const edge = (1 - d) * Math.min(m.hw, m.hd) + (m.strip ? valueNoise(x * 0.35, z * 0.35, 31) * 0.7 : (valueNoise(x * 0.25, z * 0.25, 31) - 0.5) * 5);
+      const cover = smoothstep(0, m.strip ? 1.1 : 3.5, edge);
       if (cover > 0.01) return { m, cover };
     }
     return null;

@@ -119,6 +119,7 @@ const MEADOW_COLORS: Record<string, RGB> = {
   pasture: [0.43, 0.48, 0.25],
   hay: [0.64, 0.62, 0.28],
   wild: [0.52, 0.54, 0.28],
+  dry: [0.66, 0.58, 0.31],
 };
 
 export const Surface = { Natural: 0, Dirt: 1, Field: 2, Asphalt: 3, Gravel: 4 } as const;
@@ -380,6 +381,21 @@ export class Terrain {
       const nz = valueNoise(x * 0.08, z * 0.08, 5) * 0.6 + valueNoise(x * 0.3, z * 0.3, 9) * 0.4;
       if (h < -1) return mix(out, [0.28, 0.27, 0.22], DEPTH_HAZE, 0.6);
       mix(out, GRASS_LOW, GRASS_A, nz * 0.5 + 0.5);
+      // the lawns' variety (see powerLawns.ts): mown panels with stripes, long-grass verges, dry patches
+      const md = L.meadowAt(x, z);
+      if (md) {
+        const m = md.m;
+        mix(out, out, MEADOW_COLORS[m.kind], md.cover * (0.6 + 0.25 * valueNoise(x * 0.6, z * 0.6, 77)));
+        const t = (m.tone - 0.5) * 0.3 * md.cover;
+        out[0] *= 1 - t * (t < 0 ? 0.8 : 0.35); out[1] *= 1 + t * (t < 0 ? 0.5 : 0.18); out[2] *= 1 - t * 0.2;
+        if (m.kind === "mown") {
+          // mowing stripes along the plant's hall; the cut grass is a little lighter and fresher than the rough
+          const a = L.plant.rot, k = 1 + 0.11 * md.cover * (Math.sin((x * Math.sin(a) + z * Math.cos(a)) * 1.9) > 0 ? 1 : -1);
+          // (a fresh, even green clearly set off from the rough grass round it, with a darker mowing line at its edge)
+          const edge = 1 - 0.14 * smoothstep(0.55, 0.15, md.cover) * smoothstep(0.02, 0.15, md.cover);
+          out[0] *= k * 0.9 * edge; out[1] *= k * 1.1 * edge; out[2] *= k * 0.88 * edge;
+        }
+      }
       if (slope > 0.4) mix(out, out, [0.6, 0.59, 0.55], 0.8); // (the concrete walls' footing)
       return out;
     }
@@ -600,6 +616,17 @@ export class Terrain {
       set(out, asphalt, 1 + nz * 0.07 + (patch > 0.3 ? 0.08 : patch < -0.35 ? -0.06 : 0));
       const edge = Math.min(l.x - c.x0, c.x1 - l.x, l.z - c.z0, c.z1 - l.z) + nz * 1.5;
       return smoothstep(-0.5, 1.5, edge);
+    }
+    // bare earth in the lawns (trodden or bald patches with a ragged edge): painted as soil
+    for (const e of P.earth) {
+      if (Math.abs(x - e.x) > e.rx + 3 || Math.abs(z - e.z) > e.rx + 3) continue;
+      const l = toLocal(e.x, e.z, e.rot, x, z);
+      const d = Math.hypot(l.x / e.rx, l.z / e.rz) + valueNoise(x * 0.5, z * 0.5, 66) * 0.28;
+      if (d < 1) {
+        set(out, [0.5, 0.39, 0.26], 0.9 + valueNoise(x * 0.9, z * 0.9, 67) * 0.12 + (1 - d) * 0.08);
+        this.kind = Surface.Dirt;
+        return smoothstep(1, 0.72, d);
+      }
     }
     this.kind = Surface.Natural;
     return 0;

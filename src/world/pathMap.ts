@@ -108,7 +108,7 @@ export function bakeOcclusion(data: Uint8Array, res: number, half: number, trees
 export function bakeMeadowMap(layout: MapLayout, res: number, half: number): Uint8Array {
   const data = new Uint8Array(res * res * 4);
   const step = (half * 2) / res;
-  const flowers: Record<string, number> = { mown: 0.1, pasture: 0.55, hay: 0.3, wild: 1 };
+  const flowers: Record<string, number> = { mown: 0.1, pasture: 0.55, hay: 0.3, wild: 1, dry: 0 };
   for (const m of layout.meadows) {
     const reach = Math.hypot(m.hw, m.hd) + 4;
     const i0 = Math.max(0, Math.floor((m.cx - reach + half) / step)), i1 = Math.min(res - 1, Math.ceil((m.cx + reach + half) / step));
