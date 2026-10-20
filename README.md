@@ -36,16 +36,33 @@ das Gefecht im Park statt im Villengarten vor der Basis).
 Eine andere Karte als die geladene wird mit der Seite neu aufgebaut (`?map=embassy`, `&start=base` startet den Modus
 danach sofort); der Kopf des Hauptmenüs nennt das geladene Einsatzgebiet.
 
-**Hügelland – Böschungen** (`src/world/scarps.ts`): Terrassen- und Hügelkanten, an denen das Gelände auf wenigen Metern um
-3 bis 4,5 m ansteigt (acht Stück, Kontrollpunkte im Code; die Stufe läuft zu den Enden und zu den eingeebneten Flächen von
-Basen, Dörfern und Stellungen hin aus, ihr Rand ist unregelmäßig). Alle acht Hänge sind **erdig**: braune Hänge mit verstreuten Steinen (die höheren sind steiler, 4,5 m auf 5,5 m; `ScarpKind "stone"`
-für graue Steinhänge ist im Code noch vorgesehen, aktuell aber ungenutzt). Alles andere richtet sich danach: Felder und Wiesen liegen **parallel**
-zum nächsten Weg oder zur nächsten Kante und halten Abstand, auf den Hängen wächst nichts, und **Feldwege** laufen am Fuß jeder
-Böschung entlang (bei den hohen auch oben an der Kante) und werden, wenn eins nahe ist, ans Wegenetz angeschlossen. Klassisch ist
-der Hang braun bzw. grau gefärbt und mit **Steinpolygonen** übersät (Thin Instances, `src/world/scarpRocks.ts`); im PBR-Modus
-liegen **graue Fels-Texturen** (bei den erdigen Hängen die Erdtextur) **kantengenau** auf dem Geröll: Die Fläche des Gerölls wird
-als vorzeichenbehaftete Distanz zum Rand mit ins Boden-Raster gebacken (1024², wie bei den Straßen), der Shader zeichnet den Rand
-daraus scharf und glatt.
+**Hügelland – Felswände und Plateau** (`src/world/scarps.ts`, `src/world/scarpBarrier.ts`): Zwei **Felswände** ziehen sich
+punktsymmetrisch quer über die ganze Karte, eine südlich, eine nördlich der Mitte. Sie heben die Mitte (Dörfer, Stellungen,
+Türme) als **Plateau** 5 m über das Tiefland der beiden Basen (Werkstatt, Radar, Unterstand am Rand bleiben unten). Ihr Verlauf
+hält Abstand zu Basen, Dörfern und Stellungen, die eingeebneten Flächen auf dem Plateau werden mit angehoben.
+- **Nicht begehbar:** Wo das Gelände an einer Wand mehr als 0,4 m pro Meter ansteigt oder nach Süden um mehr als 0,2 m pro Meter,
+  sperrt das Navigationsgitter die Zellen samt einem Ring darum (für Soldaten, Agent und Fahrzeuge). Felsbrocken liegen dicht
+  darauf und in einer gröberen Reihe davor (eckige Steine, Thin Instances, in beiden Grafikmodi); klassisch ist das Geröll
+  zusätzlich mit **Steinpolygonen** übersät (`src/world/scarpRocks.ts`), im PBR-Modus liegt die graue **Fels-Textur
+  kantengenau** darauf (die Fläche wird als vorzeichenbehaftete Distanz ins Boden-Raster gebacken, 1024²).
+- **Rampen:** drei je Wand (West, Mitte, Ost; gegenüber spiegelbildlich), 9 m breit und gut 40 m lang. Sie steigen **schräg an
+  der Wand entlang** gleichmäßig vom Boden am Fuß zum Boden oben (höchstens 0,24 m pro Meter); man geht sie also überwiegend
+  seitlich hinauf, nie direkt auf die Kamera zu. Felsen säumen die Einschnitte. Über jede Rampe führt ein **Feldweg**: Die
+  Fuß der mittleren Rampe liegt direkt vor dem Tor der Basis: Die Straße schwingt in weitem Bogen darauf ein (keine
+  Spitzkehre) und läuft oben weiter zum Weg quer übers Plateau; die äußeren Rampen sind ans Wegenetz angeschlossen (nie quer
+  über eine Wand). **Feldwege haben Kurven statt Knicke:** Jede Ecke wird zum Bogen (Radius bis 16 m, so groß wie die
+  angrenzenden geraden Stücke erlauben), nur echte Kreuzungen bleiben Ecken; die Rampen selbst bleiben gerade. Bäume halten von allen Wegen eine Wagenbreite Abstand, Geländewagen kommen
+  überall durch; auf und neben Wegen liegen keine Sperrfelsen (nur wirklich steile Stellen bleiben gesperrt).
+- **Wegtrassen:** Unter jedem Weg folgt das Gelände einem geglätteten Bett (der Boden über rund 10 m gemittelt), das zu beiden
+  Seiten über 24 m sanft ins Umland ausläuft. So schneiden Hügelrücken und die Ränder eingeebneter Flächen die Wege nicht ab,
+  und kein Weg fällt steiler als 0,3 m pro Meter ab.
+- **Zur Kamera hin steigt nichts an:** Die Kamera blickt nach Norden; eine Figur, die nach Süden bergauf läuft, schiene auf der
+  Stelle zu treten. Die Hügel sind deshalb lange Rücken in Nord-Süd-Richtung (ihre Hänge fallen nach Osten und Westen ab), die
+  eingeebneten Flächen sind nord-südlich lang gezogene Terrassen (ihr Rand läuft nach Norden und Süden sechsmal länger aus als
+  seitlich, bei den Dörfern über 30 m), und das Grundgelände ist
+  punktsymmetrisch, sodass beide Seiten auf gleichem Boden kämpfen. Begehbare Flächen, die nach Süden um mehr als 0,18 m pro
+  Meter ansteigen, gibt es so praktisch nicht mehr (vorher knapp 9 % der Karte).
+- Felder und Wiesen liegen **parallel** zur nächsten Wand oder zum nächsten Weg und halten Abstand; auf den Wänden wächst nichts.
 
 **Kohlekraftwerk** (`src/world/power.ts`, `powerPlant.ts`, `src/game/decks.ts`; nur Eroberung): eine asymmetrische
 Industriekarte am Hafen, bewusst schräg angelegt: Die Anlage ist um 10° gedreht, der Südkai liegt im Winkel von 10° zur
@@ -487,8 +504,9 @@ src/
     scenery.ts        Häuser, Kirche, Bäume (Thin Instances)
     parkPaths.ts      Kieswege im Park des Botschaftsquartiers (Fläche über dem Gelände, glatte Kanten)
     roadMarkings.ts   Straßen des Botschaftsquartiers: Asphaltkorn, Verschleiß, abgenutzte Markierungen (Bus-/Abbiegespuren, Zebrastreifen), gelb blinkende Ampeln
-    scarps.ts         Böschungen des Hügellands: Verlauf, Höhenstufe, Geröllfläche (Distanz zum Rand), Abstandsprüfungen
+    scarps.ts         Felswände des Hügellands: Verlauf, Plateau-Höhe, Rampen, Geröllfläche (Distanz zum Rand), Abstandsprüfungen
     scarpRocks.ts     Steinpolygone auf den Böschungen (klassischer Modus)
+    scarpBarrier.ts   Felswände: steile und nach Süden ansteigende Teile im Navigationsgitter gesperrt, Felsbrocken als Barriere
     embassy.ts        Layout der Karte „Botschaftsquartier“: Straßenraster, Villengärten, Park, Teiche, Wege, Häuserreihen
     city.ts           Pariser Altbauten und Stadtvillen (zusammengefasste Geometrie, Fassadentexturen), Teiche, Straßensperren
     cityModels.ts     U-Bahn-Station (Basis), Apotheke, Tiefgaragen-Ausfahrt

@@ -165,7 +165,8 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     !layout.fieldAt(x, z) &&
     (!power || powerGreen(layout, x, z)) &&
     (!city || (layout.pondDepth(x, z) < -0.2 && layout.pathDistance(x, z) > 1.2)) &&
-    layout.nearestRoad(x, z).d > 1.6 &&
+    // (trunks keep a jeep's width off the tracks: over the ramps and along the forests the jeeps get through)
+    layout.nearestRoad(x, z).d > 3 &&
     !layout.scarps.near(x, z, 1.2) &&
     !layout.nearBase(x, z, 24) &&
     !layout.nearOutpost(x, z, 1.5) &&

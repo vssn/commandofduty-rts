@@ -2,7 +2,7 @@ import { MAP_HALF, OUTPOSTS, type MapId, type OutpostKind } from "../config";
 import { rng, smoothstep, valueNoise } from "../util/noise";
 import { buildEmbassy } from "./embassy";
 import { buildPower, type PowerPlant } from "./power";
-import { ScarpSet } from "./scarps";
+import { ScarpSet, type Ramp } from "./scarps";
 
 export interface V2 { x: number; z: number }
 export type RGB = [number, number, number];
@@ -99,6 +99,56 @@ export const HOUSE_BODY: RGB[] = [
 export const HOUSE_ROOF: RGB[] = [
   [0.58, 0.2, 0.14], [0.3, 0.3, 0.33], [0.46, 0.28, 0.18], [0.66, 0.32, 0.18],
 ];
+
+/** A track over a ramp: a straight run-up before its foot, the ramp itself, a straight run on beyond its top. */
+function rampTrack(rp: Ramp): V2[] {
+  const dx = rp.b.x - rp.a.x, dz = rp.b.z - rp.a.z, l = Math.hypot(dx, dz), k = 12 / l;
+  return [{ x: rp.a.x - dx * k, z: rp.a.z - dz * k }, rp.a, rp.b, { x: rp.b.x + dx * k, z: rp.b.z + dz * k }];
+}
+
+/**
+ * A track's bends rounded off: each corner becomes an arc of radius up to `radius` (smaller where the pieces beside it
+ * are short - it takes at most 45 % of a piece it shares with another bend, 90 % of one it has to itself), sampled
+ * about every 2 m. Corners where `keep` says so (junctions) stay.
+ */
+function rounded(pl: V2[], keep: (p: V2) => boolean, radius = 16): V2[] {
+  const n = pl.length;
+  /** The turn at each corner (0 where it stays: the ends, junctions, straight on). */
+  const turns = pl.map((p, i) => {
+    if (i === 0 || i === n - 1 || keep(p)) return 0;
+    const p0 = pl[i - 1], p1 = pl[i + 1];
+    const l0 = Math.hypot(p.x - p0.x, p.z - p0.z), l1 = Math.hypot(p1.x - p.x, p1.z - p.z);
+    if (l0 < 0.5 || l1 < 0.5) return 0;
+    const t = Math.acos(Math.max(-1, Math.min(1, ((p.x - p0.x) * (p1.x - p.x) + (p.z - p0.z) * (p1.z - p.z)) / (l0 * l1))));
+    return t < 0.05 || t > Math.PI - 0.05 ? 0 : t;
+  });
+  const out: V2[] = [pl[0]];
+  for (let i = 1; i < n - 1; i++) {
+    const p0 = pl[i - 1], p = pl[i], p1 = pl[i + 1], turn = turns[i];
+    if (!turn) { out.push(p); continue; }
+    const l0 = Math.hypot(p.x - p0.x, p.z - p0.z), l1 = Math.hypot(p1.x - p.x, p1.z - p.z);
+    const d0 = { x: (p.x - p0.x) / l0, z: (p.z - p0.z) / l0 }, d1 = { x: (p1.x - p.x) / l1, z: (p1.z - p.z) / l1 };
+    // (a piece is shared with the bend at its other end, if there is one)
+    const half = Math.tan(turn / 2);
+    const t = Math.min(radius * half, l0 * (turns[i - 1] ? 0.45 : 0.9), l1 * (turns[i + 1] ? 0.45 : 0.9)), rr = t / half;
+    // the arc's centre lies on the bisector, inside the bend
+    const bx = d1.x - d0.x, bz = d1.z - d0.z, bl = Math.hypot(bx, bz);
+    const c = { x: p.x + (bx / bl) * (rr / Math.cos(turn / 2)), z: p.z + (bz / bl) * (rr / Math.cos(turn / 2)) };
+    const A = { x: p.x - d0.x * t, z: p.z - d0.z * t }, B = { x: p.x + d1.x * t, z: p.z + d1.z * t };
+    const a0 = Math.atan2(A.z - c.z, A.x - c.x);
+    let a1 = Math.atan2(B.z - c.z, B.x - c.x);
+    // the short way round (the arc spans the turn)
+    while (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+    while (a1 - a0 < -Math.PI) a1 += Math.PI * 2;
+    const steps = Math.max(2, Math.ceil((rr * Math.abs(a1 - a0)) / 2));
+    for (let k = 0; k <= steps; k++) {
+      const a = a0 + ((a1 - a0) * k) / steps;
+      out.push({ x: c.x + Math.cos(a) * rr, z: c.z + Math.sin(a) * rr });
+    }
+  }
+  out.push(pl[pl.length - 1]);
+  return out;
+}
 
 /** Static description of the map: bases, suburbs, roads, fields, forests. */
 export class MapLayout {
@@ -255,13 +305,32 @@ export class MapLayout {
 
   private buildCountryRoads() {
     const [w, e] = this.suburbs;
-    const polylines: V2[][] = [
+    // from each base the road climbs to the plateau over the middle ramp of its wall (see scarps.ts): its foot lies
+    // just in front of the gate, so the road swings onto it in a wide bend (no hairpin), runs slantwise up it and on
+    // from its top to the plateau's tracks. The tracks on the plateau mirror each other, as do the bases' roads.
+    const ramps = this.scarps.ramps;
+    const [south, north] = [ramps[1], ramps[4]];
+    /** The ramp from its foot, with a straight run on beyond its top. */
+    const up = (rp: Ramp): V2[] => rampTrack(rp).slice(1);
+    const polylines: V2[][] = south && north ? [
+      [{ x: -20, z: -84 }, { x: -21, z: -81.5 }, ...up(south), { x: 30, z: -26 }],
+      [{ x: 20, z: 84 }, { x: 21, z: 81.5 }, ...up(north), { x: -16, z: 22 }],
+      // across the plateau from village to village (the villages are not quite mirror images: the northern track
+      // meets the western village's eastern street end)
+      [{ x: w.x, z: w.z }, { x: -38, z: -28 }, { x: -4, z: -32 }, { x: 30, z: -26 }, { x: e.x, z: e.z }],
+      [{ x: e.x, z: e.z }, { x: 38, z: 28 }, { x: 4, z: 32 }, { x: -16, z: 22 }, { x: w.x, z: w.z }],
+      // the villages' roads to the top of the ramps
+      [{ x: w.x, z: w.z }, { x: -52, z: 56 }, north.b],
+      [{ x: e.x, z: e.z }, { x: 52, z: -56 }, south.b],
+      [{ x: e.x, z: e.z }, { x: 117, z: -34 }], // tracks end just short of the cliff edge
+      [{ x: w.x, z: w.z }, { x: -117, z: 30 }],
+    ] : [
       [{ x: -20, z: -84 }, { x: -26, z: -56 }, { x: -38, z: -28 }, { x: -54, z: -4 }, { x: w.x, z: w.z }],
       [{ x: w.x, z: w.z }, { x: -44, z: 50 }, { x: -14, z: 70 }, { x: 20, z: 84 }],
       [{ x: -38, z: -28 }, { x: -4, z: -32 }, { x: 30, z: -26 }, { x: e.x, z: e.z }],
       [{ x: e.x, z: e.z }, { x: 74, z: 14 }, { x: 52, z: 52 }, { x: 20, z: 84 }],
-      [{ x: e.x, z: e.z }, { x: 121, z: -35 }], // tracks end at the cliff edge
-      [{ x: w.x, z: w.z }, { x: -121, z: 30 }],
+      [{ x: e.x, z: e.z }, { x: 117, z: -34 }],
+      [{ x: w.x, z: w.z }, { x: -117, z: 30 }],
     ];
     // tracks don't run through the villages: they start at the end of a village street, the one
     // nearest to where the track is heading
@@ -275,17 +344,25 @@ export class MapLayout {
     for (const pl of polylines) {
       pl[0] = atVillage(pl[0], pl[1]);
       pl[pl.length - 1] = atVillage(pl[pl.length - 1], pl[pl.length - 2]);
-      for (let i = 0; i < pl.length - 1; i++) this.roads.push({ a: pl[i], b: pl[i + 1], w: 3.6, kind: "dirt" });
+    }
+    // the bends rounded off (outside the towns one doesn't brake for a corner); the junctions stay where they are
+    const ends = polylines.flatMap((pl) => [pl[0], pl[pl.length - 1]]);
+    const junction = (p: V2) => ends.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 0.5);
+    for (const pl of polylines) {
+      let line = rounded(pl, junction);
+      // (never over a wall: then the bends stay)
+      if (line.some((p, i) => i > 0 && this.scarps.crosses(line[i - 1], p))) line = pl;
+      for (let i = 0; i < line.length - 1; i++) this.roads.push({ a: line[i], b: line[i + 1], w: 3.6, kind: "dirt" });
     }
   }
 
   /**
-   * Tracks run along the slopes: one at the foot (on the low side, beside the rubble) and, along the stone slopes, one
-   * on the top edge. Their ends join the nearest track when one is within reach, else they just end.
+   * A track over each of the other ramps (the outer ones; the middle ones carry the roads from the bases), joined at
+   * both ends to the nearest track when one is within reach.
    */
   private buildScarpTracks() {
     const country = this.roads.filter((rd) => rd.kind === "dirt");
-    /** The nearest point on an existing track within `reach` of p (at least a few metres away). */
+    /** The nearest point on an existing track within `reach` of p. */
     const nearestTrack = (p: V2, reach: number): { q: V2; d: number } | null => {
       let best: { q: V2; d: number } | null = null;
       for (const rd of country) {
@@ -293,30 +370,23 @@ export class MapLayout {
         const k = Math.max(0, Math.min(1, ((p.x - rd.a.x) * dx + (p.z - rd.a.z) * dz) / l2));
         const q = { x: rd.a.x + dx * k, z: rd.a.z + dz * k };
         const d = Math.hypot(q.x - p.x, q.z - p.z);
-        if (d < reach && (!best || d < best.d)) best = { q, d };
+        // (never a link over a wall)
+        if (d < reach && (!best || d < best.d) && !this.scarps.crosses(p, q)) best = { q, d };
       }
       return best;
     };
-    const lim = MAP_HALF + 1;
-    for (const sc of this.scarps.list) {
-      const lines = [this.scarps.offsetLine(sc, -(sc.w / 2 + 3.2 + 2.4))];
-      if (sc.drop >= 4) lines.push(this.scarps.offsetLine(sc, sc.w / 2 + 3.6));
-      lines.forEach((full, which) => {
-        // every third point of the curve: straight pieces about 6 m long
-        const pl = full.filter((_, i) => i % 3 === 0 || i === full.length - 1).filter((p) => Math.abs(p.x) < lim && Math.abs(p.z) < lim);
-        if (pl.length < 3) return;
-        // (only the track at the foot is joined to the network, by its nearer end, and by a short link only)
-        if (which === 0) {
-          const ends = [0, pl.length - 1].map((e) => ({ e, j: nearestTrack(pl[e], 30) })).filter((c) => c.j).sort((x, y) => x.j!.d - y.j!.d);
-          if (ends.length && ends[0].j!.d > 4) {
-            const c = ends[0];
-            if (c.e === 0) pl.unshift(c.j!.q);
-            else pl.push(c.j!.q);
-          }
-        }
-        for (let i = 0; i < pl.length - 1; i++) this.roads.push({ a: pl[i], b: pl[i + 1], w: 3.6, kind: "dirt" });
-      });
-    }
+    const lim = MAP_HALF - 1;
+    this.scarps.ramps.forEach((rp, i) => {
+      if (i === 1 || i === 4) return;
+      const pl = rampTrack(rp).filter((p) => Math.abs(p.x) < lim && Math.abs(p.z) < lim);
+      if (pl.length < 2) return;
+      const head = nearestTrack(pl[0], 40), tail = nearestTrack(pl[pl.length - 1], 40);
+      if (head && head.d > 3) pl.unshift(head.q);
+      if (tail && tail.d > 3) pl.push(tail.q);
+      let line = rounded(pl, () => false);
+      if (line.some((p, k) => k > 0 && this.scarps.crosses(line[k - 1], p))) line = pl;
+      for (let k = 0; k < line.length - 1; k++) this.roads.push({ a: line[k], b: line[k + 1], w: 3.6, kind: "dirt" });
+    });
   }
 
   /**

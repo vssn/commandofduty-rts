@@ -137,6 +137,13 @@ export class NavGrid {
     }
   }
 
+  /** Blocks one cell (terrain nobody can cross, e.g. a steep slope) on both layers. */
+  blockCell(x: number, z: number) {
+    this.nearDirty = true;
+    const [i, j] = this.cellCoords(x, z), k = i + j * this.n;
+    for (const layer of [0, 1] as NavLayer[]) this.blocked[layer][k] = this.base[layer][k] = 1;
+  }
+
   private eachCell(cx: number, cz: number, ext: number, fn: (x: number, z: number, k: number) => void) {
     const [i0, j0] = this.cellCoords(cx - ext, cz - ext);
     const [i1, j1] = this.cellCoords(cx + ext, cz + ext);

@@ -2,10 +2,13 @@ import { smoothstep, valueNoise } from "../util/noise";
 import type { V2 } from "./layout";
 
 /**
- * Escarpments of the hill country: the edges of terraces and hills, where the ground steps up by a few
- * metres over a few metres of slope. They are laid out first - fields, meadows, trees and tracks keep
- * to them (the tracks run along their foot and their top edge, the fields lie parallel). A slope is
- * either `stone` (grey rubble and rock) or `earth` (a brown bank with a few stones).
+ * Escarpments of the hill country: two rock walls right across the map, point-symmetric, that lift the
+ * middle of the map (outposts, villages) as a plateau a few metres above the two bases' lowland. They
+ * cannot be climbed (see scarpBarrier.ts); ramps lead up them - each climbs slantwise along the wall, so
+ * one walks up it mostly sideways and never straight towards the camera (which looks north: a unit
+ * climbing southwards would seem to stand still). The tracks run over the ramps. They are laid out
+ * first - fields, meadows and trees keep to them, the fields lie parallel. A slope is either `stone`
+ * (grey rubble and rock) or `earth` (a brown bank with a few stones).
  *
  * Pure geometry: the terrain adds `height()` to its ground, the ground colours and the realistic
  * ground's baked mask use `cover()`, the rocks of the classic look are scattered over the same area.
@@ -23,6 +26,8 @@ export interface Scarp {
   drop: number;
   w: number;
   kind: ScarpKind;
+  /** Ramps up the wall (from `a` at its foot to `b` on top). */
+  ramps: Ramp[];
   /** Bounding box, widened by the reach of the slope and its rubble. */
   box: { x0: number; x1: number; z0: number; z1: number };
   seed: number;
@@ -32,24 +37,31 @@ export interface Scarp {
 const FOOT = 3.2, SHOULDER = 0.6;
 /** The slope fades out over this length at both ends (m); the rubble stops a little inside. */
 const TAPER = 16, CAP = 5;
+/** Width of a ramp's level corridor, and the band over which it blends into the wall beside it. */
+const RAMP_W = 9, RAMP_EDGE = 2.5;
+/** How far beside the wall's centre line a ramp starts and ends (on the low and the high ground). */
+const RAMP_OFF = 6;
+
+/** A ramp: a level corridor climbing slantwise across the wall from `a` (foot, low side) to `b` (top). */
+export interface Ramp { a: V2; b: V2; drop: number; w: number }
 /** Range (m) of the signed distance baked for the realistic ground. */
 export const SCREE_RANGE = 3;
 
-interface Control { pts: [number, number][]; drop: number; w: number; kind: ScarpKind }
+/** `ramps`: x of each ramp's foot and top (it climbs from one to the other along the wall). */
+interface Control { pts: [number, number][]; drop: number; w: number; kind: ScarpKind; ramps: [number, number][] }
 
 /**
- * The slopes: control points of a smooth curve, the high ground on its left. Placed in the open parts of the map,
- * away from the woods and the villages (the ground fades flat towards bases, villages and outposts).
+ * The two walls: control points of a smooth curve, the high ground on its left (the southern wall runs
+ * east, the northern one - its mirror image through the middle of the map - west, so both lift the
+ * middle). They reach past the edges of the map. Their course keeps clear of the bases, villages and
+ * outposts (the ground is levelled there); three ramps each: west, east and the middle one, whose foot lies just in front
+ * of the base's gate (the road swings onto it, see layout.ts).
  */
+const SOUTH: [number, number][] = [[-140, -78], [-100, -77], [-62, -75], [-40, -67], [-16, -62], [14, -63], [44, -64], [80, -65], [140, -66]];
+const SOUTH_RAMPS: [number, number][] = [[-104, -66], [-24, 16], [56, 96]];
 const CONTROLS: Control[] = [
-  { pts: [[-122, -66], [-108, -61], [-95, -61]], drop: 4.5, w: 5.5, kind: "earth" },
-  { pts: [[56, -71], [72, -66], [90, -69], [112, -73]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[26, 63], [44, 69], [62, 69]], drop: 4.5, w: 5.5, kind: "earth" },
-  { pts: [[-121, 50], [-106, 57], [-90, 52]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[106, -36], [101, -20], [102, -6]], drop: 4.5, w: 5.5, kind: "earth" },
-  { pts: [[-121, -14], [-113, -3], [-110, 10]], drop: 3, w: 7, kind: "earth" },
-  { pts: [[-52, 113], [-35, 106], [-20, 108]], drop: 4.5, w: 5.5, kind: "earth" },
-  { pts: [[-6, -113], [14, -108], [32, -105]], drop: 3, w: 7, kind: "earth" },
+  { pts: SOUTH, drop: 5, w: 6, kind: "stone", ramps: SOUTH_RAMPS },
+  { pts: SOUTH.map(([x, z]) => [-x, -z] as [number, number]), drop: 5, w: 6, kind: "stone", ramps: SOUTH_RAMPS.map(([a, b]) => [-a, -b] as [number, number]) },
 ];
 
 /** Catmull-Rom through the control points, sampled about every 2 m. */
@@ -89,8 +101,17 @@ export class ScarpSet {
       const arc = [0];
       for (let i = 1; i < pts.length; i++) arc.push(arc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z));
       const reach = c.w / 2 + FOOT + 10;
+      /** The point `off` metres beside the curve where it passes x (high side positive). */
+      const beside = (x: number, off: number): V2 => {
+        let i = 0;
+        while (i < pts.length - 2 && (pts[i + 1].x - x) * Math.sign(pts[pts.length - 1].x - pts[0].x) < 0) i++;
+        const a = pts[i], b = pts[i + 1], k = Math.max(0, Math.min(1, (x - a.x) / (b.x - a.x || 1)));
+        const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        return { x: a.x + (b.x - a.x) * k - ((b.z - a.z) / l) * off, z: a.z + (b.z - a.z) * k + ((b.x - a.x) / l) * off };
+      };
+      const ramps = c.ramps.map(([fx, tx]) => ({ a: beside(fx, -RAMP_OFF), b: beside(tx, RAMP_OFF), drop: c.drop, w: RAMP_W }));
       return {
-        pts, arc, total: arc[arc.length - 1], drop: c.drop, w: c.w, kind: c.kind, seed: 51 + seed,
+        pts, arc, total: arc[arc.length - 1], drop: c.drop, w: c.w, kind: c.kind, seed: 51 + seed, ramps,
         box: {
           x0: Math.min(...pts.map((p) => p.x)) - reach, x1: Math.max(...pts.map((p) => p.x)) + reach,
           z0: Math.min(...pts.map((p) => p.z)) - reach, z1: Math.max(...pts.map((p) => p.z)) + reach,
@@ -99,10 +120,35 @@ export class ScarpSet {
     });
   }
 
-  /** The nearest slope within reach of (x, z) and where the point lies to it; null if there is none. */
-  private locate(sc: Scarp, x: number, z: number): ScarpHit | null {
+  /** All ramps of all walls. */
+  get ramps(): Ramp[] {
+    return this.list.flatMap((sc) => sc.ramps);
+  }
+
+  /**
+   * A ramp's share of the ground at a point (1 on its level corridor, falling to 0 over its edge) and how far up it the
+   * point is (0 at the foot, 1 on top). The terrain lays the corridor evenly from the ground at its foot to the ground at
+   * its top (so the hills it crosses do not make it steeper anywhere).
+   */
+  static rampAt(rp: Ramp, x: number, z: number): { k: number; u: number } {
+    const { d, u } = ScarpSet.onRamp(rp, x, z);
+    return { k: d < rp.w / 2 + RAMP_EDGE ? smoothstep(rp.w / 2 + RAMP_EDGE, rp.w / 2, d) : 0, u };
+  }
+
+  /** Distance from a ramp's axis and how far up it (0 at the foot, 1 on top) a point is. */
+  private static onRamp(rp: Ramp, x: number, z: number): { d: number; u: number } {
+    const dx = rp.b.x - rp.a.x, dz = rp.b.z - rp.a.z, l2 = dx * dx + dz * dz;
+    const u = Math.max(0, Math.min(1, ((x - rp.a.x) * dx + (z - rp.a.z) * dz) / l2));
+    return { d: Math.hypot(x - rp.a.x - dx * u, z - rp.a.z - dz * u), u };
+  }
+
+  /**
+   * Where a point lies to a slope; null if it is out of the slope's reach (`local`: only near the slope -
+   * the height needs every point, as the high ground goes on far behind the wall).
+   */
+  private locate(sc: Scarp, x: number, z: number, local = true): ScarpHit | null {
     const b = sc.box;
-    if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) return null;
+    if (local && (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1)) return null;
     let best = Infinity, side = 1, t = 0;
     const P = sc.pts;
     for (let i = 0; i < P.length - 1; i++) {
@@ -126,11 +172,7 @@ export class ScarpSet {
   height(x: number, z: number): number {
     let h = 0;
     for (const sc of this.list) {
-      const hit = this.locate(sc, x, z);
-      if (!hit || Math.abs(hit.s) > sc.w / 2 + 2) {
-        if (hit && hit.s > 0) h += sc.drop * this.fade(sc, hit.t);
-        continue;
-      }
+      const hit = this.locate(sc, x, z, false)!;
       h += sc.drop * this.fade(sc, hit.t) * smoothstep(-sc.w / 2, sc.w / 2, hit.s);
     }
     return h;
@@ -150,7 +192,9 @@ export class ScarpSet {
       const hit = this.locate(sc, x, z);
       if (!hit) continue;
       const lo = -(sc.w / 2 + FOOT), hi = sc.w / 2 + SHOULDER;
-      const d = Math.max(Math.abs(hit.s - (lo + hi) / 2) - (hi - lo) / 2, CAP - hit.t, hit.t - (sc.total - CAP));
+      let d = Math.max(Math.abs(hit.s - (lo + hi) / 2) - (hi - lo) / 2, CAP - hit.t, hit.t - (sc.total - CAP));
+      // (no rubble on the ramps)
+      for (const rp of sc.ramps) d = Math.max(d, rp.w / 2 - ScarpSet.onRamp(rp, x, z).d);
       if (!best || d < best.d) {
         // (earth banks have stony patches, stone slopes some brown earth between the rocks)
         const patchy = valueNoise(x * 0.12, z * 0.12, sc.seed + 200);
@@ -158,6 +202,19 @@ export class ScarpSet {
       }
     }
     return best;
+  }
+
+  /** True if the straight line from a to b runs over a wall anywhere but on a ramp. */
+  crosses(a: V2, b: V2): boolean {
+    const len = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(len));
+    for (let i = 0; i <= steps; i++) {
+      const x = a.x + ((b.x - a.x) * i) / steps, z = a.z + ((b.z - a.z) * i) / steps;
+      for (const sc of this.list) {
+        const hit = this.locate(sc, x, z);
+        if (hit && Math.abs(hit.s) < sc.w / 2 + 1.5 && !sc.ramps.some((rp) => ScarpSet.rampAt(rp, x, z).k > 0.5)) return true;
+      }
+    }
+    return false;
   }
 
   /** True within `pad` of a slope and its rubble (nothing is planted or laid out there). */
@@ -186,26 +243,5 @@ export class ScarpSet {
       }
     }
     return best;
-  }
-
-  /**
-   * The line a track follows beside a slope: `off` metres from the centre line (positive = high side), over the
-   * slope's whole length less the tapering ends.
-   */
-  offsetLine(sc: Scarp, off: number, from = TAPER * 0.6, to = TAPER * 0.6): V2[] {
-    const out: V2[] = [];
-    const P = sc.pts;
-    for (let i = 0; i < P.length; i++) {
-      if (sc.arc[i] < from || sc.arc[i] > sc.total - to) continue;
-      const a = P[Math.max(0, i - 1)], c = P[Math.min(P.length - 1, i + 1)];
-      const l = Math.hypot(c.x - a.x, c.z - a.z) || 1;
-      out.push({ x: P[i].x - ((c.z - a.z) / l) * off, z: P[i].z + ((c.x - a.x) / l) * off });
-    }
-    return out;
-  }
-
-  /** Half width of a slope with its rubble on the low side (where a track at the foot must keep clear). */
-  static footReach(sc: Scarp): number {
-    return sc.w / 2 + FOOT;
   }
 }

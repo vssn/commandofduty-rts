@@ -46,6 +46,7 @@ import { createPowerPlant } from "./world/powerPlant";
 import { createRoadMarkings } from "./world/roadMarkings";
 import { createParkPaths } from "./world/parkPaths";
 import { createScarpRocks } from "./world/scarpRocks";
+import { createScarpBarrier } from "./world/scarpBarrier";
 import { renderMapPreview } from "./ui/mapPreview";
 import { Terrain } from "./world/terrain";
 
@@ -120,6 +121,8 @@ for (const t of trees) if (Math.abs(t.x) < MAP_HALF && Math.abs(t.z) < MAP_HALF)
 for (const h of hedges) nav.blockRect(h.x, h.z, h.hw, h.hd, h.rot, 0);
 // containers, cabins, cars, garages, fences and farm machinery (placed on ground that is still free;
 // the solid ones block movement)
+// the steep part of the escarpments cannot be climbed: blocked on the grid, with boulders as a barrier
+createScarpBarrier(scene, layout, terrain, env.shadows, nav);
 const props = createProps(scene, layout, terrain, env.shadows, nav);
 // the villages look left in a hurry: rubbish in the streets and gardens, a few tufts of grass at the walls
 createVillageDecay(scene, layout, terrain, env.shadows, props);

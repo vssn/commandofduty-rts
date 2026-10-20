@@ -3,8 +3,8 @@ import { MAP_HALF, OUTPOSTS, TERRAIN_HALF, TERRAIN_RES } from "../config";
 import { fbm, hash01, lerp, smoothstep, valueNoise } from "../util/noise";
 import { SIDEWALK } from "./embassy";
 import { inBox, inWater, quayDistance } from "./power";
-import { toLocal, type MapLayout, type RGB } from "./layout";
-import { SCREE_RANGE } from "./scarps";
+import { segDist, toLocal, type MapLayout, type RGB } from "./layout";
+import { SCREE_RANGE, ScarpSet, type Ramp } from "./scarps";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
 /** Cliff faces and the mountain wall. */
@@ -137,6 +137,11 @@ export const ROAD_RANGE = 4;
 /** Data for the realistic (PBR) ground: smooth normals and the natural ground colour per vertex. */
 export interface RealisticGround { normals: Float32Array; colors: Float32Array }
 
+/** On the hill country levelled ground runs out this many times longer to the north and south than to the east and west. */
+const ZONE_NS = 6;
+/** How far beside a road's edge its smoothed bed fades out into the natural ground (m): a broad, gentle swale. */
+const ROAD_BANK = 24;
+
 /** Low-poly, flat shaded, vertex-coloured height field. */
 export class Terrain {
   readonly n = TERRAIN_RES;
@@ -144,6 +149,10 @@ export class Terrain {
   readonly heights: Float32Array;
   readonly mesh: Mesh;
   private readonly zones: FlatZone[];
+  /** The ramps up the escarpments with the ground height at their foot and top. */
+  private rampEnds: { ramp: Ramp; ha: number; hb: number }[] = [];
+  /** The smoothed ground the roads run on (hill country), on a 2 m grid. */
+  private roadBed: { g: Float32Array; n: number; step: number; half: number } | null = null;
   /** Number of grid cells that were subdivided for extra surface detail (for diagnostics). */
   detailCells = 0;
   /** Surface kind found by the last decalAt() call. */
@@ -155,9 +164,10 @@ export class Terrain {
 
   constructor(scene: Scene, readonly layout: MapLayout) {
     const L = layout;
+    // (the villages first: their long run-out reaches far, the bases and outposts after them stay level)
     this.zones = [
+      ...L.suburbs.map((s) => ({ x: s.x, z: s.z, r: s.r - 4, f: 30, h: 0 })),
       ...[L.playerBase, L.enemyBase].map((b) => ({ x: b.x, z: b.z, r: 22, f: 18, h: 0 })),
-      ...L.suburbs.map((s) => ({ x: s.x, z: s.z, r: s.r - 4, f: 20, h: 0 })),
       ...L.outposts.map((o) => ({ x: o.x, z: o.z, r: 9, f: 10, h: 0 })),
       // the park's ponds lie in level ground (the hollow itself is dug afterwards)
       ...L.ponds.map((p) => ({ x: p.x, z: p.z, r: Math.max(p.rx, p.rz) + 2, f: 8, h: 0 })),
@@ -165,6 +175,9 @@ export class Terrain {
     // (the power station's ground is laid out level by hand: decks, stairs and quays keep their edges)
     if (L.plant) this.zones.length = 0;
     for (const zn of this.zones) zn.h = this.baseHeight(zn.x, zn.z);
+    if (L.map === "hills" && L.roads.length) this.buildRoadBed();
+    // the ground at both ends of each ramp, without the ramps (rampEnds is still empty here)
+    this.rampEnds = L.scarps.ramps.map((ramp) => ({ ramp, ha: this.heightFn(ramp.a.x, ramp.a.z), hb: this.heightFn(ramp.b.x, ramp.b.z) }));
 
     const n1 = this.n + 1;
     this.heights = new Float32Array(n1 * n1);
@@ -179,9 +192,11 @@ export class Terrain {
   private baseHeight(x: number, z: number): number {
     if (this.layout.map === "embassy") return this.cityHeight(x, z);
     if (this.layout.plant) return this.powerHeight(x, z);
-    let h = fbm(x * 0.0105 + 5.3, z * 0.0105 - 2.1, 4, 3) * 15;
-    h += Math.sin(x * 0.021 + 0.6) * Math.cos(z * 0.018 - 0.4) * 2.5;
-    return h + this.border(x, z);
+    // the hills are long ridges and valleys running north-south: their sides face east and west, the
+    // ground hardly rises southwards (the camera looks north - a unit climbing towards it would seem to
+    // stand still). Point-symmetric like the map: both sides fight over the same ground.
+    const hills = (px: number, pz: number) => fbm(px * 0.0105 + 5.3, pz * 0.0034 - 2.1, 4, 3) * 15 + Math.sin(px * 0.021 + 0.6) * Math.cos(pz * 0.006 - 0.4) * 2.5;
+    return (hills(x, z) + hills(-x, -z)) * 0.68 + this.border(x, z);
   }
 
   /**
@@ -250,17 +265,89 @@ export class Terrain {
     return smoothstep(0, 9, k) * 26 + smoothstep(6, 45, k) * (24 + ridge * 40) + smoothstep(0, 20, k) * valueNoise(x * 0.2, z * 0.2, 36) * 4;
   }
 
+  /** The natural ground with the levelled areas, before roads, escarpments and ponds. */
+  private groundHeight(x: number, z: number): number {
+    let h = this.baseHeight(x, z);
+    // levelled ground: its edge runs out over `f` metres - to the north and south over a much longer stretch,
+    // and the level core is drawn out north-south with it (an ellipse): long terraces, so the ground hardly
+    // rises towards the camera
+    const ns = this.layout.map === "hills" ? ZONE_NS : 1;
+    for (const zn of this.zones) {
+      const q = Math.hypot((x - zn.x) / (zn.r + zn.f), (z - zn.z) / (zn.r + zn.f * ns));
+      h = lerp(h, zn.h, smoothstep(1, zn.r / (zn.r + zn.f), q));
+    }
+    return h;
+  }
+
+  /**
+   * Under and beside the roads and tracks (hill country) the ground follows a smoothed bed: the ground averaged over
+   * about ten metres, so a track runs gently over the hills and the edges of levelled ground instead of being cut by
+   * them or dropping away. Full on the road, fading out gently beside it (which also evens out the ground around).
+   */
+  private buildRoadBed() {
+    const step = 2, half = MAP_HALF + 24, n = Math.round((half * 2) / step) + 1;
+    let g = new Float32Array(n * n);
+    // (sampled inside the map only: the gorge and the mountains beyond its edge do not pull the tracks down or up)
+    const lim = MAP_HALF - 1, clamp = (v: number) => Math.max(-lim, Math.min(lim, v));
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) g[i + j * n] = this.groundHeight(clamp(-half + i * step), clamp(-half + j * step));
+    // two box blurs each way (nearly Gaussian), radius 5 cells
+    const R = 5;
+    const pass = (src: Float32Array, horizontal: boolean) => {
+      const out = new Float32Array(n * n);
+      for (let a = 0; a < n; a++) {
+        for (let b = 0; b < n; b++) {
+          let sum = 0, cnt = 0;
+          for (let o = -R; o <= R; o++) {
+            const c = b + o;
+            if (c < 0 || c >= n) continue;
+            sum += horizontal ? src[c + a * n] : src[a + c * n];
+            cnt++;
+          }
+          out[horizontal ? b + a * n : a + b * n] = sum / cnt;
+        }
+      }
+      return out;
+    };
+    for (let k = 0; k < 2; k++) g = pass(pass(g, true), false);
+    this.roadBed = { g, n, step, half };
+  }
+
+  /** Height of the smoothed road bed at a point. */
+  private bedAt(x: number, z: number): number {
+    const B = this.roadBed!;
+    const fx = Math.min(B.n - 1.001, Math.max(0, (x + B.half) / B.step)), fz = Math.min(B.n - 1.001, Math.max(0, (z + B.half) / B.step));
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j, n = B.n, g = B.g;
+    return lerp(lerp(g[i + j * n], g[i + 1 + j * n], u), lerp(g[i + (j + 1) * n], g[i + 1 + (j + 1) * n], u), v);
+  }
+
+  /** How much the road bed holds the ground at a point: 1 on and just beside a road, 0 from ROAD_BANK off its edge. */
+  private roadWeight(x: number, z: number): number {
+    let best = Infinity;
+    for (const rd of this.layout.roads) {
+      const m = rd.w / 2 + ROAD_BANK;
+      if (x < Math.min(rd.a.x, rd.b.x) - m || x > Math.max(rd.a.x, rd.b.x) + m || z < Math.min(rd.a.z, rd.b.z) - m || z > Math.max(rd.a.z, rd.b.z) + m) continue;
+      best = Math.min(best, segDist(x, z, rd.a, rd.b) - rd.w / 2);
+    }
+    return best === Infinity ? 0 : smoothstep(ROAD_BANK, 0.8, best);
+  }
+
   private heightFn(x: number, z: number): number {
     if (this.layout.plant) return this.baseHeight(x, z);
-    let h = this.baseHeight(x, z);
-    let flat = 0;
-    for (const zn of this.zones) {
-      const w = smoothstep(zn.r + zn.f, zn.r, Math.hypot(x - zn.x, z - zn.z));
-      h = lerp(h, zn.h, w);
-      flat = Math.max(flat, w);
+    let h = this.groundHeight(x, z);
+    if (this.roadBed) {
+      const k = this.roadWeight(x, z);
+      if (k > 0) h = lerp(h, this.bedAt(x, z), k);
     }
-    // the escarpments: their steps fade out towards the levelled ground of bases, villages and outposts
-    if (this.layout.scarps.list.length) h += this.layout.scarps.height(x, z) * (1 - flat);
+    // the escarpments: the plateau between them lifts everything on it, levelled ground included (their
+    // walls keep clear of the bases, villages and outposts)
+    if (this.layout.scarps.list.length) {
+      h += this.layout.scarps.height(x, z);
+      // the ramps up the walls: a level corridor, rising evenly from the ground at the foot to the ground on top
+      for (const e of this.rampEnds) {
+        const { k, u } = ScarpSet.rampAt(e.ramp, x, z);
+        if (k > 0) h = lerp(h, lerp(e.ha, e.hb, u), k);
+      }
+    }
     // the ponds' hollows: a soft shore, a flat bottom below the water
     if (this.layout.ponds.length) {
       const d = this.layout.pondDepth(x, z);
