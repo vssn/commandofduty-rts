@@ -50,6 +50,10 @@ function emissiveOf(m: StandardMaterial, out: Color3): Color3 {
 
 export class PbrMode {
   active = false;
+  /**
+   * The PBR copy of each classic material. Kept when switching back to the classic look (and made ahead of time
+   * in prepare()): switching again only reassigns them, their shaders are already compiled.
+   */
   private readonly swapped = new Map<StandardMaterial, PBRMaterial>();
   /** Gamma vertex / instance colours of converted meshes, to restore them. */
   private readonly colorBackup = new Map<Mesh, { vertex?: Float32Array; instance?: Float32Array }>();
@@ -74,17 +78,47 @@ export class PbrMode {
   setEnabled(on: boolean) {
     if (on === this.active) return;
     this.active = on;
-    if (on) {
-      this.capture();
-      this.applyGrade();
-      for (const e of this.extras) e.enable();
-      this.convertAll();
-      this.applyLighting();
-    } else {
-      for (const e of this.extras) e.disable();
-      this.restoreAll();
-      this.restoreGrade();
-      this.restoreLighting();
+    // every change of the image processing, the shadows or a mesh's material would mark all materials (and
+    // every mesh using them) for re-checking, one pass each - held back here, and done once at the end
+    this.scene.blockMaterialDirtyMechanism = true;
+    try {
+      if (on) {
+        this.capture();
+        this.applyGrade();
+        for (const e of this.extras) e.enable();
+        this.convertAll();
+        this.applyLighting();
+      } else {
+        for (const e of this.extras) e.disable();
+        this.restoreAll();
+        this.restoreGrade();
+        this.restoreLighting();
+      }
+    } finally {
+      this.scene.blockMaterialDirtyMechanism = false;
+      // a mesh that got another material while the marking was held back still carries the old material's
+      // shader settings: every mesh works them out afresh (the compiled shaders themselves are reused)
+      for (const mesh of this.scene.meshes) mesh.resetDrawCache();
+    }
+  }
+
+  /**
+   * Makes the PBR copies of all classic materials in use ahead of time, a slice per frame (`yieldEvery`
+   * materials, then `pause()`), so the first switch to the realistic look only has to assign them.
+   */
+  async prepare(pause: () => Promise<unknown>, yieldEvery = 24) {
+    let n = 0;
+    const seen = new Set<StandardMaterial>();
+    for (const mesh of [...this.scene.meshes]) {
+      if (!(mesh instanceof Mesh)) continue;
+      const m = mesh.material;
+      const list = m instanceof MultiMaterial ? m.subMaterials : [m];
+      for (const s of list) {
+        if (!(s instanceof StandardMaterial) || this.keepsClassic(s) || seen.has(s) || this.swapped.has(s)) continue;
+        seen.add(s);
+        this.pbrFor(s);
+        if (++n % yieldEvery === 0) await pause();
+      }
     }
   }
 
@@ -266,8 +300,7 @@ export class PbrMode {
       if (b.instance) mesh.thinInstanceSetBuffer("color", b.instance, 4, true);
     }
     this.colorBackup.clear();
-    for (const p of this.swapped.values()) p.dispose();
-    this.swapped.clear();
+    // (the PBR copies stay for the next switch)
   }
 
   private instanceColors(mesh: Mesh): Float32Array | null {

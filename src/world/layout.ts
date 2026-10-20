@@ -101,6 +101,9 @@ export const HOUSE_ROOF: RGB[] = [
   [0.58, 0.2, 0.14], [0.3, 0.3, 0.33], [0.46, 0.28, 0.18], [0.66, 0.32, 0.18],
 ];
 
+/** Road distance queries: grid cell size, and how far beyond a road's edge the grid answers them (m). */
+const ROAD_CELL = 8, ROAD_REACH = 6;
+
 /** A track over a ramp: a straight run-up before its foot, the ramp itself, a straight run on beyond its top. */
 function rampTrack(rp: Ramp): V2[] {
   const dx = rp.b.x - rp.a.x, dz = rp.b.z - rp.a.z, l = Math.hypot(dx, dz), k = 12 / l;
@@ -481,9 +484,44 @@ export class MapLayout {
   }
 
   /** Signed distance to the nearest road edge (negative = on the road). Asphalt wins over dirt. */
+  /**
+   * The roads near a point, from a grid of 8 m cells listing the road pieces within ROAD_REACH of each (rebuilt
+   * whenever roads were added): the distance queries below are asked for every texel of the ground's masks.
+   */
+  private roadGrid: { x0: number; z0: number; nx: number; nz: number; cells: Road[][]; count: number } | null = null;
+  private roadsNear(x: number, z: number): Road[] {
+    let G = this.roadGrid;
+    if (!G || G.count !== this.roads.length) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const rd of this.roads) {
+        x0 = Math.min(x0, rd.a.x, rd.b.x); x1 = Math.max(x1, rd.a.x, rd.b.x);
+        z0 = Math.min(z0, rd.a.z, rd.b.z); z1 = Math.max(z1, rd.a.z, rd.b.z);
+      }
+      const pad = ROAD_REACH + 8;
+      x0 -= pad; z0 -= pad; x1 += pad; z1 += pad;
+      const nx = Math.max(1, Math.ceil((x1 - x0) / ROAD_CELL)), nz = Math.max(1, Math.ceil((z1 - z0) / ROAD_CELL));
+      const cells: Road[][] = Array.from({ length: nx * nz }, () => []);
+      for (const rd of this.roads) {
+        const m = rd.w / 2 + ROAD_REACH;
+        const i0 = Math.floor((Math.min(rd.a.x, rd.b.x) - m - x0) / ROAD_CELL), i1 = Math.floor((Math.max(rd.a.x, rd.b.x) + m - x0) / ROAD_CELL);
+        const j0 = Math.floor((Math.min(rd.a.z, rd.b.z) - m - z0) / ROAD_CELL), j1 = Math.floor((Math.max(rd.a.z, rd.b.z) + m - z0) / ROAD_CELL);
+        for (let j = Math.max(0, j0); j <= Math.min(nz - 1, j1); j++) {
+          for (let i = Math.max(0, i0); i <= Math.min(nx - 1, i1); i++) {
+            // (only the cells the piece actually passes near)
+            const cx = x0 + (i + 0.5) * ROAD_CELL, cz = z0 + (j + 0.5) * ROAD_CELL;
+            if (segDist(cx, cz, rd.a, rd.b) <= m + ROAD_CELL * 0.71) cells[i + j * nx].push(rd);
+          }
+        }
+      }
+      G = this.roadGrid = { x0, z0, nx, nz, cells, count: this.roads.length };
+    }
+    const i = Math.floor((x - G.x0) / ROAD_CELL), j = Math.floor((z - G.z0) / ROAD_CELL);
+    return i < 0 || j < 0 || i >= G.nx || j >= G.nz ? [] : G.cells[i + j * G.nx];
+  }
+
   nearestRoad(x: number, z: number): { d: number; road: Road | null } {
     let best = Infinity, road: Road | null = null;
-    for (const rd of this.roads) {
+    for (const rd of this.roadsNear(x, z)) {
       // cheap bounding-box reject (the exact distance only matters close to the road)
       const m = rd.w / 2 + 4;
       if (x < Math.min(rd.a.x, rd.b.x) - m || x > Math.max(rd.a.x, rd.b.x) + m || z < Math.min(rd.a.z, rd.b.z) - m || z > Math.max(rd.a.z, rd.b.z) + m) continue;
@@ -502,7 +540,7 @@ export class MapLayout {
   /** Nearest road of one kind within `max` of its edge (signed distance as in roadDistance). */
   nearestOfKind(x: number, z: number, kind: Road["kind"], max = 4): { d: number; road: Road | null } {
     let best = max, road: Road | null = null;
-    for (const rd of this.roads) {
+    for (const rd of max <= ROAD_REACH ? this.roadsNear(x, z) : this.roads) {
       if (rd.kind !== kind) continue;
       const m = rd.w / 2 + max;
       if (x < Math.min(rd.a.x, rd.b.x) - m || x > Math.max(rd.a.x, rd.b.x) + m || z < Math.min(rd.a.z, rd.b.z) - m || z > Math.max(rd.a.z, rd.b.z) + m) continue;

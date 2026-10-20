@@ -1,11 +1,11 @@
 import { createBarracksDetail } from "../world/barracksDetail";
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
+import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SIGHT, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
 import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
 import { toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
   createAuraTemplate, createBarracksMesh, createBollardMesh, createMgNestMesh, createPennant, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun,
-  createDroneBody, createDroneRotor, createJeepWheel, createRing, createSoldierTemplates, JEEP_DIM, NEST_DIM,
+  createDroneBody, createDroneRotor, createJeepWheel, createRing, createSoldierTemplates, createTankHull, createTankTurret, JEEP_DIM, NEST_DIM, TANK_DIM,
 } from "../world/models";
 import { createRoofTiles } from "../world/masonry";
 import type { Terrain } from "../world/terrain";
@@ -22,9 +22,10 @@ import { Decks, type PathPoint } from "./decks";
 import { agentModelReady } from "../world/agentModel";
 import { createSubwayMesh } from "../world/cityModels";
 import { AgentView } from "./agentView";
-import { BollardView, DroneView, JeepView, NestView, SoldierView, type DroneTemplates, type JeepTemplates, type NestTemplates, type SoldierTemplates, type UnitView } from "./views";
+import { BollardView, DroneView, JeepView, NestView, SoldierView, TankView, type DroneTemplates, type JeepTemplates, type NestTemplates, type SoldierTemplates, type TankTemplates, type UnitView } from "./views";
 
-export type WeaponKind = "rifle" | "mg" | "sniper";
+/** `shell`: the tank's gun, `rocket`: the RPG (both fly as projectiles, see Effects.launch; no tracer line). */
+export type WeaponKind = "rifle" | "mg" | "sniper" | "shell" | "rocket";
 export interface Tracer { ax: number; ay: number; az: number; bx: number; by: number; bz: number; t: number; hit: boolean; kind: WeaponKind }
 interface Marker { outer: InstancedMesh; inner: InstancedMesh; t: number }
 /** Short-lived line from a unit to the point (or target) it was just ordered to. */
@@ -65,9 +66,10 @@ export class Game {
   /** "base" = classic mode with production, "skirmish" = fixed forces and artillery strikes. */
   mode: GameMode = "base";
 
-  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "agent" | "medic" | "pilot", SoldierTemplates>>;
+  private readonly soldierTpl: Record<Team, Record<"rifleman" | "grenadier" | "rpg" | "agent" | "medic" | "pilot", SoldierTemplates>>;
   private readonly droneTpl: DroneTemplates;
   private readonly jeepTpl: Record<Team, JeepTemplates>;
+  private readonly tankTpl: Record<Team, TankTemplates>;
   private readonly nestTpl: Record<Team, NestTemplates>;
   private readonly bollardTpl: Mesh;
   private readonly ringTpl: Mesh;
@@ -122,6 +124,7 @@ export class Game {
     const soldiers = (team: Team) => ({
       rifleman: createSoldierTemplates(scene, team),
       grenadier: createSoldierTemplates(scene, team, true),
+      rpg: createSoldierTemplates(scene, team, "rpg"),
       agent: createSoldierTemplates(scene, team, "agent"),
       medic: createSoldierTemplates(scene, team, "medic"),
       pilot: createSoldierTemplates(scene, team, "pilot"),
@@ -131,6 +134,9 @@ export class Game {
     const gun = createJeepGun(scene);
     const jeep = (team: Team): JeepTemplates => ({ body: createJeepBody(scene, team), wheel, gun, crew: this.soldierTpl[team].rifleman });
     this.jeepTpl = { 0: jeep(PLAYER), 1: jeep(ENEMY) };
+    const tank = (team: Team): TankTemplates => ({ hull: createTankHull(scene, team), turret: createTankTurret(scene, team) });
+    this.tankTpl = { 0: tank(PLAYER), 1: tank(ENEMY) };
+    for (const team of [PLAYER, ENEMY]) for (const m of [this.tankTpl[team].hull, this.tankTpl[team].turret]) shadows.addShadowCaster(m);
     for (const team of [PLAYER, ENEMY]) {
       for (const t of Object.values(this.soldierTpl[team])) for (const m of [t.body, t.arms, t.head, t.leg, t.shin, t.throwArm]) if (m) shadows.addShadowCaster(m);
       shadows.addShadowCaster(this.jeepTpl[team].body);
@@ -322,6 +328,8 @@ export class Game {
     const name = `${type}-${team}`;
     const view: UnitView = type === "jeep"
       ? new JeepView(this.scene, this.jeepTpl[team], name, this.blobTpl)
+      : type === "tank"
+        ? new TankView(this.scene, this.tankTpl[team], name, this.blobTpl)
       : type === "mgnest"
         ? new NestView(this.scene, this.nestTpl[team], name)
         : type === "bollard"
@@ -334,6 +342,7 @@ export class Game {
     const ring = (type === "agent" ? this.agentRingTpl : this.ringTpl).createInstance("ring");
     ring.isPickable = false;
     if (type === "jeep") ring.scaling.set(2.6, 1, 2.6);
+    if (type === "tank") ring.scaling.set(3.4, 1, 3.4);
     if (type === "mgnest" || type === "bollard") ring.scaling.set(1.9, 1, 1.9);
     const u = new Unit(type, team, x, z, view, ring);
     u.px = x;
@@ -457,7 +466,7 @@ export class Game {
 
   /** Production facility for a unit type, or null if the team has none. */
   producerFor(type: UnitType, team: Team): Production | null {
-    if (type === "jeep") return this.workshopOf(team)?.production ?? null;
+    if (type === "jeep" || type === "tank") return this.workshopOf(team)?.production ?? null;
     if (type === "medic") return this.hospitalOf(team)?.production ?? null;
     const b = team === PLAYER ? this.playerBarracks : this.enemyBarracks;
     return b.alive ? b.production : null;
@@ -797,6 +806,32 @@ export class Game {
 
   // ---------------------------------------------------------------- combat
 
+  /**
+   * A moving tank runs over the enemy foot soldiers under its hull and tracks (a rectangle round it, a little
+   * narrower than the separation circle: one standing beside the tracks is pushed aside, one in front or behind is
+   * caught). Friendly soldiers are only pushed aside; those up on a walkway are out of reach.
+   */
+  crushUnder(tank: Unit) {
+    const sh = Math.sin(tank.heading), ch = Math.cos(tank.heading);
+    for (const u of this.units) {
+      if (!u.alive || u.team === tank.team || u.isVehicle || u.vehicle || u.isStructure || u.level !== tank.level) continue;
+      const dx = u.x - tank.x, dz = u.z - tank.z;
+      if (Math.abs(dx) > TANK_DIM.length || Math.abs(dz) > TANK_DIM.length) continue;
+      // in the tank's frame: across (x) and along (z)
+      const across = dx * ch - dz * sh, along = dx * sh + dz * ch;
+      if (Math.abs(across) < TANK_DIM.trackX + 0.1 && Math.abs(along) < TANK_DIM.length / 2 - 0.1) {
+        this.damage(u, u.hp + 1, tank);
+      }
+    }
+  }
+
+  /** Whether a unit of `team` (or an outpost it holds) has `o` within its sight. */
+  private spotted(o: Unit, team: Team): boolean {
+    const S = SIGHT as Record<string, number>;
+    return this.units.some((f) => f.alive && f.team === team && !f.vehicle && Math.hypot(f.x - o.x, f.z - o.z) <= (S[f.type] ?? 0))
+      || this.outposts.some((p) => p.owner === team && Math.hypot(p.x - o.x, p.z - o.z) <= SIGHT.outpost);
+  }
+
   findEnemy(u: Unit, range: number): Target | null {
     let best: Target | null = null, bd = range;
     // the player's units only engage what they can actually see
@@ -807,6 +842,9 @@ export class Game {
       if (u.ignoreT > 0 && o === u.ignore) continue;
       if (sees && !sees(o.x, o.z)) continue;
       const d = Math.hypot(o.x - u.x, o.z - u.z) - (o.isVehicle ? o.radius * 0.5 : 0);
+      // (the computer's units see without fog; one that reaches beyond its own sight - the RPG - still needs a
+      // comrade or outpost of its side to spot the target, as the player's do)
+      if (!sees && d > (SIGHT as Record<string, number>)[u.type] && !this.spotted(o, u.team)) continue;
       if (this.spotRange && d >= this.spotRange(u, o, range)) continue;
       if (this.spotGate && d < range && !this.spotGate(u, o)) continue;
       if (d < bd) { bd = d; best = o; }
@@ -905,9 +943,31 @@ export class Game {
     return Math.max(COMBAT.minHit, p);
   }
 
+  /** Where a unit's shot leaves its weapon. */
+  muzzleOf(from: Unit): { x: number; y: number; z: number } {
+    if (from.type === "tank") {
+      const px = from.x + Math.sin(from.heading) * TANK_DIM.turret.z, pz = from.z + Math.cos(from.heading) * TANK_DIM.turret.z;
+      return { x: px + Math.sin(from.turret) * TANK_DIM.barrel, y: from.y + TANK_DIM.turret.y + TANK_DIM.gunY, z: pz + Math.cos(from.turret) * TANK_DIM.barrel };
+    }
+    if (from.type === "rpg") {
+      // the front of the launcher on the right shoulder
+      const fwd = 1.5, side = 0.19, kneel = from.stance === "kneel";
+      return { x: from.x + Math.sin(from.heading) * fwd + Math.cos(from.heading) * side, y: from.y + (kneel ? 1.45 : 1.98), z: from.z + Math.cos(from.heading) * fwd - Math.sin(from.heading) * side };
+    }
+    return { x: from.x, y: from.y + 1.5, z: from.z };
+  }
+
+  /** A shot of the tank's gun or a rocket leaving the launcher: sound, flash, and the projectile itself (see Effects). */
+  fireProjectile(from: Unit, kind: "shell" | "rocket") {
+    this.onShot?.(from.x, from.z, kind);
+    const m = this.muzzleOf(from);
+    this.onMuzzle?.(m.x, m.y, m.z, kind);
+    return m;
+  }
+
   addTracer(from: Unit, to: Target, hit: boolean, kind: WeaponKind) {
     this.onShot?.(from.x, from.z, kind);
-    if (to instanceof Unit && (to.type === "jeep" || to.type === "drone")) {
+    if (to instanceof Unit && (to.type === "jeep" || to.type === "tank" || to.type === "drone")) {
       const flight = Math.hypot(to.x - from.x, to.z - from.z) / (kind === "sniper" ? 800 : 500);
       this.onArmourShot?.(to.x, to.z, hit, 0.02 + flight);
     }
@@ -960,6 +1020,7 @@ export class Game {
         this.onKilled?.(t);
         if (t.hasMg) this.releaseGunner(t);
         if (t.type === "jeep") this.effects.explode(t.x, t.z, 30, 2.5, null, 1.6);
+        if (t.type === "tank") this.effects.explode(t.x, t.z, 40, 3.5, null, 2.2);
         if (t.isStructure) {
           this.blockStructure(t, -1);
           if (t.type === "mgnest") this.effects.explode(t.x, t.z, 0, 0.1, null, 1.1);

@@ -31,7 +31,7 @@ export class Barracks implements Target {
   aimY = 3;
   y: number;
   selected = false;
-  readonly production = new Production(["rifleman", "grenadier"]);
+  readonly production = new Production(["rifleman", "grenadier", "rpg"]);
   readonly spawn: V2;
   rally: V2;
   private readonly startRally: V2;

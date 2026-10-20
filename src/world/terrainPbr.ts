@@ -2,7 +2,7 @@ import {
   Color3, MaterialPluginBase, PBRMaterial, RawTexture, Texture, VertexBuffer,
   type AbstractEngine, type Material, type MaterialDefines, type Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
-import { ROAD_RANGE, type Terrain } from "./terrain";
+import { ROAD_RANGE, type SurfaceMaps, type Terrain } from "./terrain";
 import { SCREE_RANGE } from "./scarps";
 import { bakeMeadowMap, bakeOcclusion, bakePathMap, PATH_RANGE, type PathLine } from "./pathMap";
 import type { MapLayout, V2 } from "./layout";
@@ -361,6 +361,7 @@ roughness=tsRough;microSurface=1.0-tsRough;
  */
 export class RealisticTerrain {
   private material: PBRMaterial | null = null;
+  private on = false;
   private plugin: TerrainSplatPlugin | null = null;
   private classic: { material: Material | null; normals: Float32Array; colors: Float32Array } | null = null;
   private ground: { normals: Float32Array; colors: Float32Array } | null = null;
@@ -380,10 +381,26 @@ export class RealisticTerrain {
     return data;
   }
 
+  /** The baked surface maps, made ahead of time by prepare() (else on the first switch). */
+  private baked: SurfaceMaps | null = null;
+
+  /**
+   * Bakes what the realistic ground needs ahead of time - its normals and colours, the surface maps a slice of rows
+   * per frame - so the first switch to it does not stall (the maps take ~0.5 s in one go).
+   */
+  async prepare(pause: () => Promise<unknown>) {
+    if (this.masks || this.baked) return;
+    this.ground ??= this.terrain.realisticGround();
+    await pause();
+    const maps = await this.terrain.bakeSurfacesAsync(pause);
+    if (!this.masks) this.baked = maps;
+  }
+
   /** Switches the ground to its realistic material. */
   enable() {
     const mesh = this.terrain.mesh;
-    if (this.material) return;
+    if (this.on) return;
+    this.on = true;
     this.classic = {
       material: mesh.material,
       normals: mesh.getVerticesData(VertexBuffer.NormalKind) as Float32Array,
@@ -391,7 +408,8 @@ export class RealisticTerrain {
     };
     this.ground ??= this.terrain.realisticGround();
     if (!this.masks) {
-      const m = this.terrain.bakeSurfaces();
+      const m = this.baked ?? this.terrain.bakeSurfaces();
+      this.baked = null;
       const tex = (data: Uint8Array, name: string, res = m.res) => {
         const t = RawTexture.CreateRGBATexture(data, res, res, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE);
         t.name = name;
@@ -402,6 +420,11 @@ export class RealisticTerrain {
     }
     mesh.setVerticesData(VertexBuffer.NormalKind, this.ground.normals);
     mesh.setVerticesData(VertexBuffer.ColorKind, this.ground.colors);
+    // (made once and kept: its large shader is compiled only the first time)
+    if (this.material) {
+      mesh.material = this.material;
+      return;
+    }
 
     const mat = new PBRMaterial("terrainPbr", this.scene);
     mat.albedoColor = Color3.White();
@@ -430,14 +453,12 @@ export class RealisticTerrain {
   }
 
   disable() {
-    if (!this.material || !this.classic) return;
+    if (!this.on || !this.classic) return;
+    this.on = false;
     const mesh = this.terrain.mesh;
     mesh.material = this.classic.material;
     mesh.setVerticesData(VertexBuffer.NormalKind, this.classic.normals);
     mesh.setVerticesData(VertexBuffer.ColorKind, this.classic.colors);
-    // the material goes; the textures stay cached
-    this.material.dispose(false, false);
-    this.material = null;
-    this.plugin = null;
+    // (the realistic material stays for the next switch)
   }
 }

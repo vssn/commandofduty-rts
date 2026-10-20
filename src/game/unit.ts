@@ -1,5 +1,5 @@
 import type { InstancedMesh } from "@babylonjs/core";
-import { COMBAT, GRENADE, JEEP_MG, MEDIC, ROAD, SLOPE, UNITS, type Team, type UnitStats, type UnitType } from "../config";
+import { COMBAT, GRENADE, JEEP_MG, MEDIC, ROAD, RPG, SLOPE, TANK, UNITS, type Team, type UnitStats, type UnitType } from "../config";
 import type { V2 } from "../world/layout";
 import type { Game } from "./game";
 import type { NavLayer } from "./nav";
@@ -255,7 +255,7 @@ export class Unit implements Target {
   private aimTurret(tx: number, tz: number, dt: number): number {
     const desired = Math.atan2(tx - this.x, tz - this.z);
     const diff = wrapAngle(desired - this.turret);
-    const step = JEEP_MG.turretTurn * dt;
+    const step = (this.type === "tank" ? TANK.turretTurn : JEEP_MG.turretTurn) * dt;
     this.turret = wrapAngle(this.turret + Math.max(-step, Math.min(step, diff)));
     return Math.abs(diff) - Math.min(Math.abs(diff), step);
   }
@@ -348,12 +348,15 @@ export class Unit implements Target {
           // the gunner fires on the move; an explicit attack order makes the driver stop
           if (this.explicitTarget) moving = false;
           const off = this.aimTurret(t.x, t.z, dt);
-          if (off < 0.12) this.fireMg(t, g);
+          if (this.type === "tank") {
+            if (off < 0.05) this.fireGun(t, g, "shell");
+          } else if (off < 0.12) this.fireMg(t, g);
         } else {
           moving = false;
           const off = this.faceTowards(t.x, t.z, dt);
           if (this.cooldown <= 0 && off < 0.25) {
             if (this.type === "grenadier") this.throwGrenade(t, g);
+            else if (this.type === "rpg") this.fireGun(t, g, "rocket");
             else this.fireRifle(t, g);
           }
         }
@@ -389,6 +392,8 @@ export class Unit implements Target {
     if (moving && this.path.length) this.followPath(dt, g);
     this.moving = moving && this.path.length > 0;
     if (!this.moving) this.grade = 0;
+    // a tank on the move runs over enemy infantry in its way
+    if (this.type === "tank" && Math.hypot(this.x - this.px, this.z - this.pz) > 1e-4) g.crushUnder(this);
     if (!this.isVehicle) this.updateStance(dt, fighting, this.moving);
   }
 
@@ -399,7 +404,8 @@ export class Unit implements Target {
     const h1 = g.surfaceY(this.x + dx * look, this.z + dz * look, this.level);
     this.grade = (h1 - h0) / look;
     const k = this.isVehicle ? SLOPE.vehicle : 1;
-    const f = this.grade > 0 ? 1 - this.grade * SLOPE.uphill * k : 1 - this.grade * SLOPE.downhill * k;
+    // (the tank's tracks pull it up any slope at full speed)
+    const f = this.grade > 0 ? (this.type === "tank" ? 1 : 1 - this.grade * SLOPE.uphill * k) : 1 - this.grade * SLOPE.downhill * k;
     const slope = Math.min(SLOPE.max, Math.max(SLOPE.min, f));
     // on roads and dirt tracks level ground is as fast as walking downhill
     return Math.min(ROAD.cap, slope * g.groundSpeed(this.x, this.z));
@@ -606,7 +612,7 @@ export class Unit implements Target {
     this.recoil = 1;
     const hit = Math.random() < g.hitChance(this, t);
     g.addTracer(this, t, hit, "rifle");
-    const armour = t instanceof Unit && t.isVehicle ? COMBAT.rifleVsVehicle : 1;
+    const armour = t instanceof Unit && t.isVehicle ? (t.type === "tank" ? TANK.rifle : COMBAT.rifleVsVehicle) : 1;
     if (hit) g.damage(t, this.stats.damage * armour * (0.8 + Math.random() * 0.4), this);
   }
 
@@ -623,7 +629,30 @@ export class Unit implements Target {
     }
     const hit = Math.random() < g.hitChance(this, t);
     g.addTracer(this, t, hit, "mg");
-    if (hit) g.damage(t, this.stats.damage * (0.85 + Math.random() * 0.3), this);
+    if (hit) g.damage(t, this.stats.damage * (t instanceof Unit && t.type === "tank" ? TANK.mg : 1) * (0.85 + Math.random() * 0.3), this);
+  }
+
+  /**
+   * The tank's gun or the RPG: the projectile flies to the target - or, for a miss, a few metres beside it - and
+   * bursts there (see Effects.launch).
+   */
+  private fireGun(t: Target, g: Game, kind: "shell" | "rocket") {
+    if (this.cooldown > 0) return;
+    this.cloakT = 0;
+    this.cooldown = this.stats.cooldown * (0.9 + Math.random() * 0.2);
+    this.recoil = 1;
+    this.combatT = 0;
+    const hit = Math.random() < g.hitChance(this, t);
+    let x = t.x, z = t.z, y = t.y;
+    if (!hit) {
+      const a = Math.random() * Math.PI * 2, d = 2 + Math.random() * 3;
+      x += Math.cos(a) * d;
+      z += Math.sin(a) * d;
+      y = g.surfaceY(x, z, t instanceof Unit ? t.level : 0);
+    }
+    const from = g.fireProjectile(this, kind);
+    if (kind === "shell") g.effects.launch("shell", from, { x, y, z }, TANK.shellSpeed, this.stats.damage, TANK.blastRadius, this, TANK.vsArmour, 1.3);
+    else g.effects.launch("rocket", from, { x, y, z }, RPG.rocketSpeed, this.stats.damage, RPG.blastRadius, this, RPG.vsArmour, 0.9);
   }
 
   private throwGrenade(t: Target, g: Game) {

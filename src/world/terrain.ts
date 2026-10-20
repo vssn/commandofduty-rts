@@ -668,15 +668,35 @@ export class Terrain {
    * draws road, kerb and verge edges crisp and straight at any angle.
    */
   bakeSurfaces(res = 1024): SurfaceMaps {
-    const half = MAP_HALF + 12, step = (half * 2) / res;
-    const decal = new Uint8Array(res * res * 4), kind = new Uint8Array(res * res * 4), roads = new Uint8Array(res * res * 4);
-    // the escarpments' rubble: the signed distance to its edge (r, as for the roads) and how brown it is (g)
-    const scree = new Uint8Array(res * res * 4);
+    const maps = this.surfaceMaps(res);
+    this.bakeSurfaceRows(maps, 0, res);
+    return maps;
+  }
+
+  /** The same, baked a slice of rows at a time (`pause` between slices): ahead of time, without a stall. */
+  async bakeSurfacesAsync(pause: () => Promise<unknown>, res = 1024, rows = 32): Promise<SurfaceMaps> {
+    const maps = this.surfaceMaps(res);
+    for (let j = 0; j < res; j += rows) {
+      this.bakeSurfaceRows(maps, j, Math.min(res, j + rows));
+      await pause();
+    }
+    return maps;
+  }
+
+  private surfaceMaps(res: number): SurfaceMaps {
+    const half = MAP_HALF + 12;
+    // (scree: the escarpments' rubble - the signed distance to its edge (r, as for the roads) and how brown it is (g))
+    return { res, half, decal: new Uint8Array(res * res * 4), kind: new Uint8Array(res * res * 4), roads: new Uint8Array(res * res * 4), scree: new Uint8Array(res * res * 4) };
+  }
+
+  private bakeSurfaceRows(maps: SurfaceMaps, j0: number, j1: number) {
+    const { res, half, decal, kind, roads, scree } = maps;
+    const step = (half * 2) / res;
     const hasScarps = this.layout.scarps.list.length > 0;
     const encScree = (d: number) => Math.round(Math.min(1, Math.max(0, d / SCREE_RANGE * 0.5 + 0.5)) * 255);
     const enc = (d: number) => Math.round(Math.min(1, Math.max(0, d / ROAD_RANGE * 0.5 + 0.5)) * 255);
     const d: RGB = [0, 0, 0];
-    for (let j = 0; j < res; j++) {
+    for (let j = j0; j < j1; j++) {
       const z = -half + (j + 0.5) * step;
       for (let i = 0; i < res; i++) {
         const x = -half + (i + 0.5) * step;
@@ -705,7 +725,6 @@ export class Terrain {
         if (this.kind > 0) kind[o + this.kind - 1] = 255;
       }
     }
-    return { res, half, decal, kind, roads, scree };
   }
 
   /**

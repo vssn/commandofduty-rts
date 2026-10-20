@@ -47,11 +47,18 @@ export class EnemyAI {
     const guns = all.filter((u) => u.hasMg && u.buildT <= 0);
     const soldiers = mine.filter((u) => !u.isVehicle);
     const jeeps = mine.filter((u) => u.type === "jeep");
+    const tanks = mine.filter((u) => u.type === "tank");
 
-    if (b.production.queue.length === 0 && soldiers.length < 16) g.queueUnit(Math.random() < 0.3 ? "grenadier" : "rifleman", this.team);
+    // riflemen with some grenadiers, and RPG gunners once the player fields vehicles
+    const foeVehicles = g.units.some((u) => u.alive && u.team === this.foe && u.isVehicle && !u.isStructure) || g.units.some((u) => u.alive && u.team === this.foe && u.type === "mgnest");
+    if (b.production.queue.length === 0 && soldiers.length < 16) {
+      const roll = Math.random();
+      g.queueUnit(roll < (foeVehicles ? 0.25 : 0.08) ? "rpg" : roll < 0.4 ? "grenadier" : "rifleman", this.team);
+    }
     const workshop = g.workshopOf(this.team);
-    if (workshop && workshop.production!.queue.length === 0 && jeeps.length < 2 && g.credits[this.team] >= UNITS.jeep.cost + 150) {
-      g.queueUnit("jeep", this.team);
+    if (workshop && workshop.production!.queue.length === 0) {
+      if (jeeps.length < 2 && g.credits[this.team] >= UNITS.jeep.cost + 150) g.queueUnit("jeep", this.team);
+      else if (tanks.length < 2 && g.credits[this.team] >= UNITS.tank.cost + 300) g.queueUnit("tank", this.team);
     }
     const hospital = g.hospitalOf(this.team);
     const medics = mine.filter((u) => u.type === "medic");

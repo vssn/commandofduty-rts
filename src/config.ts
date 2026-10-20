@@ -13,7 +13,7 @@ export type Team = 0 | 1;
 export const PLAYER: Team = 0;
 export const ENEMY: Team = 1;
 
-export type UnitType = "rifleman" | "grenadier" | "jeep" | "agent" | "medic" | "drone" | "pilot" | StructureType;
+export type UnitType = "rifleman" | "grenadier" | "rpg" | "jeep" | "tank" | "agent" | "medic" | "drone" | "pilot" | StructureType;
 /** Buildable defences (conquest): they share the unit machinery (targeting, damage, MG, gunner) but never move. */
 export type StructureType = "mgnest" | "bollard";
 
@@ -49,9 +49,25 @@ export const UNITS: Record<UnitType, UnitStats> = {
     name: "Grenadier", plural: "Grenadiere", cost: 150, buildTime: 5, hp: 90, speed: 4.2, turn: 11,
     range: 13, acquire: 16, damage: 55, cooldown: 3.6, radius: 0.55, vehicle: false, mass: 1,
   },
+  /**
+   * Soldier with a rocket launcher: long reach and heavy damage against vehicles and structures (see RPG), but
+   * short sight of his own - the long shots need others (soldiers, outposts) to spot for him.
+   */
+  rpg: {
+    name: "RPG-Schütze", plural: "RPG-Schützen", cost: 200, buildTime: 6, hp: 90, speed: 4.2, turn: 10,
+    range: 28, acquire: 28, damage: 30, cooldown: 4.5, radius: 0.55, vehicle: false, mass: 1,
+  },
   jeep: {
     name: "Geländewagen", plural: "Geländewagen", cost: 400, buildTime: 8, hp: 360, speed: 9, turn: 2.6,
     range: 15, acquire: 17, damage: 13, cooldown: 0.12, radius: 1.8, vehicle: true, mass: 8,
+  },
+  /**
+   * Tank: a gun in a turning turret, heavy armour (see TANK), a little more sight than a soldier. As slow as the
+   * infantry, but slopes do not slow it down. Built at a workshop.
+   */
+  tank: {
+    name: "Panzer", plural: "Panzer", cost: 800, buildTime: 14, hp: 1100, speed: 4.4, turn: 1.6,
+    range: 17, acquire: 19, damage: 60, cooldown: 3.0, radius: 2.2, vehicle: true, mass: 30,
   },
   /** Unarmed; heals one wounded soldier at a time (see MEDIC). Built at a field hospital. */
   medic: {
@@ -226,7 +242,7 @@ export const ARTILLERY = {
 };
 
 /** How far units and structures of the player can see (fog of war). */
-export const SIGHT = { rifleman: 18, grenadier: 17, medic: 16, jeep: 21, agent: 26, mgnest: 19, bollard: 3, drone: 15, pilot: 10, barracks: 20, outpost: 13 };
+export const SIGHT = { rifleman: 18, grenadier: 17, rpg: 11, medic: 16, jeep: 21, tank: 23, agent: 26, mgnest: 19, bollard: 3, drone: 15, pilot: 10, barracks: 20, outpost: 13 };
 
 /** Grenades: area damage that also hurts friendly units (and the thrower) inside the blast. */
 export const GRENADE = {
@@ -240,6 +256,34 @@ export const GRENADE = {
 };
 
 /** Jeep machine gun: fires in bursts and partly ignores cover and stance bonuses. */
+/**
+ * The tank's gun: high-explosive shells that burst where they land (a miss lands a few metres off), hurting
+ * everything around; armour against small arms and blasts.
+ */
+export const TANK = {
+  /** Turret turn rate in rad/s. */
+  turretTurn: 1.4,
+  /** Shell speed (m/s) and blast radius. */
+  shellSpeed: 140,
+  blastRadius: 2.6,
+  /** Damage factor of a shell against vehicles, structures and buildings. */
+  vsArmour: 1.6,
+  /** Share of damage it takes from rifles, machine guns and from blasts (grenades, artillery, other shells). */
+  rifle: 0.12,
+  mg: 0.3,
+  blast: 0.4,
+};
+
+/**
+ * The RPG's rocket: flies visibly with a smoke trail and bursts on impact, small blast; against vehicles,
+ * structures and buildings it does `vsArmour` times its damage (and pierces the tank's armour).
+ */
+export const RPG = {
+  rocketSpeed: 55,
+  blastRadius: 1.4,
+  vsArmour: 5,
+};
+
 export const JEEP_MG = {
   burst: 7,
   burstPause: 1.3,

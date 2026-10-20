@@ -4,7 +4,7 @@ import {
 } from "@babylonjs/core";
 import { PLAYER, type UnitType } from "../config";
 import {
-  createBollardMesh, createChargeMesh, createJeepBody, createJeepGun, createMgNestMesh, createPennant, NEST_DIM, createJeepWheel, createSoldierTemplates, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y,
+  createBollardMesh, createChargeMesh, createJeepBody, createJeepGun, createMgNestMesh, createPennant, NEST_DIM, createJeepWheel, createSoldierTemplates, createTankHull, createTankTurret, HIP_X, HIP_Y, JEEP_DIM, SHOULDER_Y, TANK_DIM,
   type SoldierTemplates,
 } from "../world/models";
 import { buildLeg, buildUpper } from "../game/views";
@@ -109,6 +109,13 @@ export async function renderPortraits(engine: Engine): Promise<PortraitImages> {
   result.grenadier = await shoot(new Vector3(-0.75, 2.25, 2.5), new Vector3(0.12, 2.18, 0), 0.8);
   node.dispose();
 
+  // RPG gunner: from the front left, the launcher on his shoulder pointing past the camera
+  const rpg = createSoldierTemplates(scene, PLAYER, "rpg");
+  node = soldier(scene, rpg);
+  node.rotation.y = -0.55;
+  result.rpg = await shoot(new Vector3(0.6, 2.25, 2.6), new Vector3(0.15, 2.0, 0), 0.82);
+  node.dispose();
+
   // medic: turned so the red cross on helmet, armband and satchel shows
   const medic = createSoldierTemplates(scene, PLAYER, "medic");
   node = soldier(scene, medic);
@@ -140,6 +147,20 @@ export async function renderPortraits(engine: Engine): Promise<PortraitImages> {
   driver.position.set(D.driver.x, D.bedY + 0.42 - HIP_Y, D.driver.z);
   jeep.rotation.y = Math.PI + 0.6;
   result.jeep = await shoot(new Vector3(-2.2, 2.4, -7.4), new Vector3(0.1, 1.35, 0), 0.6);
+
+  // tank: low front three-quarter view, the turret turned a little towards the camera
+  jeep.setEnabled(false);
+  const tank = new TransformNode("portraitTank", scene);
+  createTankHull(scene, PLAYER).createInstance("hull").parent = tank;
+  const tankTurret = new TransformNode("tankTurret", scene);
+  tankTurret.parent = tank;
+  tankTurret.position.set(0, TANK_DIM.turret.y, TANK_DIM.turret.z);
+  tankTurret.rotation.y = -0.35;
+  createTankTurret(scene, PLAYER).createInstance("turret").parent = tankTurret;
+  tank.rotation.y = Math.PI + 0.65;
+  result.tank = await shoot(new Vector3(-4.2, 3.4, -10.5), new Vector3(0.2, 1.3, 0), 0.62);
+  tank.dispose(false, true);
+  jeep.setEnabled(true);
 
   // demolition charge: close-up of the bundle strapped to the jeep's bonnet, lamp glowing
   jeep.rotation.y = 0;

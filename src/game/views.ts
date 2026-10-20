@@ -1,5 +1,5 @@
 import { TransformNode, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import { DRONE_DIM, HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, PILOT_CASE_Z, SHOULDER_Y, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
+import { DRONE_DIM, HIP_X, HIP_Y, JEEP_DIM, KNEE, NEST_DIM, PILOT_CASE_Z, SHOULDER_Y, TANK_DIM, THROW_SHOULDER, type SoldierTemplates } from "../world/models";
 import type { Terrain } from "../world/terrain";
 import { smoothstep } from "../util/noise";
 import type { Unit } from "./unit";
@@ -65,6 +65,7 @@ export function buildLeg(tpl: SoldierTemplates, parent: TransformNode, x: number
   return { thigh, shin };
 }
 export interface JeepTemplates { body: Mesh; wheel: Mesh; gun: Mesh; crew: SoldierTemplates }
+export interface TankTemplates { hull: Mesh; turret: Mesh }
 export interface NestTemplates { body: Mesh; gun: Mesh; crew: SoldierTemplates; pennants: [Mesh, Mesh] }
 
 /** Visual representation of a unit; all animation lives here, the Unit only holds game state. */
@@ -535,6 +536,65 @@ export class JeepView implements UnitView {
     this.root.rotation.set(-0.3 * tip, u.heading + tip * 0.6, tip * 1.3);
     this.root.position.y = u.y + hop - (t > 3 ? (t - 3) * 0.5 : 0);
     this.gunner.setEnabled(false);
+  }
+}
+
+/**
+ * Tank: the hull follows the ground under its tracks (pitch and roll), the turret turns on its own towards the
+ * target, the gun recoils when it fires; destroyed, it burns out where it stands (the turret knocked askew).
+ */
+export class TankView implements UnitView {
+  readonly root: TransformNode;
+  private readonly turret: TransformNode;
+  private readonly gun: InstancedMesh;
+  private readonly shadow: BlobShadow;
+  private lean = 0;
+
+  constructor(scene: Scene, tpl: TankTemplates, name: string, blob: Mesh) {
+    this.root = new TransformNode(name, scene);
+    this.shadow = new BlobShadow(blob);
+    const hull = tpl.hull.createInstance("tankHull");
+    hull.parent = this.root;
+    hull.isPickable = false;
+    this.turret = new TransformNode("tankTurret", scene);
+    this.turret.parent = this.root;
+    this.turret.position.set(0, TANK_DIM.turret.y, TANK_DIM.turret.z);
+    this.gun = tpl.turret.createInstance("tankGun");
+    this.gun.parent = this.turret;
+    this.gun.isPickable = false;
+  }
+
+  sync(u: Unit, dt: number, moved: number, terrain: Terrain) {
+    const D = TANK_DIM, l = D.length / 2 - 0.6;
+    const sh = Math.sin(u.heading), ch = Math.cos(u.heading);
+    // the tracks bridge small bumps: the hull rests on the ground under their ends
+    const hF = terrain.heightAt(u.x + sh * l, u.z + ch * l), hB = terrain.heightAt(u.x - sh * l, u.z - ch * l);
+    const hL = terrain.heightAt(u.x - ch * D.trackX, u.z + sh * D.trackX), hR = terrain.heightAt(u.x + ch * D.trackX, u.z - sh * D.trackX);
+    // it rocks back a little as it pulls away and when the gun fires
+    this.lean += ((moved > 0.001 ? 0.015 : 0) + u.recoil * 0.05 - this.lean) * Math.min(1, dt * 5);
+    this.root.position.set(u.x, (hF + hB + hL + hR) / 4, u.z);
+    this.root.rotation.set(Math.atan2(hB - hF, l * 2) - this.lean, u.heading, Math.atan2(hR - hL, D.trackX * 2));
+    this.turret.rotation.y = u.turret - u.heading;
+    this.gun.position.z = -u.recoil * 0.45;
+    this.shadow.place(u.x, u.y, u.z, u.heading, 2.1, 3.6);
+  }
+
+  setEnabled(on: boolean) {
+    this.root.setEnabled(on);
+    this.shadow.mesh.setEnabled(on);
+  }
+
+  dispose() {
+    this.root.dispose();
+    this.shadow.mesh.dispose();
+  }
+
+  animateDeath(u: Unit, t: number) {
+    // knocked out: a jolt, the turret thrown askew, then it sinks a little into the ground
+    const k = Math.min(1, t / 0.5);
+    this.turret.rotation.set(-0.12 * k, u.turret - u.heading + 0.5 * k, 0.15 * k);
+    this.turret.position.y = TANK_DIM.turret.y + Math.sin(Math.min(1, t / 0.6) * Math.PI) * 0.8;
+    this.root.position.y = u.y - (t > 3 ? (t - 3) * 0.35 : 0);
   }
 }
 

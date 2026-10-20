@@ -196,7 +196,7 @@ export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 /** Drone pilot: how far in front of him (world units) he sets down the drone's case; the drone starts from it. */
 export const PILOT_CASE_Z = 1.95;
 
-export type SoldierVariant = "rifleman" | "grenadier" | "agent" | "medic" | "pilot";
+export type SoldierVariant = "rifleman" | "grenadier" | "rpg" | "agent" | "medic" | "pilot";
 
 export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
   const kind: SoldierVariant = variant === true ? "grenadier" : variant === false ? "rifleman" : variant;
@@ -204,6 +204,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const agent = kind === "agent";
   const medic = kind === "medic";
   const pilot = kind === "pilot";
+  const rpg = kind === "rpg";
   const player = team === PLAYER;
   const white: RGB = [0.94, 0.93, 0.88];
   const red: RGB = [0.8, 0.1, 0.08];
@@ -577,6 +578,13 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   box(0.03, 0.18, 0.016, 0.1, 0.84, -0.31, wood);
   tube(-0.2, 1.46, -0.2, 0.2, 1.46, -0.2, 0.075, 0.075, kit); // bedroll
   tube(0, 1.44, 0, 0, 1.56, 0, 0.1, 0.06, uniDark); // collar
+  if (rpg) {
+    // two spare rockets strapped upright to the pack
+    for (const x of [-0.09, 0.09]) {
+      tube(x, 1.0, -0.33, x, 1.42, -0.33, 0.045, 0.045, [0.3, 0.34, 0.2]);
+      tube(x, 1.42, -0.33, x, 1.58, -0.33, 0.07, 0.02, [0.24, 0.27, 0.17]);
+    }
+  }
   if (grenadier) {
     box(0.08, 0.72, 0.04, 0, 1.16, 0.15, [0.55, 0.47, 0.3]).rotation.z = 0.6; // bandolier
     for (const x of [-0.12, 0, 0.12]) box(0.1, 0.12, 0.08, x, 0.97, 0.16, kit);
@@ -610,6 +618,24 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     // both arms hang loosely (the view brings them forward to type)
     arm([-0.26, 1.4, 0], [-0.31, 1.12, 0.04], [-0.3, 0.9, 0.12]);
     arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
+  } else if (rpg) {
+    // rocket launcher on the right shoulder: an olive tube with a flared back end, the warhead (a long
+    // bulb with its nose cone) sticking out at the front, pistol and fore grips, a sight on the left
+    const tubeC: RGB = [0.3, 0.34, 0.2], head: RGB = [0.24, 0.27, 0.17];
+    const y = 1.37, x = 0.13;
+    tube(x, y, -0.5, x, y, 0.62, 0.055, 0.055, tubeC);
+    tube(x, y, -0.62, x, y, -0.5, 0.08, 0.06, metal); // flared back end
+    tube(x, y, -0.12, x, y, 0.06, 0.075, 0.075, wood); // heat shield
+    tube(x, y, 0.62, x, y, 0.7, 0.04, 0.05, metal);
+    tube(x, y, 0.7, x, y, 0.82, 0.05, 0.1, head); // warhead
+    tube(x, y, 0.82, x, y, 0.96, 0.1, 0.075, head);
+    tube(x, y, 0.96, x, y, 1.1, 0.075, 0.02, head); // nose
+    box(0.04, 0.14, 0.05, x, y - 0.11, 0.18, metal); // pistol grip
+    box(0.035, 0.12, 0.04, x, y - 0.1, 0.42, metal); // fore grip
+    box(0.04, 0.09, 0.06, x - 0.07, y + 0.04, 0.3, metal); // sight
+    tube(0.1, 1.17, 0.0, x, y - 0.04, -0.3, 0.012, 0.012, webbing); // sling
+    arm([0.26, 1.4, 0], [0.27, 1.16, 0.06], [x, y - 0.17, 0.18]);
+    arm([-0.26, 1.4, 0], [-0.17, 1.19, 0.26], [x - 0.02, y - 0.15, 0.42]);
   } else {
     // rifle held at the ready: wooden stock, receiver, magazine, handguard, barrel
     box(0.07, 0.12, 0.38, 0.1, 1.2, 0.14, wood);
@@ -627,7 +653,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     arm([0.26, 1.4, 0], [0.25, 1.12, 0.03], [0.12, 1.17, 0.2]);
     arm([-0.26, 1.4, 0], [-0.2, 1.17, 0.28], [0.05, 1.19, 0.58]);
   }
-  const suffix = grenadier ? "g" : medic ? "m" : pilot ? "p" : "";
+  const suffix = grenadier ? "g" : medic ? "m" : pilot ? "p" : rpg ? "r" : "";
   const arms = shoulderPart(`soldierArms${team}${suffix}`);
   let throwArm: Mesh | undefined;
   if (grenadier || medic) {
@@ -1305,6 +1331,150 @@ export function createJeepWheel(scene: Scene): Mesh {
   const m = merge("jeepWheel", [tyre, hub, ...extra]);
   m.rotation.z = Math.PI / 2;
   m.bakeCurrentTransformIntoVertices();
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+export const TANK_DIM = {
+  /** Pivot of the turret on the hull (y) and its offset towards the back (z). */
+  turret: { y: 1.45, z: -0.3 },
+  /** Gun: height over the turret pivot and length of the barrel from it (muzzle). */
+  gunY: 0.42,
+  barrel: 4.9,
+  /** Track half spacing and road wheel radius. */
+  trackX: 1.45,
+  wheelR: 0.42,
+  length: 6.4,
+};
+
+/** Tank hull with tracks and road wheels (front +z); team colours on the glacis and the sides. */
+export function createTankHull(scene: Scene, team: Team): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const D = TANK_DIM;
+  const olive: RGB = team === PLAYER ? [0.33, 0.38, 0.26] : [0.4, 0.36, 0.26];
+  const shade: RGB = team === PLAYER ? [0.27, 0.31, 0.21] : [0.33, 0.29, 0.21];
+  const dark: RGB = [0.12, 0.12, 0.11];
+  const steel: RGB = [0.24, 0.24, 0.23];
+  const teamC = TEAM_COLOR[team];
+  const L = D.length;
+  // tracks: a long belt on each side with its teeth, sprocket and idler, road wheels between
+  for (const sx of [-1, 1]) {
+    const x = sx * D.trackX;
+    box(0.62, 0.16, L - 0.6, x, 0.08, 0, dark); // lower run
+    box(0.62, 0.12, L - 1.2, x, 1.02, 0, dark); // upper run
+    for (const [z, y, rx] of [[L / 2 - 0.42, 0.42, 0.8], [-L / 2 + 0.42, 0.42, -0.8]] as [number, number, number][]) {
+      box(0.62, 0.95, 0.16, x, y + 0.08, z + Math.sign(z) * 0.12, dark, rx); // belt round the ends
+    }
+    for (let i = 0; i < 26; i++) box(0.64, 0.05, 0.08, x, 0.0, -L / 2 + 0.5 + i * ((L - 1) / 25), [0.2, 0.2, 0.19]); // grousers
+    for (let i = 0; i < 6; i++) {
+      const w = MeshBuilder.CreateCylinder("roadWheel", { height: 0.5, diameter: D.wheelR * 2, tessellation: 12 }, scene);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(x, D.wheelR + 0.06, -L / 2 + 1.05 + i * ((L - 2.1) / 5));
+      w.material = mat(scene, [0.22, 0.24, 0.19], { metal: 0.3, rough: 0.6 });
+      const hub = MeshBuilder.CreateCylinder("hub", { height: 0.54, diameter: 0.22, tessellation: 8 }, scene);
+      hub.rotation.z = Math.PI / 2;
+      hub.position.copyFrom(w.position);
+      hub.material = mat(scene, steel);
+      parts.push(w, hub);
+    }
+    for (const z of [L / 2 - 0.45, -L / 2 + 0.45]) {
+      const sp = MeshBuilder.CreateCylinder("sprocket", { height: 0.46, diameter: 0.72, tessellation: 10 }, scene);
+      sp.rotation.z = Math.PI / 2;
+      sp.position.set(x, 0.55, z);
+      sp.material = mat(scene, steel);
+      parts.push(sp);
+    }
+    // track guard (fender) with a team stripe and stowage boxes on it
+    box(0.78, 0.06, L, x * 1.02, 1.16, 0, olive);
+    box(0.04, 0.32, L - 0.4, x * 1.02 + sx * 0.38, 1.0, 0, shade);
+    box(0.02, 0.12, 1.6, x * 1.02 + sx * 0.41, 1.02, -0.6, teamC);
+    box(0.6, 0.32, 0.9, x * 1.02, 1.36, -1.6, shade);
+    box(0.6, 0.26, 0.7, x * 1.02, 1.33, 1.6, shade);
+  }
+  // hull: a box between the tracks, the sloped glacis in front, the engine deck at the back
+  box(2.2, 0.95, L - 0.4, 0, 0.92, -0.1, olive);
+  box(2.2, 0.12, 1.6, 0, 1.38, L / 2 - 1.1, olive, -0.42); // glacis
+  box(2.2, 0.75, 0.12, 0, 0.75, L / 2 - 0.25, shade, -0.55); // lower front plate
+  box(2.0, 0.08, 2.2, 0, 1.43, -L / 2 + 1.4, shade); // engine deck
+  for (let i = 0; i < 5; i++) box(1.6, 0.03, 0.08, 0, 1.48, -L / 2 + 0.6 + i * 0.32, dark); // grille slats
+  box(0.9, 0.04, 0.9, 0, 1.6, L / 2 - 1.15, teamC, -0.42); // marking on the glacis
+  // driver's hatch and periscopes, headlights, towing eyes, exhausts, a spare track run on the glacis
+  box(0.6, 0.1, 0.55, -0.55, 1.5, L / 2 - 1.75, shade);
+  for (const x of [-0.75, -0.55, -0.35]) box(0.12, 0.08, 0.06, x, 1.56, L / 2 - 1.48, [0.35, 0.45, 0.5]);
+  for (const x of [-0.85, 0.85]) {
+    const lampM = MeshBuilder.CreateCylinder("lamp", { height: 0.12, diameter: 0.2, tessellation: 10 }, scene);
+    lampM.rotation.x = Math.PI / 2;
+    lampM.position.set(x, 1.42, L / 2 - 0.55);
+    lampM.material = mat(scene, [0.95, 0.9, 0.7]);
+    parts.push(lampM);
+    box(0.16, 0.16, 0.1, x * 0.6, 0.62, L / 2 - 0.12, steel); // towing eyes
+  }
+  for (const x of [-0.6, 0.6]) {
+    const ex = MeshBuilder.CreateCylinder("exhaust", { height: 0.35, diameter: 0.16, tessellation: 8 }, scene);
+    ex.rotation.x = Math.PI / 2;
+    ex.position.set(x, 1.15, -L / 2 + 0.05);
+    ex.material = mat(scene, [0.18, 0.15, 0.13]);
+    parts.push(ex);
+  }
+  for (let i = 0; i < 4; i++) box(0.8, 0.05, 0.16, 0.45, 1.66 + i * 0.0, L / 2 - 1.55 + i * 0.22, dark, -0.42);
+  const m = merge(`tankHull${team}`, parts);
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+/** Tank turret with its gun (origin at the pivot, barrel along +z), commander's cupola and a team band. */
+export function createTankTurret(scene: Scene, team: Team): Mesh {
+  const parts: Mesh[] = [];
+  const box = partBuilder(scene, parts);
+  const D = TANK_DIM;
+  const olive: RGB = team === PLAYER ? [0.33, 0.38, 0.26] : [0.4, 0.36, 0.26];
+  const shade: RGB = team === PLAYER ? [0.27, 0.31, 0.21] : [0.33, 0.29, 0.21];
+  const dark: RGB = [0.12, 0.12, 0.11];
+  const teamC = TEAM_COLOR[team];
+  // a low, angular turret: flat roof, sloped cheeks, a bustle at the back
+  box(2.0, 0.62, 2.3, 0, 0.31, 0.05, olive);
+  for (const sx of [-1, 1]) box(0.1, 0.55, 1.4, sx * 1.02, 0.3, 0.75, olive, 0, sx * 0.35); // cheeks
+  box(1.8, 0.5, 1.1, 0, 0.3, -1.5, shade); // bustle
+  box(1.9, 0.06, 0.6, 0, 0.3, -2.1, dark); // stowage rack
+  box(2.04, 0.12, 2.3, 0, 0.5, 0.05, teamC); // team band
+  // mantlet and gun: a thick sleeve, the long barrel with a fume extractor, the muzzle brake
+  box(0.75, 0.5, 0.35, 0, D.gunY - 0.02, 1.25, shade);
+  const tubeAlong = (z0: number, z1: number, d0: number, d1: number, c: RGB) => {
+    const t = MeshBuilder.CreateCylinder("barrel", { height: z1 - z0, diameterBottom: d0, diameterTop: d1, tessellation: 12 }, scene);
+    t.rotation.x = Math.PI / 2;
+    t.position.set(0, D.gunY, (z0 + z1) / 2);
+    t.material = mat(scene, c, { metal: 0.35, rough: 0.5 });
+    parts.push(t);
+  };
+  tubeAlong(1.3, D.barrel - 0.25, 0.2, 0.16, olive);
+  tubeAlong(2.6, 3.2, 0.27, 0.27, shade); // fume extractor
+  tubeAlong(D.barrel - 0.3, D.barrel, 0.28, 0.28, dark); // muzzle brake
+  // commander's cupola with a hatch and a machine gun, the loader's hatch, smoke dischargers, antennas
+  const cup = MeshBuilder.CreateCylinder("cupola", { height: 0.3, diameter: 0.7, tessellation: 12 }, scene);
+  cup.position.set(-0.45, 0.75, -0.4);
+  cup.material = mat(scene, shade);
+  parts.push(cup);
+  box(0.6, 0.06, 0.6, -0.45, 0.93, -0.4, olive);
+  box(0.08, 0.08, 0.9, -0.45, 1.0, -0.05, dark); // its MG
+  box(0.55, 0.06, 0.55, 0.5, 0.65, -0.3, shade);
+  for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const tube = MeshBuilder.CreateCylinder("smoke", { height: 0.3, diameter: 0.1, tessellation: 6 }, scene);
+    tube.rotation.x = -0.9;
+    tube.position.set(sx * (0.75 + i * 0.1), 0.62, 0.95 - i * 0.12);
+    tube.material = mat(scene, dark);
+    parts.push(tube);
+  }
+  for (const x of [-0.7, 0.75]) {
+    const ant = MeshBuilder.CreateCylinder("antenna", { height: 2.2, diameter: 0.025, tessellation: 4 }, scene);
+    ant.position.set(x, 1.7, -1.8);
+    ant.rotation.x = -0.12;
+    ant.material = mat(scene, dark);
+    parts.push(ant);
+  }
+  const m = merge(`tankTurret${team}`, parts);
   m.isPickable = false;
   m.isVisible = false;
   return m;

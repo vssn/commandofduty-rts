@@ -77,7 +77,7 @@ export class Outpost {
     this.z = spec.z;
     this.y = ground(spec.x, spec.z);
     this.rot = spec.rot;
-    this.production = spec.kind === "workshop" ? new Production(["jeep"]) : spec.kind === "hospital" ? new Production(["medic"]) : null;
+    this.production = spec.kind === "workshop" ? new Production(["jeep", "tank"]) : spec.kind === "hospital" ? new Production(["medic"]) : null;
     this.spawn = toWorld(spec.x, spec.z, spec.rot, 0, 6.5);
     this.rally = toWorld(spec.x, spec.z, spec.rot, 0, 13);
 

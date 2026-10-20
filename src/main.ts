@@ -246,8 +246,9 @@ for (const c of VOLUME_CONTROLS) {
 hud.onAudioChange = syncAudioUi;
 
 // ------------------------------------------------------------------ graphics: classic / PBR
+const realTerrain = new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout }));
 const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
-  new RealisticTerrain(scene, terrain, () => tracks.footpaths, () => ({ trees, layout })), realTrees, realCrops,
+  realTerrain, realTrees, realCrops,
   // hedges: green boxes in the classic look, dense shrubs here; the tall grass tussocks only here
   { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); scarpRocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); scarpRocks.setRealistic(false); } },
   // the power station's coal: piled cubes in the classic look, lumpy mounds here
@@ -803,7 +804,8 @@ let fpsShown = 0;
 /**
  * With the menu already showing: prepares what the realistic mode needs, one piece per frame, so
  * switching to it later does not stall - the ground and surface textures (generated and decoded in
- * slices), then the detail models of the outposts, the bases and the vehicles (built, but hidden).
+ * slices), then the detail models of the outposts, the bases and the vehicles (built, but hidden), and the PBR copies
+ * of the materials.
  */
 async function prewarmRealistic() {
   await tick();
@@ -822,6 +824,9 @@ async function prewarmRealistic() {
   await tick();
   props.setDetail(true);
   props.setDetail(pbr.active);
+  // the realistic ground's surface maps and the PBR copies of all materials in use (a slice per frame)
+  await realTerrain.prepare(tick);
+  await pbr.prepare(tick);
 }
 let pageShown = false, framesDrawn = 0;
 const showPage = () => {

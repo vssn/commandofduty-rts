@@ -132,7 +132,13 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   und in den Gärten; im realistischen Modus Asphalt, Pflaster, Kies und Gras aus denselben Masken.
 
 „Grafik“ (Einstellungen und Pausenmenü, wird gespeichert) schaltet live zwischen **Klassisch** und **Realistisch (PBR)** um
-(`src/world/pbr.ts`). Im PBR-Modus werden alle beleuchteten Materialien durch gleichwertige, physikalisch basierte
+(`src/world/pbr.ts`). **Schneller Wechsel:** Was der PBR-Modus braucht, wird schon im Hauptmenü vorbereitet, eine Portion pro Bild –
+Geländetexturen, Detailmodelle, die Oberflächenkarten des realistischen Geländes (1024², in Streifen von 32 Zeilen) und die
+PBR-Kopien aller Materialien. Beim Umschalten werden sie nur noch zugewiesen; die PBR-Materialien und das Geländematerial
+bleiben auch beim Zurückschalten erhalten (ihre Shader sind dann schon kompiliert). Die vielen Einzeländerungen an
+Bildbearbeitung, Schatten und Materialien lösen dabei nur eine gemeinsame Neuprüfung aus statt einer je Änderung. Abstands-
+abfragen zu Felswänden und Wegen (für jeden Texel der Oberflächenkarten) nutzen ein Raster aus 8-m-Zellen. Der erste Wechsel
+dauert so rund 0,4 s statt 2,5 s, jeder weitere rund 0,3 s. Im PBR-Modus werden alle beleuchteten Materialien durch gleichwertige, physikalisch basierte
 Materialien ersetzt (matt, nicht metallisch; Farbe und Textur werden übernommen), Eckpunkt- und Instanzfarben in den
 linearen Farbraum umgerechnet, und am Tag liefert Babylons physikalische Atmosphäre (`@babylonjs/addons`) Sonnenfarbe,
 Himmelslicht und Luftperspektive – der eigene Distanz-Dunst ist dann aus. In der Commandos-Nacht bleibt die Atmosphäre
@@ -350,7 +356,9 @@ Masten am Rand ihres Bereichs Flaggen in der Farbe des Besitzers; beim Besitzerw
 | --- | --- | --- | --- |
 | Soldat | 100 | Kaserne (Q) | Gewehr, kniet/liegt im Gefecht |
 | Grenadier | 150 | Kaserne (W) | wirft Granaten mit Streuung; Explosion (Radius 3,2) trifft **alle** Einheiten, auch eigene |
+| RPG-Schütze | 200 | Kaserne (T) | Raketenwerfer: Reichweite 28, aber nur 11 eigene Sicht; fünffacher Schaden gegen Fahrzeuge, MG-Nester und Kaserne |
 | Geländewagen | 400 | Werkstatt (E) | schnell, gepanzert (Gewehre machen halben Schaden); Fahrer ist immer an Bord |
+| Panzer | 800 | Werkstatt (P) | Kanone im drehbaren Turm, schwer gepanzert, Sicht 23; so langsam wie ein Soldat, bergauf aber nicht langsamer; überrollt gegnerische Infanterie |
 | Sanitäter | 150 | Feldlazarett (R) | unbewaffnet, etwas langsamer als ein Soldat; behandelt einen Verwundeten nach dem anderen |
 
 Das **Feldlazarett** ist die linke Stellung nahe der eigenen Basis (Zelt mit rotem Kreuz, Tragen, Sanitätskisten); wer
@@ -361,8 +369,23 @@ per Rechtsklick auf einen verwundeten eigenen Soldaten (Kreuz-Cursor) schickt ma
 werden nicht behandelt, Sanitäter steigen nicht als Schütze auf. Wer gerade behandelt wird, zeigt ein pulsierendes
 rotes Kreuz neben der Lebensleiste.
 
+Der **RPG-Schütze** trägt einen Raketenwerfer auf der Schulter (zwei Ersatzraketen am Rucksack). Die Rakete fliegt
+sichtbar mit Rauchspur und platzt beim Einschlag (Radius 1,4): gegen Infanterie mäßig (30), gegen Fahrzeuge, MG-Nester
+und die Kaserne fünffach (150), sie durchschlägt auch die Panzerung. Er schießt bis 28 weit, sieht selbst aber nur 11:
+Lange Schüsse gehen nur auf Ziele, die andere aufklären – eigene Soldaten, Fahrzeuge oder gehaltene Stellungen (auch die
+RPG-Schützen des Gegners brauchen einen Späher ihrer Seite). Nachladen 4,5 s.
+
+Der **Panzer** (Werkstatt) richtet seinen Turm selbst aufs Ziel (langsamer als das MG des Jeeps) und feuert alle 3 s
+eine Sprenggranate: Sie fliegt in flachem Bogen und platzt im Ziel (Radius 2,6, 60 Schaden, gegen Fahrzeuge und
+Gebäude ×1,6); ein Fehlschuss schlägt einige Meter daneben ein. Er braucht keinen Schützen. Gewehre richten an ihm
+nur 12 % aus, MGs 30 %, Granaten, Artillerie und andere Explosionen 40 % – RPGs und Panzergranaten dagegen voll. Er fährt
+so schnell wie ein Soldat läuft, wird bergauf aber nicht langsamer, auf Wegen etwas schneller. Zerstört brennt er aus.
+In Fahrt **überrollt** er gegnerische Infanterie, die unter Wanne und Ketten gerät (vor oder hinter ihm; wer seitlich neben
+den Ketten steht, wird nur weggedrückt, ebenso eigene Soldaten; auf Stegen ist man außer Reichweite).
+Die KI baut RPG-Schützen vor allem, sobald der Spieler Fahrzeuge oder MG-Nester hat, und Panzer, wenn das Geld reicht.
+
 Neben jeder Basis steht eine **Werkstatt**, die wie jede andere Stellung eingenommen wird. Nur wer sie hält, kann
-Geländewagen bauen. Ein Jeep schießt erst, wenn ihm ein Soldat zugewiesen wird (Soldaten auswählen, Rechtsklick auf den
+Geländewagen und Panzer bauen. Ein Jeep schießt erst, wenn ihm ein Soldat zugewiesen wird (Soldaten auswählen, Rechtsklick auf den
 eigenen Jeep): der nächststehende steigt auf und bedient das MG hinten. Das MG feuert in Stößen, auch während der Fahrt,
 und ignoriert die Hälfte der Deckungs-/Haltungsboni. Der Schütze kann nicht mehr aussteigen; erst wenn der Jeep zerstört
 wird, springt er ab und ist wieder ein normaler Soldat.
@@ -390,7 +413,7 @@ das Gelände die Sicht des angrenzenden Kartenrands (leicht abgedunkelt). Nach S
 in einen tiefen Graben ab (zerklüftete Kante mit Buchten, Ausläufern und Absätzen, dunstiger Grund), dessen Gegenseite
 wieder als hohe Felswand zu einem bewaldeten Plateau ansteigt – so sieht man nie über das Gelände hinaus; im Norden
 steigt eine Bergwand mit Schneefeldern auf; gegnerische Einheiten sind nur im aktuellen
-Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 Einheiten weit, der Geländewagen 21.
+Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 Einheiten weit, der RPG-Schütze nur 11, der Geländewagen 21, der Panzer 23.
 Die Sicht ist höhenabhängig: Jeder Sichtstrahl merkt sich den steilsten „Horizont“ (Hügelkamm, Baumkrone, Dachfirst)
 und nur was darüber hinausragt ist sichtbar. Wer oben steht, blickt über Wälder und Dörfer ins Tal, ein Hügelkamm
 verdeckt dagegen, was dahinter liegt; Einheiten auf Anhöhen sehen außerdem weiter (bis +12, „Weitsicht“ in der

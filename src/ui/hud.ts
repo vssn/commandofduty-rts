@@ -104,7 +104,7 @@ export class Hud {
       });
       return { type, btn, badge: btn.querySelector<HTMLElement>(".badge")!, count: -1, p: -1 };
     });
-    const hotkeys: Record<string, UnitType> = { q: "rifleman", w: "grenadier", e: "jeep", r: "medic" };
+    const hotkeys: Record<string, UnitType> = { q: "rifleman", w: "grenadier", t: "rpg", e: "jeep", p: "tank", r: "medic" };
     window.addEventListener("keydown", (e) => {
       const type = hotkeys[e.key.toLowerCase()];
       if (type && this.enabled && !game.result && !e.ctrlKey && !e.metaKey) this.train(type, e.shiftKey ? 5 : 1);
@@ -141,7 +141,7 @@ export class Hud {
   private train(type: UnitType, count: number) {
     if (!this.game.producerFor(type, PLAYER)) {
       const city = this.game.layout.map === "embassy";
-      if (type === "jeep") this.toast(city ? "Zuerst eine Tiefgarage einnehmen" : "Zuerst eine Werkstatt einnehmen");
+      if (type === "jeep" || type === "tank") this.toast(city ? "Zuerst eine Tiefgarage einnehmen" : "Zuerst eine Werkstatt einnehmen");
       if (type === "medic") this.toast(city ? "Zuerst die Apotheke einnehmen" : "Zuerst das Feldlazarett einnehmen");
       return;
     }
@@ -472,7 +472,7 @@ export class Hud {
     if (g.selection.size) {
       const units = [...g.selection];
       const hp = (units.reduce((s, u) => s + u.hp / u.maxHp, 0) / units.length) * 100;
-      const byType = (["agent", "rifleman", "grenadier", "medic", "jeep", "mgnest", "bollard"] as UnitType[])
+      const byType = (["agent", "rifleman", "grenadier", "rpg", "medic", "jeep", "tank", "mgnest", "bollard"] as UnitType[])
         .map((t) => [t, units.filter((u) => u.type === t)] as const)
         .filter(([, list]) => list.length);
       const title = byType.map(([t, list]) => `${list.length} ${list.length === 1 ? UNITS[t].name : UNITS[t].plural}`).join(", ");

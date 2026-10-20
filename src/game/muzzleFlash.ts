@@ -13,6 +13,8 @@ const SIZE: Record<WeaponKind, { glow: number; ground: number; alpha: number }> 
   rifle: { glow: 1.5, ground: 5, alpha: 0.5 },
   mg: { glow: 2.1, ground: 7, alpha: 0.6 },
   sniper: { glow: 2.6, ground: 10, alpha: 0.7 },
+  shell: { glow: 4.2, ground: 14, alpha: 0.9 },
+  rocket: { glow: 2.4, ground: 8, alpha: 0.6 },
 };
 
 interface Slot { glow: Mesh; ground: Mesh; glowMat: StandardMaterial; groundMat: StandardMaterial; t: number; peak: { glow: number; ground: number; alpha: number } }

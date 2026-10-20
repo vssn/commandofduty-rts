@@ -144,7 +144,9 @@ export class AudioSystem {
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
 
-    game.onShot = (x, z, kind) => !this.quiet && (kind === "sniper" ? this.sniperShot(x, z) : this.shot(x, z, kind === "mg"));
+    // (the tank's gun: a short, deep blast; the RPG: the hiss of the rocket leaving the tube)
+    game.onShot = (x, z, kind) => !this.quiet && (kind === "sniper" ? this.sniperShot(x, z) : kind === "shell" ? this.explosion(x, z, 0.7)
+      : kind === "rocket" ? this.whoosh(x, z) : this.shot(x, z, kind === "mg"));
     game.onThrow = (x, z) => !this.quiet && this.whoosh(x, z);
     game.onArmourShot = (x, z, hit, delay) => !this.quiet && (hit ? this.metalHit(x, z, delay) : this.whiz(x, z, delay));
     game.effects.onExplosion = (x, z, size) => !this.quiet && this.explosion(x, z, size);

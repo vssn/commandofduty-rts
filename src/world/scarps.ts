@@ -31,7 +31,13 @@ export interface Scarp {
   /** Bounding box, widened by the reach of the slope and its rubble. */
   box: { x0: number; x1: number; z0: number; z1: number };
   seed: number;
+  /** The pieces of the centre line near each 8 m cell of the box (see locate). */
+  grid: number[][];
+  gnx: number;
 }
+
+/** Cell size of a slope's grid of nearby centre-line pieces. */
+const GRID = 8;
 
 /** Where the rubble lies, measured across the slope from its centre line: the foot's apron and the shoulder. */
 const FOOT = 3.2, SHOULDER = 0.6;
@@ -110,13 +116,25 @@ export class ScarpSet {
         return { x: a.x + (b.x - a.x) * k - ((b.z - a.z) / l) * off, z: a.z + (b.z - a.z) * k + ((b.x - a.x) / l) * off };
       };
       const ramps = c.ramps.map(([fx, tx]) => ({ a: beside(fx, -RAMP_OFF), b: beside(tx, RAMP_OFF), drop: c.drop, w: RAMP_W }));
-      return {
-        pts, arc, total: arc[arc.length - 1], drop: c.drop, w: c.w, kind: c.kind, seed: 51 + seed, ramps,
-        box: {
-          x0: Math.min(...pts.map((p) => p.x)) - reach, x1: Math.max(...pts.map((p) => p.x)) + reach,
-          z0: Math.min(...pts.map((p) => p.z)) - reach, z1: Math.max(...pts.map((p) => p.z)) + reach,
-        },
+      const box = {
+        x0: Math.min(...pts.map((p) => p.x)) - reach, x1: Math.max(...pts.map((p) => p.x)) + reach,
+        z0: Math.min(...pts.map((p) => p.z)) - reach, z1: Math.max(...pts.map((p) => p.z)) + reach,
       };
+      // which pieces of the centre line lie within reach of each cell (a point's nearest piece, if within
+      // reach, is among them): the local queries - asked for every texel of the ground's masks - check only those
+      const gnx = Math.ceil((box.x1 - box.x0) / GRID), gnz = Math.ceil((box.z1 - box.z0) / GRID);
+      const grid: number[][] = Array.from({ length: gnx * gnz }, () => []);
+      for (let j = 0; j < gnz; j++) {
+        for (let i = 0; i < gnx; i++) {
+          const cx = box.x0 + (i + 0.5) * GRID, cz = box.z0 + (j + 0.5) * GRID;
+          for (let k = 0; k < pts.length - 1; k++) {
+            const a = pts[k], b = pts[k + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cz - a.z) * dz) / l2));
+            if (Math.hypot(cx - a.x - dx * t, cz - a.z - dz * t) <= reach + GRID * 0.71) grid[i + j * gnx].push(k);
+          }
+        }
+      }
+      return { pts, arc, total: arc[arc.length - 1], drop: c.drop, w: c.w, kind: c.kind, seed: 51 + seed, ramps, box, grid, gnx };
     });
   }
 
@@ -151,7 +169,11 @@ export class ScarpSet {
     if (local && (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1)) return null;
     let best = Infinity, side = 1, t = 0;
     const P = sc.pts;
-    for (let i = 0; i < P.length - 1; i++) {
+    const pieces = local ? sc.grid[Math.min(sc.gnx - 1, Math.floor((x - b.x0) / GRID)) + Math.floor((z - b.z0) / GRID) * sc.gnx] : null;
+    if (pieces && !pieces.length) return null;
+    const n = pieces ? pieces.length : P.length - 1;
+    for (let q = 0; q < n; q++) {
+      const i = pieces ? pieces[q] : q;
       const a = P[i], c = P[i + 1];
       const dx = c.x - a.x, dz = c.z - a.z, l2 = dx * dx + dz * dz || 1;
       const k = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / l2));

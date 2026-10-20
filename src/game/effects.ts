@@ -1,5 +1,5 @@
 import { Mesh, VertexData, type AbstractMesh, type InstancedMesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { GRENADE, UNITS } from "../config";
+import { GRENADE, TANK, UNITS } from "../config";
 import { createExplosionTemplates, createGrenadeTemplate, type ExplosionTemplates } from "../world/models";
 import { RealisticBlasts } from "./blastFx";
 import type { Game } from "./game";
@@ -21,6 +21,29 @@ interface Grenade {
   sx: number; sy: number; sz: number; ty: number; apex: number;
   mesh: InstancedMesh | null;
 }
+
+/**
+ * A tank shell or a rocket in flight: from the muzzle to its point of impact (the target, or beside it for a
+ * miss), where it bursts. `vs`: damage factor against vehicles, structures and buildings; both pierce the
+ * tank's armour.
+ */
+interface Projectile {
+  kind: "shell" | "rocket";
+  mesh: InstancedMesh;
+  sx: number; sy: number; sz: number;
+  tx: number; ty: number; tz: number;
+  t: number;
+  flight: number;
+  damage: number;
+  radius: number;
+  vs: number;
+  size: number;
+  by: Unit | null;
+  trailT: number;
+}
+
+/** How an explosion treats armour: `vs` multiplies the damage to vehicles, structures and buildings; `pierce` hits a tank in full. */
+export interface BlastArmour { vs: number; pierce: boolean }
 
 type PuffKind = "flash" | "smoke" | "debris" | "spark" | "ring" | "dust";
 
@@ -51,6 +74,7 @@ export class Effects {
   private readonly grenadeTpl: Mesh;
   private readonly tpl: ExplosionTemplates;
   private readonly grenades: Grenade[] = [];
+  private readonly projectiles: Projectile[] = [];
   private readonly puffs: Puff[] = [];
   private readonly scorches: Scorch[] = [];
   /** Particle explosions of the realistic graphics mode (switched on by the PBR mode). */
@@ -61,6 +85,8 @@ export class Effects {
   /** Removes every grenade, explosion piece and scorch mark (new game). */
   clear() {
     for (const gr of this.grenades) gr.mesh?.dispose();
+    for (const p of this.projectiles) p.mesh.dispose();
+    this.projectiles.length = 0;
     for (const p of this.puffs) p.mesh.dispose();
     for (const s of this.scorches) s.mesh.dispose();
     this.grenades.length = this.puffs.length = this.scorches.length = 0;
@@ -84,11 +110,27 @@ export class Effects {
   }
 
   /**
+   * Fires a tank shell or a rocket from `from` to `to` (speed in m/s); it bursts there (see explode). Shells fly
+   * fast in a flat arc, rockets straight and slower, trailing smoke.
+   */
+  launch(kind: "shell" | "rocket", from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number },
+    speed: number, damage: number, radius: number, by: Unit | null, vs: number, size: number) {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+    const mesh = this.grenadeTpl.createInstance(kind);
+    mesh.isPickable = false;
+    if (kind === "shell") mesh.scaling.set(0.5, 0.5, 0.9);
+    else mesh.scaling.set(0.42, 0.42, 1.7);
+    mesh.position.set(from.x, from.y, from.z);
+    this.projectiles.push({ kind, mesh, sx: from.x, sy: from.y, sz: from.z, tx: to.x, ty: to.y, tz: to.z, t: 0, flight: Math.max(0.05, dist / speed), damage, radius, vs, size, by, trailT: 0 });
+  }
+
+  /**
    * Blast at (x, z): damages every unit in range, friend or foe, plus buildings. `y`: its height where
    * that is not the ground (on a walkway); then only what is at that height is hit, the walkway's slab
-   * shields those under it (and the other way round).
+   * shields those under it (and the other way round). `armour`: see BlastArmour (default: a plain blast,
+   * which the tank's armour mostly stops).
    */
-  explode(x: number, z: number, damage: number, radius: number, by: Unit | null, size = 1, y?: number) {
+  explode(x: number, z: number, damage: number, radius: number, by: Unit | null, size = 1, y?: number, armour?: BlastArmour) {
     const g = this.game;
     const at = y ?? g.terrain.heightAt(x, z);
     for (const u of g.units) {
@@ -97,10 +139,13 @@ export class Effects {
       const d = Math.hypot(u.x - x, u.z - z) - (u.isVehicle ? u.radius * 0.5 : 0);
       if (d > radius) continue;
       const falloff = 1 - 0.6 * Math.max(0, d) / radius;
-      g.damage(u, damage * falloff, by);
+      let dmg = damage * falloff;
+      if (u.isVehicle) dmg *= armour?.vs ?? 1;
+      if (u.type === "tank" && !armour?.pierce) dmg *= TANK.blast;
+      g.damage(u, dmg, by);
     }
     for (const b of g.buildings) {
-      if (b.alive && Math.hypot(b.x - x, b.z - z) - b.radius < radius) g.damage(b, damage * 0.7, by);
+      if (b.alive && Math.hypot(b.x - x, b.z - z) - b.radius < radius) g.damage(b, damage * 0.7 * (armour?.vs ?? 1), by);
     }
     this.spawnBlast(x, z, size, at);
     this.onExplosion?.(x, z, size);
@@ -256,6 +301,30 @@ export class Effects {
   update(dt: number) {
     const g = this.game;
     this.real.update(dt);
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.t += dt;
+      const k = Math.min(1, p.t / p.flight);
+      // a shell drops a little over its flight (a flat arc), a rocket flies straight
+      const arc = p.kind === "shell" ? Math.sin(k * Math.PI) * Math.min(1.2, p.flight * 4) : 0;
+      const x = p.sx + (p.tx - p.sx) * k, y = p.sy + (p.ty - p.sy) * k + arc, z = p.sz + (p.tz - p.sz) * k;
+      p.mesh.position.set(x, y, z);
+      p.mesh.rotation.y = Math.atan2(p.tx - p.sx, p.tz - p.sz);
+      p.mesh.rotation.x = -Math.atan2(p.ty - p.sy, Math.hypot(p.tx - p.sx, p.tz - p.sz));
+      if (p.kind === "rocket") {
+        // the rocket's trail: small grey puffs left behind, drifting up and thinning out
+        p.trailT -= dt;
+        if (p.trailT <= 0) {
+          p.trailT = 0.05;
+          this.add("smoke", this.tpl.smoke, x, y, z, { life: 1.3 + Math.random() * 0.6, size: 0.35 + Math.random() * 0.2, vy: 0.5 });
+        }
+      }
+      if (k >= 1) {
+        p.mesh.dispose();
+        this.projectiles.splice(i, 1);
+        this.explode(p.tx, p.tz, p.damage, p.radius, p.by && p.by.alive ? p.by : null, p.size, p.ty, { vs: p.vs, pierce: true });
+      }
+    }
     for (let i = this.grenades.length - 1; i >= 0; i--) {
       const gr = this.grenades[i];
       if (gr.delay > 0) {
