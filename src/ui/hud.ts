@@ -61,6 +61,15 @@ export class Hud {
   /** Called by the dialog's button after a game: return to the main menu. */
   onRestart: (() => void) | null = null;
 
+  // ---- build tabs (troops, vehicles, defences) and the selection tag
+  private readonly tabs = [...document.querySelectorAll<HTMLButtonElement>(".sb-tab")];
+  private readonly panes = [...document.querySelectorAll<HTMLElement>(".tab-pane")];
+  private readonly selTag = $("sel-tag");
+  private readonly selCount = this.selTag.querySelector<HTMLElement>(".sel-count")!;
+  /** The selection card was opened by a tap; where the view looked then (it closes once the view moves). */
+  private selOpen: { x: number; z: number } | null = null;
+  private lastTabBadges = "";
+
   /** Clears everything left over from a game (dialog, messages, capture tiles). */
   resetForMenu() {
     this.bannerShown = false;
@@ -84,6 +93,18 @@ export class Hud {
 
   constructor(private readonly game: Game, private readonly audio: AudioSystem) {
     this.shownCredits = game.credits[PLAYER];
+    for (const t of this.tabs) t.addEventListener("click", () => this.showTab(t.dataset.tab!));
+    // the selection tag: hovering shows the card (CSS); a tap opens it and it stays open until a tap elsewhere
+    // or the view moves
+    this.selTag.querySelector(".sel-icon")!.addEventListener("click", () => {
+      if (this.selTag.classList.contains("open")) this.closeSelection();
+      else {
+        this.selTag.classList.add("open");
+        this.selOpen = { x: NaN, z: NaN };
+      }
+    });
+    window.addEventListener("pointerdown", (e) => { if (!this.selTag.contains(e.target as Node)) this.closeSelection(); }, true);
+    window.addEventListener("wheel", () => this.closeSelection(), { passive: true });
     // audio settings live in the pause menu; the M key still switches the music on and off
     window.addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement && e.target.type === "text") return; // typing a name
@@ -138,7 +159,73 @@ export class Hud {
     $("restart").addEventListener("click", () => this.onRestart?.());
   }
 
+  /** Shows one of the build tabs ("troops", "vehicles", "defence"). */
+  showTab(name: string) {
+    for (const t of this.tabs) t.classList.toggle("active", t.dataset.tab === name);
+    for (const p of this.panes) p.hidden = p.dataset.pane !== name;
+  }
+
+  /** The tab holding a unit's build button (a hotkey for a unit on another tab brings it up). */
+  private tabOf(type: UnitType | StructureType): string | null {
+    const btn = document.querySelector(`.build-btn[data-unit="${type}"], .build-btn[data-build="${type}"]`);
+    return btn?.closest<HTMLElement>(".tab-pane")?.dataset.pane ?? null;
+  }
+
+  private closeSelection() {
+    this.selTag.classList.remove("open");
+    this.selOpen = null;
+  }
+
+  /**
+   * Puts the selection tag at the lower right corner of the selected group on screen (`project`: world to CSS pixels
+   * in the view), or hides it when nothing is selected or the group is off screen. It keeps clear of the "Powered by
+   * Netlify" badge in the lower right corner of the page (180 x 60 px). `focus`: where the view looks - a card opened
+   * by a tap closes once that moves.
+   */
+  placeSelection(project: (x: number, y: number, z: number) => { x: number; y: number } | null, focus: { x: number; z: number }) {
+    const g = this.game, units = [...g.selection].filter((u) => u.alive);
+    const b = g.selectedBuilding && g.selectedBuilding.alive ? g.selectedBuilding : null;
+    let x1 = -Infinity, y1 = -Infinity, x0 = Infinity, y0 = Infinity;
+    const take = (x: number, y: number, z: number) => {
+      const p = project(x, y, z);
+      if (!p) return;
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    };
+    for (const u of units) {
+      take(u.x, u.y, u.z);
+      take(u.x, u.y + u.altitude + (u.isVehicle ? 3 : 2.2), u.z);
+    }
+    if (!units.length && b) {
+      take(b.x + 6, b.y, b.z - 4);
+      take(b.x - 6, b.y + 7, b.z + 4);
+    }
+    const view = this.selTag.parentElement!;
+    const W = view.clientWidth, H = view.clientHeight;
+    if (!isFinite(x1) || x1 < 0 || y1 < 0 || x0 > W || y0 > H) {
+      this.selTag.hidden = true;
+      this.closeSelection();
+      return;
+    }
+    this.selTag.hidden = false;
+    this.selCount.textContent = units.length ? String(units.length) : "K";
+    // the corner just below and to the right of the group, kept inside the view
+    let x = Math.min(W - 34, Math.max(4, x1 + 6)), y = Math.min(H - 34, Math.max(4, y1 + 4));
+    // (and clear of the Netlify badge, measured in page coordinates)
+    const r = view.getBoundingClientRect(), pw = window.innerWidth, ph = window.innerHeight;
+    if (r.left + x + 30 > pw - 188 && r.top + y + 30 > ph - 68) y = ph - 68 - 30 - r.top;
+    this.selTag.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    // the card opens to the side and the way where there is room
+    this.selTag.classList.toggle("flip-x", x > W - 300);
+    this.selTag.classList.toggle("flip-y", y > H - 160);
+    if (this.selOpen) {
+      if (isNaN(this.selOpen.x)) this.selOpen = { x: focus.x, z: focus.z };
+      else if (Math.hypot(focus.x - this.selOpen.x, focus.z - this.selOpen.z) > 1.5) this.closeSelection();
+    }
+  }
+
   private train(type: UnitType, count: number) {
+    const tab = this.tabOf(type);
+    if (tab) this.showTab(tab);
     if (!this.game.producerFor(type, PLAYER)) {
       const city = this.game.layout.map === "embassy";
       if (type === "jeep" || type === "tank") this.toast(city ? "Zuerst eine Tiefgarage einnehmen" : "Zuerst eine Werkstatt einnehmen");
@@ -169,6 +256,7 @@ export class Hud {
     input.onTargetingChange = () => {
       prev?.();
       for (const t of this.buildTiles) t.btn.classList.toggle("armed", input.targeting === t.type);
+      if (input.targeting === "mgnest" || input.targeting === "bollard") this.showTab("defence");
     };
   }
 
@@ -450,6 +538,23 @@ export class Hud {
     }
 
     for (const t of this.buildTiles) t.btn.classList.toggle("poor", credits < UNITS[t.type].cost);
+
+    // a hidden tab shows how many units are being built on it
+    let badges = "";
+    const counts = this.tabs.map((t) => {
+      const pane = this.panes.find((p) => p.dataset.pane === t.dataset.tab);
+      const n = pane && pane.hidden ? this.buttons.filter((b) => pane.contains(b.btn)).reduce((s, b) => s + (g.producerFor(b.type, PLAYER)?.count(b.type) ?? 0), 0) : 0;
+      badges += n + ",";
+      return n;
+    });
+    if (badges !== this.lastTabBadges) {
+      this.lastTabBadges = badges;
+      this.tabs.forEach((t, i) => {
+        const badge = t.querySelector<HTMLElement>(".tab-badge")!;
+        badge.textContent = counts[i] ? String(counts[i]) : "";
+        badge.classList.toggle("show", counts[i] > 0);
+      });
+    }
 
     if (this.artilleryBtn && g.mode === "skirmish") {
       // cooldown as clock wipe, remaining seconds in the badge

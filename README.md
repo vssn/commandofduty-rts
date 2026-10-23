@@ -466,7 +466,7 @@ Trefferchance berechnet (Werte in `COMBAT` in `src/config.ts`):
 | Ziel neben Bäumen, Hecke oder Gebäude | −15 % |
 | Ziel steht in einer Stellung | −12 % |
 
-Die Trefferchance sinkt nie unter 20 %. Aktive Boni ausgewählter Soldaten stehen in der Seitenleiste unter „Auswahl“.
+Die Trefferchance sinkt nie unter 20 %. Aktive Boni ausgewählter Soldaten stehen in der Auswahl-Karte (siehe Seitenleiste).
 Einheiten mit Positionsbonus (Deckung, Stellung, höher als ihr Ziel) tragen eine schwache goldene Aura, die mit der
 Anzahl der Boni kräftiger wird.
 
@@ -498,8 +498,24 @@ Auf Touch-Geräten (automatisch erkannt) gibt es keinen Rechtsklick: **Tippen** 
 (zweimal tippen: alle sichtbaren gleichen Typs), **mit Auswahl tippen** ist der Befehl (Bewegen, Angreifen/Scharfschuss,
 Sammelpunkt; eigener unbemannter Jeep = Schütze zuweisen; mit Sanitätern auf Verwundeten = behandeln), **ziehen** zieht einen Auswahlrahmen. Eine Touch-Leiste
 bietet Pfeiltasten zum Scrollen (halten), Zoom +/−, Stopp, Abwählen und Abbrechen (Zielauswahl); die Minimap verschiebt
-wie gewohnt den Ausschnitt. Auf kleinen Bildschirmen wird die Seitenleiste auf Minimap, Credits und Kacheln reduziert,
-das Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
+wie gewohnt den Ausschnitt. Auf kleinen Bildschirmen wird die Seitenleiste schmaler (ohne die Steuerungshilfe), das
+Menü kompakt; im Hochformat erscheint ein Hinweis zum Drehen.
+
+## Seitenleiste
+
+Oben rechts stehen fest die **Minimap** und darunter die **Credits** – sie scrollen nie mit. Darunter liegt ein eigener
+Scrollbereich. In der Eroberung bündeln dort drei **Reiter mit Icons** das Bauen: ein Soldat für **Kaserne und
+Feldlazarett**, ein Panzer für die **Werkstatt**, eine Mauer für die **Befestigungen** (im Botschaftsquartier zeigt der
+Tooltip U-Bahn-Station, Apotheke, Tiefgarage). Ein verdeckter Reiter zeigt in einem Abzeichen, wie viele Einheiten dort
+gerade gebaut werden; eine Bau-Taste (Q, W, T, E, P, R, N, B) holt den passenden Reiter nach vorn. Darunter folgt am
+Desktop die Steuerungshilfe.
+Die **Auswahl** steht nicht mehr in der Leiste: An der unteren rechten Ecke der ausgewählten Gruppe (bzw. der
+ausgewählten Kaserne) hängt ein rundes Icon mit der Anzahl. Fährt man mit der Maus darüber, öffnet es eine Karte mit
+Typen, Zustand, MG-Besetzung und Kampfboni; auf Touch-Geräten öffnet sie ein Tipp, und sie bleibt offen, bis man
+woanders hintippt oder die Ansicht verschiebt (auch das Mausrad schließt sie). Wo rechts oder unten kein Platz ist,
+klappt sie nach links bzw. oben auf. Ist die Gruppe nicht im Bild, verschwindet das Icon.
+**Netlify-Bereich:** Unten rechts auf der Seite liegt der „Powered by Netlify“-Button (180 × 60 px). Der Scrollbereich
+der Leiste lässt unten 66 px frei, damit sich nichts dahinter verbirgt, und das Auswahl-Icon weicht der Ecke aus.
 
 ## Steuerung
 
@@ -602,7 +618,7 @@ src/
     cursors.ts        eigene Mauszeiger (Pfeil, Bewegen, Auswählen, Fadenkreuz, Einsteigen) als SVG
     overlay.ts        2D-Overlay: Lebensbalken, Mündungsfeuer, Auswahlrahmen, Sammelpunkt
     minimap.ts        Radar
-    hud.ts            Seitenleiste, Meldungen, Sieg/Niederlage
+    hud.ts            Seitenleiste (Reiter, Bau-Kacheln), Auswahl-Icon mit Karte, Meldungen, Sieg/Niederlage
     mapPreview.ts     Kartenplan für die Kartenwahl im Menü
     scoreboard.ts     Commandos-Bestenliste je Karte (localStorage)
     modeArt.ts        rendert die Bilder der Modus-Kacheln aus der Spielszene

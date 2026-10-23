@@ -74,19 +74,54 @@ html, body {
   background: linear-gradient(180deg, #25271c, #1b1c14);
   border-left: 2px solid #0c0d08;
   box-shadow: inset 1px 0 0 #3a3d29;
-  overflow-y: auto;
+  /* the minimap and the credits stay at the top; the rest scrolls in .sb-scroll */
+  overflow: hidden;
 }
-
-.brand {
+.sb-scroll {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 2px 2px 6px;
-  border-bottom: 1px solid var(--line);
-  text-transform: uppercase;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* (room at the bottom: the "Powered by Netlify" badge covers the lower right corner of the page, 180 x 60 px) */
+  padding-bottom: 66px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
-.brand-title { font-size: 22px; font-weight: 800; letter-spacing: 0.08em; color: var(--accent); }
-.brand-sub { font-size: 15px; font-weight: 600; letter-spacing: 0.2em; color: var(--muted); }
+.radar, .credits-row { flex: none; }
+
+/* build tabs: troops (barracks, field hospital), vehicles (workshop), defences - icons only */
+.sb-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; flex: none; }
+.sb-tab {
+  position: relative;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sb-tab svg { width: 30px; height: 30px; fill: var(--muted); transition: fill 0.15s; }
+.sb-tab svg .rifle { stroke: var(--muted); }
+.sb-tab:hover svg .rifle { stroke: var(--text); }
+.sb-tab.active svg .rifle { stroke: #15160f; }
+.sb-tab:hover svg { fill: var(--text); }
+.sb-tab.active { background: var(--accent); border-color: #111; }
+.sb-tab.active svg { fill: #15160f; }
+.sb-tab .tab-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px;
+  display: none; place-items: center; border-radius: 9px; font-size: 12px; font-weight: 700;
+  color: #111; background: var(--accent); border: 1.5px solid #111;
+}
+.sb-tab .tab-badge.show { display: grid; }
+.tab-pane { display: flex; flex-direction: column; gap: 10px; }
+.tab-pane[hidden] { display: none !important; }
 
 .radar {
   padding: 4px;
@@ -240,7 +275,40 @@ html, body {
 }
 .badge.show { display: grid; }
 
-#selection-info { display: flex; flex-direction: column; gap: 2px; font-size: 16px; color: var(--muted); min-height: 38px; }
+/* the selection: an icon at the lower right corner of the selected group (placed from the script), opening into a
+   card with the details - on hover, or on a tap (it stays open until a tap elsewhere or the view moves) */
+#sel-tag { position: absolute; left: 0; top: 0; z-index: 6; }
+#sel-tag[hidden] { display: none; }
+.sel-icon {
+  position: relative;
+  width: 30px; height: 30px; padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: #111;
+  background: var(--accent);
+  border: 2px solid #111;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  font: 700 13px/1 inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.sel-icon::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; } /* (a bigger target for fingers) */
+.sel-card {
+  position: absolute; left: 38px; top: 0;
+  display: none;
+  width: max-content; max-width: 260px;
+  padding: 8px 10px;
+  background: rgba(20, 21, 14, 0.94);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+#sel-tag.flip-x .sel-card { left: auto; right: 38px; }
+#sel-tag.flip-y .sel-card { top: auto; bottom: 0; }
+#sel-tag.open .sel-card { display: flex; }
+@media (hover: hover) { #sel-tag:hover .sel-card { display: flex; } }
+/* (shown or hidden by the rules above only: no display of its own here, it would win over them) */
+#selection-info { flex-direction: column; gap: 2px; font-size: 16px; color: var(--muted); min-height: 38px; }
 #selection-info strong { color: var(--text); font-size: 16px; }
 #selection-info .hint { font-size: 14px; }
 #selection-info .bonus { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -640,7 +708,12 @@ body:not(.touch-ui) .dpad { left: 24px; bottom: 24px; }
 /* phones and small tablets in landscape: compact sidebar with only the essentials */
 @media (max-width: 1000px), (max-height: 560px) {
   #sidebar { width: 172px; padding: 6px; gap: 6px; }
-  .brand, .help, #sidebar .panel:has(#selection-info) { display: none; }
+  .sb-scroll, .tab-pane { gap: 6px; }
+  .sb-tab { height: 34px; }
+  .sb-tab svg { width: 24px; height: 24px; }
+  .help { display: none; }
+  #selection-info, #selection-info strong { font-size: 14px; }
+  #selection-info .hint { font-size: 12px; }
   .credits-row { padding: 3px 8px; }
   .credits { font-size: 16px; }
   .panel { padding: 5px; }
@@ -914,6 +987,7 @@ body.cutscene #cut-skip {
 }
 #cut-fade { position: absolute; inset: 0; background: #000; opacity: 1; }
 body.cutscene #sidebar, body.cutscene #overlay, body.cutscene #toast, body.cutscene #touch-ui, body.cutscene #btn-pause { display: none; }
+body.cutscene #sel-tag, body.in-menu #sel-tag { display: none; }
 
 /* drone cutscene: the violet light of the drone floods the picture */
 #cut-tint, #cut-flood { position: absolute; inset: 0; opacity: 0; pointer-events: none; }

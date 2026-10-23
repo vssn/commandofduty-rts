@@ -28,6 +28,11 @@
       <main id="viewport">
         <canvas id="game"></canvas>
         <canvas id="overlay"></canvas>
+        <!-- the selection: an icon at the lower right corner of the selected group, opening into its details -->
+        <div id="sel-tag" hidden>
+          <button class="sel-icon" type="button" aria-label="Auswahl"><span class="sel-count"></span></button>
+          <div id="selection-info" class="sel-card"></div>
+        </div>
         <div id="toast"></div>
         <div id="cutscene" hidden>
           <div class="cut-bar top"></div>
@@ -241,17 +246,15 @@
       </main>
 
       <aside id="sidebar">
-        <header class="brand">
-          <span class="brand-title">Command</span>
-          <span class="brand-sub">of Duty</span>
-        </header>
-
         <div class="radar"><canvas id="minimap" width="440" height="440"></canvas></div>
 
         <div class="credits-row">
           <span class="label">Credits</span>
           <span class="credits-value"><span id="income" class="income"></span><span id="credits" class="credits">0</span></span>
         </div>
+
+        <!-- minimap and credits stay put; everything below scrolls on its own -->
+        <div class="sb-scroll">
 
         <section class="panel mode-commandos-only">
           <h2>Auftrag</h2>
@@ -348,6 +351,22 @@
           </div>
         </section>
 
+        <nav class="sb-tabs mode-base-only" aria-label="Bauen">
+          <button class="sb-tab active" data-tab="troops" title="Kaserne · Feldlazarett" data-city-title="U-Bahn-Station · Apotheke">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8.6 12.2C8.6 6.6 23.4 6.6 23.4 12.2l1.4 1.4H7.2z" /><circle cx="16" cy="15.6" r="3.7" /><path d="M5.5 30c0-6.8 4.6-10.4 10.5-10.4S26.5 23.2 26.5 30z" /><path d="M3.5 27.5 27.8 12.6" stroke-width="2.6" stroke-linecap="round" fill="none" class="rifle" /></svg>
+            <span class="tab-badge"></span>
+          </button>
+          <button class="sb-tab" data-tab="vehicles" title="Werkstatt" data-city-title="Tiefgarage">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="11" y="10" width="10" height="5" rx="1.5" /><rect x="19" y="11.4" width="11" height="1.8" rx=".9" /><path d="M4 16h24l-2 4H6z" /><rect x="3" y="20" width="26" height="6" rx="3" /><g fill="#111" opacity=".55"><circle cx="8" cy="23" r="1.5" /><circle cx="13" cy="23" r="1.5" /><circle cx="19" cy="23" r="1.5" /><circle cx="24" cy="23" r="1.5" /></g></svg>
+            <span class="tab-badge"></span>
+          </button>
+          <button class="sb-tab" data-tab="defence" title="Befestigungen">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 9h4v3h3V9h4v3h2V9h4v3h3V9h4v18H4z" /><g fill="#111" opacity=".5"><rect x="4" y="16" width="24" height="1" /><rect x="4" y="21.5" width="24" height="1" /><rect x="11" y="12" width="1" height="4" /><rect x="20" y="12" width="1" height="4" /><rect x="7" y="17" width="1" height="4.5" /><rect x="16" y="17" width="1" height="4.5" /><rect x="24" y="17" width="1" height="4.5" /><rect x="11" y="22.5" width="1" height="4.5" /><rect x="20" y="22.5" width="1" height="4.5" /></g></svg>
+            <span class="tab-badge"></span>
+          </button>
+        </nav>
+
+        <div class="tab-pane mode-base-only" data-pane="troops">
         <section class="panel mode-base-only">
           <h2 data-city="U-Bahn-Station">Kaserne</h2>
           <div class="build-grid">
@@ -379,6 +398,23 @@
         </section>
 
         <section class="panel mode-base-only">
+          <h2 data-city="Apotheke">Feldlazarett</h2>
+          <div class="build-grid">
+          <button class="build-btn" data-unit="medic">
+            <img class="portrait" alt="" draggable="false" />
+            <span class="wipe"></span>
+            <kbd>R</kbd>
+            <span class="build-cost">$150</span>
+            <span class="build-name">Sanitäter</span>
+            <span class="build-note" data-city="Apotheke einnehmen">Feldlazarett einnehmen</span>
+            <span class="badge"></span>
+          </button>
+          </div>
+        </section>
+        </div>
+
+        <div class="tab-pane mode-base-only" data-pane="vehicles" hidden>
+        <section class="panel mode-base-only">
           <h2 data-city="Tiefgarage">Werkstatt</h2>
           <div class="build-grid">
           <button class="build-btn" data-unit="jeep">
@@ -401,22 +437,9 @@
           </button>
           </div>
         </section>
+        </div>
 
-        <section class="panel mode-base-only">
-          <h2 data-city="Apotheke">Feldlazarett</h2>
-          <div class="build-grid">
-          <button class="build-btn" data-unit="medic">
-            <img class="portrait" alt="" draggable="false" />
-            <span class="wipe"></span>
-            <kbd>R</kbd>
-            <span class="build-cost">$150</span>
-            <span class="build-name">Sanitäter</span>
-            <span class="build-note" data-city="Apotheke einnehmen">Feldlazarett einnehmen</span>
-            <span class="badge"></span>
-          </button>
-          </div>
-        </section>
-
+        <div class="tab-pane mode-base-only" data-pane="defence" hidden>
         <section class="panel mode-base-only">
           <h2>Befestigungen</h2>
           <div class="build-grid">
@@ -439,10 +462,7 @@
           </div>
         </section>
 
-        <section class="panel">
-          <h2>Auswahl</h2>
-          <div id="selection-info">Keine Auswahl</div>
-        </section>
+        </div>
 
         <section class="panel help">
           <h2>Steuerung</h2>
@@ -460,6 +480,7 @@
             <dt>S · H · Esc</dt><dd>Stopp · Basis · Pause</dd>
           </dl>
         </section>
+        </div>
       </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>
