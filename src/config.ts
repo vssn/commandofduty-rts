@@ -221,7 +221,7 @@ export const EMBASSY_OPS = {
 /** Skirmish: starting forces per side (no reinforcements) and starting credits. Every jeep starts
  *  with its own MG gunner aboard (extra riflemen on top of the listed infantry). */
 export const SKIRMISH = {
-  forces: { rifleman: 10, grenadier: 5, medic: 2, jeep: 3 } as Record<"rifleman" | "grenadier" | "medic" | "jeep", number>,
+  forces: { rifleman: 10, grenadier: 5, rpg: 3, medic: 2, jeep: 3, tank: 2 } as Record<"rifleman" | "grenadier" | "rpg" | "medic" | "jeep" | "tank", number>,
   credits: 400,
 };
 

@@ -203,8 +203,8 @@ eine schmale Fase; der goldene Button wirkt wie gebürstetes Messing. Rein per C
 
 ## Spielmodus „Gefecht“
 
-Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren, 2 Sanitätern und 3 Geländewagen (bereits mit MG-Schütze besetzt)
-vor ihrer Sandsack-Stellung, die Wagen an der Spitze; Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
+Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren, 3 RPG-Schützen, 2 Sanitätern, 3 Geländewagen (bereits mit
+MG-Schütze besetzt) und 2 Panzern vor ihrer Sandsack-Stellung, die Geländewagen an der Spitze, die Panzer links und rechts der Infanterie; Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
 Einkommen (Start: 400 Credits). Die Credits bezahlen **Artillerieschläge** (Taste **A** oder Aktions-Kachel, 300
 Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen Sichtbereich liegen –, nach gut 3 Sekunden
 schlagen 7 Granaten gestreut im Radius 6 ein (Flächenschaden, auch für eigene Einheiten). Rechtsklick/Esc bricht ab.

@@ -393,11 +393,12 @@ export class Game {
     }
     for (const b of this.buildings) {
       this.credits[b.team] = SKIRMISH.credits;
-      // rows in front of the gate: medics closest to the base, then riflemen, grenadiers and the
-      // jeeps at the head of the column, facing the enemy (5 infantry per row)
+      // rows in front of the gate: medics closest to the base, then riflemen, grenadiers, RPG gunners and the
+      // jeeps at the head of the column, facing the enemy (5 infantry per row); the tanks stand on either side of
+      // the infantry (ahead of the column they would stand beyond the hill country's walls)
       const rows: { type: UnitType; count: number; depth: number; spacing: number }[] = [];
       let depth = 14;
-      for (const type of ["medic", "rifleman", "grenadier", "jeep"] as const) {
+      for (const type of ["medic", "rifleman", "grenadier", "rpg", "jeep"] as const) {
         const count = SKIRMISH.forces[type];
         const perRow = type === "jeep" ? count : 5;
         if (type === "jeep") depth += 2.5; // room for the longer vehicles
@@ -405,6 +406,12 @@ export class Game {
           rows.push({ type, count: Math.min(perRow, count - placed), depth, spacing: type === "jeep" ? 5 : 2 });
           depth += type === "jeep" ? 5 : 2.2;
         }
+      }
+      for (let i = 0; i < SKIRMISH.forces.tank; i++) {
+        const p = toWorld(b.x, b.z, b.rot, (i % 2 ? 1 : -1) * 9.5, 17 + Math.floor(i / 2) * 7.5);
+        const free = this.nav.freePoint(p.x, p.z, 1);
+        const u = this.spawnUnit("tank", b.team, free.x, free.z);
+        u.heading = u.turret = b.rot;
       }
       for (const r of rows) {
         for (let i = 0; i < r.count; i++) {
