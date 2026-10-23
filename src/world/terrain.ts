@@ -5,6 +5,7 @@ import { SIDEWALK } from "./embassy";
 import { inBox, inWater, quayDistance } from "./power";
 import { segDist, toLocal, type MapLayout, type RGB } from "./layout";
 import { SCREE_RANGE, ScarpSet, type Ramp } from "./scarps";
+import { isSummer, summer } from "./summer";
 
 const GRASS_A: RGB = [0.55, 0.55, 0.26];
 /** Cliff faces and the mountain wall. */
@@ -755,6 +756,9 @@ export class Terrain {
   private buildMesh(scene: Scene): Mesh {
     const n = this.n, n1 = n + 1, cs = this.cell, H = this.heights;
     const pos: number[] = [], nor: number[] = [], col: number[] = [], nat: number[] = [];
+    // (the hill country's classic look is summer: its vertex colours pass through summer(); the natural colours kept
+    // for the realistic ground stay as authored)
+    const warm = isSummer(this.layout), sc: RGB = [0, 0, 0];
     /** Natural ground colour of the triangle being emitted. */
     let base: RGB = [0, 0, 0];
     const c: RGB = [0, 0, 0];
@@ -785,9 +789,11 @@ export class Terrain {
       nx /= len; ny /= len; nzz /= len;
       if (ny < 0) { nx = -nx; ny = -ny; nzz = -nzz; }
       pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+      sc[0] = c[0]; sc[1] = c[1]; sc[2] = c[2];
+      if (warm) summer(sc);
       for (let k = 0; k < 3; k++) {
         nor.push(nx, ny, nzz);
-        col.push(c[0] * jit, c[1] * jit, c[2] * jit, 1);
+        col.push(sc[0] * jit, sc[1] * jit, sc[2] * jit, 1);
         nat.push(base[0], base[1], base[2]);
       }
     };

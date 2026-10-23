@@ -141,6 +141,14 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
   eines Geschosses), das hält die Stadt flüssig. Das Gelände ist flach, Pflaster auf Plätzen und Gehwegen, Rasen im Park
   und in den Gärten; im realistischen Modus Asphalt, Pflaster, Kies und Gras aus denselben Masken.
 
+**Hügelland im Klassik-Modus: Sommer.** Im klassischen Look ist das Hügelland ein heller Sommertag
+(`src/world/summer.ts`): sattes, natürliches Grün auf Wiesen und Rainen, grüne Laubbäume und Hecken, leuchtend gelbe
+Rapsfelder (aus Stroh und Stoppeln), grüne Feldfrüchte; Erde, Wege, Äcker und Fels bleiben braun und grau. Die
+Farben werden aus den (herbstlichen) Grundfarben im Farbraum umgedeutet – Oliv und dunkles Gelb werden grün, helles
+Gelb rapsgelb –, und das gilt nur für die Klassik-Farben von Gelände, Feldpflanzen, Bäumen, Hecken und Minimap. Dazu
+ein fast weißes, warmes Sonnenlicht, blaues Himmelslicht mit grünem Widerschein von den Wiesen, ein klarer bläulicher
+Dunst und etwas mehr Kontrast. Der PBR-Modus bleibt beim Herbstnachmittag, Botschaftsquartier und Kraftwerk auch.
+
 „Grafik“ (Einstellungen und Pausenmenü, wird gespeichert) schaltet live zwischen **Klassisch** und **Realistisch (PBR)** um
 (`src/world/pbr.ts`). **Schneller Wechsel:** Was der PBR-Modus braucht, wird schon im Hauptmenü vorbereitet, eine Portion pro Bild –
 Geländetexturen, Detailmodelle, die Oberflächenkarten des realistischen Geländes (1024², in Streifen von 32 Zeilen) und die
@@ -576,7 +584,8 @@ src/
     coal.ts           Kohlehaufen: Würfel (klassisch) bzw. facettierter Haufen (PBR)
     agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
     models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
-    environment.ts    Licht (Herbstnachmittag), Schatten, Dunst
+    environment.ts    Licht (Herbstnachmittag; Hügelland: Sommertag), Schatten, Dunst
+    summer.ts         Hügelland im Klassik-Modus: Sommerfarben (Umfärbung der Grundfarben, grüne Baumkronen)
     meadows.ts        Gras und Büschel auf den Wiesen (Heu, wild, Weide), klassisch und PBR
     villageDecay.ts   Müll und Grasbüschel in den Dörfern („in Eile verlassen“)
     pathMap.ts        Karte der Trampelpfade/Feldwege für die gebackenen Masken des PBR-Geländes

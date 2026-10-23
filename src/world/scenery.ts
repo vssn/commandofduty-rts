@@ -8,6 +8,7 @@ import { createGable, mat, ROOF_ROUGH } from "./models";
 import type { RealisticTrees } from "./floraPbr";
 import { powerGreen } from "./power";
 import type { Terrain } from "./terrain";
+import { isSummer, SUMMER_CANOPY } from "./summer";
 
 export interface TreeInfo { x: number; z: number; conifer: boolean; color: RGB }
 
@@ -140,7 +141,9 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
   trunkTpl.material = mat(scene, [0.33, 0.24, 0.16]);
   const trunks = new InstanceBatch(trunkTpl);
 
-  const canopies = CANOPY.map((c, i) => {
+  // (the hill country's classic trees are in summer green; the realistic ones keep their autumn colours)
+  const classicCanopy = isSummer(layout) ? SUMMER_CANOPY : CANOPY;
+  const canopies = classicCanopy.map((c, i) => {
     const m = MeshBuilder.CreateIcoSphere(`canopy${i}`, { radius: 1.7, subdivisions: 1, flat: true }, scene);
     m.scaling.set(1, 1.15, 1);
     m.position.y = 3.5;
@@ -184,7 +187,7 @@ export function createVegetation(scene: Scene, layout: MapLayout, terrain: Terra
     } else {
       const ci = Math.floor(r() * CANOPY.length);
       canopies[ci].add(m);
-      trees.push({ x, z, conifer, color: CANOPY[ci] });
+      trees.push({ x, z, conifer, color: classicCanopy[ci] });
       realistic?.add(m, false, CANOPY[ci]);
     }
   };

@@ -3,6 +3,7 @@ import { rng } from "../util/noise";
 import { toWorld, type Field, type MapLayout, type RGB } from "./layout";
 import type { CropKind, RealisticCrops } from "./floraPbr";
 import type { Terrain } from "./terrain";
+import { isSummer, summer } from "./summer";
 
 /** Distance between crop rows (across the furrows) and between plants along a row. */
 const ROW = 0.6;
@@ -35,6 +36,7 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain, r
 
   const matrices: number[] = [];
   const colors: number[] = [];
+  const warm = isSummer(layout);
   const m = new Matrix();
   for (const f of layout.fields) {
     if (f.garden) continue; // (a lawn)
@@ -57,7 +59,11 @@ export function createCrops(scene: Scene, layout: MapLayout, terrain: Terrain, r
         // tufts are a little lighter than the soil stripe, with some variation
         const k = 1.08 + (r() - 0.5) * 0.22;
         const col: [number, number, number, number] = [Math.min(1, c[0] * k), Math.min(1, c[1] * k * 1.02), Math.min(1, c[2] * k * 0.95), 1];
-        colors.push(...col);
+        // (the classic summer look: the crop in its summer colour; the realistic crop keeps the authored one)
+        if (warm) {
+          const sc = summer([col[0], col[1], col[2]]);
+          colors.push(sc[0], sc[1], sc[2], 1);
+        } else colors.push(...col);
         realistic?.add(kind, m, col);
       }
     }

@@ -21,10 +21,17 @@ export interface Haze {
   depth: number;
 }
 const HAZE_DAY: Haze = { color: [0.74, 0.77, 0.81], sunColor: [1.0, 0.86, 0.66], start: 0.85, density: 0.006, max: 0.6, depth: 0.03 };
+/** The hill country's summer day: a clear, bluish distance with a warm glow towards the sun, a little less of it. */
+const HAZE_SUMMER: Haze = { color: [0.66, 0.78, 0.93], sunColor: [1.0, 0.94, 0.8], start: 0.9, density: 0.005, max: 0.5, depth: 0.03 };
 const HAZE_NIGHT: Haze = { color: [0.07, 0.09, 0.15], sunColor: [0.2, 0.25, 0.37], start: 0.85, density: 0.007, max: 0.55, depth: 0.03 };
 
-/** Autumn afternoon lighting: warm low sun from the south-west, cool sky fill, light haze. */
-export function createEnvironment(scene: Scene) {
+/**
+ * Autumn afternoon lighting: warm low sun from the south-west, cool sky fill, light haze. `summer` (the hill country):
+ * a bright summer day instead - a near-white warm sun, a blue sky fill with green bounce light from the meadows, a
+ * clear bluish distance (the realistic mode brings its own atmosphere either way).
+ */
+export function createEnvironment(scene: Scene, summer = false) {
+  const hazeDay = summer ? HAZE_SUMMER : HAZE_DAY;
   scene.clearColor = new Color4(HAZE.r, HAZE.g, HAZE.b, 1);
   // distance haze is a screen-space effect (fogRender.ts); the classic scene fog stays off
   scene.fogMode = Scene.FOGMODE_NONE;
@@ -33,14 +40,14 @@ export function createEnvironment(scene: Scene) {
   scene.fogEnd = 380;
 
   const hemi = new HemisphericLight("sky", new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.62;
-  hemi.diffuse = new Color3(0.78, 0.84, 0.98);
-  hemi.groundColor = new Color3(0.42, 0.36, 0.28);
+  hemi.intensity = summer ? 0.66 : 0.62;
+  hemi.diffuse = summer ? new Color3(0.72, 0.82, 1.0) : new Color3(0.78, 0.84, 0.98);
+  hemi.groundColor = summer ? new Color3(0.34, 0.4, 0.25) : new Color3(0.42, 0.36, 0.28);
   hemi.specular = Color3.Black();
 
   const sun = new DirectionalLight("sun", SUN_DIR.clone(), scene);
-  sun.intensity = 1.2;
-  sun.diffuse = new Color3(1.0, 0.86, 0.68);
+  sun.intensity = summer ? 1.25 : 1.2;
+  sun.diffuse = summer ? new Color3(1.0, 0.95, 0.85) : new Color3(1.0, 0.86, 0.68);
   sun.specular = Color3.Black();
   sun.shadowFrustumSize = 200;
   sun.autoCalcShadowZBounds = false;
@@ -59,7 +66,11 @@ export function createEnvironment(scene: Scene) {
   ip.exposure = 1.04;
   ip.vignetteEnabled = true;
   ip.vignetteWeight = 1.1;
-  ip.vignetteColor = new Color4(0.1, 0.07, 0.04, 0);
+  ip.vignetteColor = summer ? new Color4(0.04, 0.05, 0.06, 0) : new Color4(0.1, 0.07, 0.04, 0);
+  if (summer) {
+    ip.contrast = 1.12;
+    ip.exposure = 1.07;
+  }
 
   /** Keeps the fixed-size shadow frustum centred on what the camera is looking at. */
   const followFocus = (focus: Vector3) => {
@@ -74,11 +85,11 @@ export function createEnvironment(scene: Scene) {
   };
 
   /** Current distance haze (day or night). */
-  const env = { haze: { ...HAZE_DAY } };
+  const env = { haze: { ...hazeDay } };
 
   /** Moonlit night (commandos): dim blue moon light, dark sky, stronger vignette. `false` restores the day. */
   const setNight = (on = true) => {
-    env.haze = { ...(on ? HAZE_NIGHT : HAZE_DAY) };
+    env.haze = { ...(on ? HAZE_NIGHT : hazeDay) };
     if (!on) {
       scene.clearColor = day.clear.clone();
       scene.fogColor = day.fog.clone();

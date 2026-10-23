@@ -83,7 +83,8 @@ if (autoStart) {
   history.replaceState(null, "", location.pathname + (params.toString() ? `?${params}` : ""));
 }
 
-const env = createEnvironment(scene);
+// (the hill country: a summer day)
+const env = createEnvironment(scene, MAP === "hills");
 const layout = new MapLayout(MAP);
 const terrain = new Terrain(scene, layout);
 const nav = new NavGrid();

@@ -3,6 +3,7 @@ import { rng } from "../util/noise";
 import { toWorld, type MapLayout, type RGB } from "./layout";
 import { mat as flatMat } from "./models";
 import type { Terrain } from "./terrain";
+import { isSummer, summer } from "./summer";
 
 const HEDGE: RGB = [0.3, 0.36, 0.16];
 
@@ -88,7 +89,8 @@ export function createHedges(scene: Scene, layout: MapLayout, terrain: Terrain, 
   // the classic hedge: a plain green box
   const box = MeshBuilder.CreateBox("hedge", { width: 1, height: 1, depth: 1 }, scene);
   box.convertToFlatShadedMesh();
-  box.material = flatMat(scene, HEDGE);
+  // (summer green on the hill country)
+  box.material = flatMat(scene, isSummer(layout) ? summer([...HEDGE] as RGB) : HEDGE);
   const boxData: number[] = [];
   const data: number[][] = [[], [], []];
   const cols: number[][] = [[], [], []];

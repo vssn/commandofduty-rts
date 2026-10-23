@@ -6,6 +6,7 @@ import { toWorld, type MapLayout, type RGB } from "../world/layout";
 import type { TreeInfo } from "../world/scenery";
 import type { Terrain } from "../world/terrain";
 import type { RtsCamera } from "./rtsCamera";
+import { isSummer, summer } from "../world/summer";
 
 const BG_RES = 220;
 
@@ -154,6 +155,7 @@ export class Minimap {
     const ctx = c.getContext("2d")!;
     const img = ctx.createImageData(BG_RES, BG_RES);
     const col: RGB = [0, 0, 0];
+    const warm = isSummer(layout);
     const step = (MAP_HALF * 2) / BG_RES;
     for (let py = 0; py < BG_RES; py++) {
       for (let px = 0; px < BG_RES; px++) {
@@ -163,6 +165,7 @@ export class Minimap {
         const gz = terrain.heightAt(x, z + 1) - terrain.heightAt(x, z - 1);
         const slope = Math.min(1, Math.hypot(gx, gz) * 0.35);
         terrain.colorAt(x, z, h, slope, col);
+        if (warm) summer(col); // (the classic summer look of the hill country)
         const shade = Math.min(1.3, Math.max(0.7, 1 + (-gx + gz) * 0.12));
         const i = (px + py * BG_RES) * 4;
         img.data[i] = Math.min(255, col[0] * shade * 255);
