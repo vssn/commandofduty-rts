@@ -1,5 +1,5 @@
 import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
-import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, type OutpostKind, type Team } from "../config";
+import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, PLAYER, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
 import { createOutpostDetail } from "../world/outpostDetail";
 import { createGarageExitMesh, createPharmacyMesh } from "../world/cityModels";
@@ -255,6 +255,7 @@ export class Outpost {
       if (this.owner !== null && this.warnCooldown <= 0) {
         this.warnCooldown = 30;
         g.emit("outpostThreatened", this.owner, { outpost: this, bonus: 0 });
+        if (this.owner === PLAYER) g.ping(this.x, this.z, "threat");
       }
     }
     this.progress += dt / CAPTURE_TIME;
@@ -277,6 +278,7 @@ export class Outpost {
     this.applyOwnerColors();
     const structures = g.transferStructures(this, team);
     g.emit("captured", team, { outpost: this, bonus, structures });
+    g.ping(this.x, this.z, team === PLAYER ? "capture" : "lost");
     if (previous !== null) g.emit("outpostLost", previous, { outpost: this, bonus: 0 });
   }
 }

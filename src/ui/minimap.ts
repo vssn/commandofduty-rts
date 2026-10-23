@@ -1,13 +1,36 @@
 import { Matrix, Plane, type Engine, type Scene } from "@babylonjs/core";
 import { MAP_HALF, PLAYER } from "../config";
 import type { FogOfWar } from "../game/fog";
-import type { Game } from "../game/game";
+import type { Game, PingKind } from "../game/game";
 import { toWorld, type MapLayout, type RGB } from "../world/layout";
 import type { TreeInfo } from "../world/scenery";
 import type { Terrain } from "../world/terrain";
 import type { RtsCamera } from "./rtsCamera";
 
 const BG_RES = 220;
+
+/**
+ * What a mark on the radar looks like, by kind: colour, the size of the ring at its start and end (canvas px), how
+ * long it lasts (s), how many rings follow one another, and whether it shows outside the player's sight (things that
+ * concern his own holdings and the mission; the rest only shows where he can see it).
+ */
+const PING: Record<PingKind, { color: string; r0: number; r1: number; life: number; rings: number; always: boolean }> = {
+  attack: { color: "255, 70, 55", r0: 6, r1: 26, life: 1.3, rings: 1, always: false },
+  hit: { color: "255, 245, 215", r0: 4, r1: 15, life: 0.8, rings: 1, always: false },
+  killOwn: { color: "255, 70, 55", r0: 6, r1: 33, life: 1.8, rings: 2, always: false },
+  killEnemy: { color: "110, 170, 255", r0: 6, r1: 30, life: 1.6, rings: 2, always: false },
+  explosion: { color: "255, 160, 50", r0: 6, r1: 36, life: 1.2, rings: 1, always: false },
+  capture: { color: "110, 170, 255", r0: 12, r1: 63, life: 3.6, rings: 3, always: true },
+  lost: { color: "255, 70, 55", r0: 12, r1: 63, life: 3.6, rings: 3, always: true },
+  threat: { color: "255, 175, 60", r0: 12, r1: 51, life: 3.2, rings: 3, always: true },
+  base: { color: "255, 70, 55", r0: 12, r1: 57, life: 2.8, rings: 2, always: true },
+  planted: { color: "255, 215, 90", r0: 9, r1: 45, life: 2.4, rings: 2, always: true },
+  destroyed: { color: "255, 160, 50", r0: 12, r1: 69, life: 3.4, rings: 3, always: true },
+  spotted: { color: "255, 70, 55", r0: 9, r1: 54, life: 2.8, rings: 3, always: true },
+};
+
+/** A mark on the radar: where, what, and for how long it has been showing. */
+interface Ping { x: number; z: number; kind: PingKind; t: number; life: number; r1: number; color: string; rings: number }
 
 /** Radar in the sidebar: pre-rendered terrain plus live units and camera frustum. */
 export class Minimap {
@@ -18,6 +41,8 @@ export class Minimap {
   fog: FogOfWar | null = null;
   private fogCanvas: HTMLCanvasElement | null = null;
   private noise: HTMLCanvasElement | null = null;
+  private readonly pings: Ping[] = [];
+  private lastDraw = performance.now();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -49,6 +74,67 @@ export class Minimap {
       this.cam.jumpTo(p.x, p.z);
     });
     canvas.addEventListener("pointerup", () => (this.dragging = false));
+    game.onPing = (x, z, kind) => this.ping(x, z, kind);
+  }
+
+  /**
+   * Marks something that happens at (x, z): rings spreading out from the spot. What is not the player's own business
+   * only shows where he can see it right now; a mark just like it (same kind, close by, a moment ago) is not added
+   * again, so a fire fight is a few pulses and not a flood.
+   */
+  ping(x: number, z: number, kind: PingKind) {
+    const def = PING[kind];
+    if (!def.always && this.fog && !this.fog.isVisible(x, z)) return;
+    if (this.pings.some((p) => p.kind === kind && p.t < 0.7 && Math.hypot(p.x - x, p.z - z) < 7)) return;
+    this.pings.push({ x, z, kind, t: 0, life: def.life, r1: def.r1, color: def.color, rings: def.rings });
+    if (this.pings.length > 60) this.pings.shift();
+  }
+
+  /**
+   * The start of a commandos mission: the targets (outposts to blow up, or the embassies) and the explosive caches
+   * light up on the radar, a few strong pulses in a row, so the player knows where to go.
+   */
+  flashObjectives() {
+    const cm = this.game.commandos;
+    if (!cm) return;
+    const spots: { x: number; z: number; color: string }[] = [];
+    if (cm.kind === "documents") for (const e of cm.embassies) spots.push({ x: e.villa.x, z: e.villa.z, color: "255, 235, 140" });
+    else for (const o of this.game.outposts) if (!o.destroyed) spots.push({ x: o.x, z: o.z, color: "255, 70, 55" });
+    for (const c of cm.caches) if (!c.taken) spots.push({ x: c.x, z: c.z, color: "255, 215, 60" });
+    // (rings of moderate size: with a dozen targets they must not run into one another)
+    for (const sp of spots) this.pings.push({ x: sp.x, z: sp.z, kind: "capture", t: 0, life: 6, r1: 38, color: sp.color, rings: 3 });
+  }
+
+  /** Draws the marks (rings spreading from the spot, fading as they grow) and drops the ones that have run out. */
+  private drawPings() {
+    const ctx = this.ctx, now = performance.now(), dt = Math.min(0.1, (now - this.lastDraw) / 1000);
+    this.lastDraw = now;
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      const p = this.pings[i];
+      p.t += dt;
+      if (p.t >= p.life) { this.pings.splice(i, 1); continue; }
+      const [x, y] = this.map(p.x, p.z);
+      const def = PING[p.kind], r0 = def.r0;
+      const k = p.t / p.life;
+      for (let n = 0; n < p.rings; n++) {
+        // the rings follow each other over the first two thirds of the time, each one growing and fading
+        const start = (n / p.rings) * 0.6, kk = (k - start) / (1 - start);
+        if (kk <= 0 || kk >= 1) continue;
+        const rad = r0 + (p.r1 - r0) * (1 - Math.pow(1 - kk, 2));
+        ctx.strokeStyle = `rgba(${p.color}, ${(1 - kk) * 0.9})`;
+        ctx.lineWidth = 6 - kk * 3;
+        ctx.beginPath();
+        ctx.arc(x, y, rad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // the spot itself glows for the first moments
+      if (k < 0.35) {
+        ctx.fillStyle = `rgba(${p.color}, ${(1 - k / 0.35) * 0.85})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 5 + (1 - k / 0.35) * 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   private toWorld(e: PointerEvent) {
@@ -276,6 +362,8 @@ export class Minimap {
       ctx.fillStyle = u.selected ? "#ffffff" : u.team === PLAYER ? "#7fb2ff" : "#ff5a48";
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
+
+    this.drawPings();
 
     // camera footprint on the ground
     const cam = this.cam.camera;

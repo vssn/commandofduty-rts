@@ -596,6 +596,8 @@ function startGame(mode: GameMode) {
       cam.flyIn(a.x, a.z + 6);
       input.enabled = hud.enabled = true;
       fogRender.strength = 1;
+      // the targets and the explosive caches light up on the radar
+      minimap.flashObjectives();
       hud.toast(game.commandos!.kind === "documents" ? "Bergen Sie die Dokumente aus den drei Botschaften – bleib unentdeckt" : `Sprenge ${COMMANDOS.targets} feindliche Stellungen – bleib unentdeckt`);
     });
     Object.assign(window, { drop });
@@ -861,5 +863,5 @@ await agentModel; // (ready long before this on any normal connection)
 document.getElementById("loading")?.remove();
 
 // handy for debugging in the console
-Object.assign(window, { game, scene, cam, audio, ai, fog, fogRender, pbr, startGame, returnToMenu });
+Object.assign(window, { game, scene, cam, audio, ai, fog, fogRender, pbr, minimap, startGame, returnToMenu });
 

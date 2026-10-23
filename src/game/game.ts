@@ -41,6 +41,14 @@ export type GameEvent =
   | "captured" | "outpostLost" | "selected" | "commanded" | "boarded" | "artillery" | "enemyArtillery" | "noSight"
   | "spotted" | "outpostDestroyed" | "targetEliminated" | "cloaked" | "chargePlanted" | "notReady"
   | "enemySearching" | "tracked" | "built" | "cannotBuild" | "structureLost" | "outpostThreatened" | "cacheFound" | "timeWarning" | "dronesLaunched" | "droneDown" | "extraction" | "documentsSecured" | "documentsAll" | "captivesFreed";
+/**
+ * Something worth a mark on the minimap (see Minimap.ping): `attack` a unit of the player is hit, `hit` an enemy is,
+ * `killOwn` / `killEnemy` a unit dies, `explosion`, `capture` the player takes an outpost, `lost` it falls to the enemy
+ * (or the enemy takes a neutral one), `threat` the enemy begins taking one of the player's, `base` the barracks is
+ * hit, `planted` / `destroyed` / `spotted` the commandos mission.
+ */
+export type PingKind = "attack" | "hit" | "killOwn" | "killEnemy" | "explosion" | "capture" | "lost" | "threat" | "base" | "planted" | "destroyed" | "spotted";
+
 export interface GameEventData { outpost: Outpost; bonus: number; structures?: number }
 type Listener = (e: GameEvent, team: Team, data?: GameEventData) => void;
 
@@ -116,6 +124,8 @@ export class Game {
    * whizzes past; `delay` = flight time of the bullet in seconds.
    */
   onArmourShot: ((x: number, z: number, hit: boolean, delay: number) => void) | null = null;
+  /** Something happened at (x, z): the minimap marks it. */
+  onPing: ((x: number, z: number, kind: PingKind) => void) | null = null;
   /** Called when a grenade leaves the hand. */
   onThrow: ((x: number, z: number) => void) | null = null;
 
@@ -311,6 +321,10 @@ export class Game {
 
   on(fn: Listener) {
     this.listeners.push(fn);
+  }
+
+  ping(x: number, z: number, kind: PingKind) {
+    this.onPing?.(x, z, kind);
   }
 
   emit(e: GameEvent, team: Team, data?: GameEventData) {
@@ -1082,6 +1096,7 @@ export class Game {
     t.hp -= amount;
     if (t instanceof Unit) {
       t.combatT = 0;
+      if (!t.isStructure || t.team === PLAYER) this.ping(t.x, t.z, t.team === PLAYER ? "attack" : "hit");
       if (t.team === PLAYER) {
         if (this.sinceUnitsHit > 30) this.emit("unitsAttacked", PLAYER);
         this.sinceUnitsHit = 0;
@@ -1100,10 +1115,12 @@ export class Game {
           if (t.team === PLAYER) this.emit("structureLost", PLAYER);
         }
         if (t.team === PLAYER && !t.isStructure) this.emit("unitLost", PLAYER);
+        if (!t.isStructure) this.ping(t.x, t.z, t.team === PLAYER ? "killOwn" : "killEnemy");
       } else if (by) {
         t.onAttacked(by);
       }
     } else if (t instanceof Barracks) {
+      this.ping(t.x, t.z, t.team === PLAYER ? "base" : "hit");
       if (t.team === PLAYER && this.baseAlertCooldown <= 0) {
         this.baseAlertCooldown = 15;
         this.emit("baseAttacked", PLAYER);

@@ -352,6 +352,18 @@ nicht umkämpften Stellung heilen langsam (1 HP/s, im Feldlazarett 3 HP/s). Wert
 wirken nicht. In der Eroberung muss man den eigenen Turm erst einnehmen; im Gefecht startet jede Seite mit ihrem Turm
 (geht er verloren, fällt die Minimap aus); im Commandos-Modus ist die Minimap immer da.
 
+**Ereignisse auf der Minimap:** Was im Spiel passiert, leuchtet dort als Ring auf, der sich vom Ort ausbreitet und
+verblasst (`Minimap.ping`, die Ereignisse melden `Game.ping`): ein **Angriff** auf eigene Einheiten (rot), Treffer auf
+den Gegner (hellweiß), der **Tod** einer eigenen (rot, doppelt) oder gegnerischen Einheit (blau), **Explosionen**
+(orange), die **Einnahme** einer Stellung durch den Spieler (blau, großer dreifacher Ring), ihr **Verlust** an den Feind
+(rot), der **Beginn einer Einnahme** der eigenen Stellung (orange) und ein Treffer auf die **eigene Kaserne** (rot). Im
+Commandos-Modus kommen die gelegte **Ladung** (gelb), die **gesprengte Stellung** (orange) und die **Entdeckung des
+Agenten** (rot) dazu. Gefechte, Treffer, Tode und Explosionen zeigt die Karte nur, wo der Spieler gerade hinsieht
+(Sichtbereich); was die eigenen Stellungen, die Kaserne und die Mission betrifft, immer. Gleichartige Marken dicht
+beieinander werden zusammengefasst, damit ein Feuergefecht ein paar Pulse ergibt und keine Flut.
+Zu **Beginn einer Commandos-Mission**, sobald die Absprungszene endet, leuchten die **Ziele** (die Stellungen, oder
+die drei Botschaften) rot bzw. hellgelb und die **Verstecke mit Sprengstoff** gelb in drei Pulsen auf.
+
 Einnahme und Verlust werden oben mittig angezeigt (in Eroberung und Gefecht): für jede Stellung, die man gerade einnimmt, ein Quadrat, das sich im
 Uhrzeigersinn in Spielerfarbe füllt (über der Farbe des bisherigen Besitzers), mit Name und Prozent – es fliegt von
 der Stellung aus nach oben ein und am Ende wieder zu ihr zurück (liegt sie außerhalb des Bildes, zum Rand in ihrer Richtung); nimmt der Feind eine

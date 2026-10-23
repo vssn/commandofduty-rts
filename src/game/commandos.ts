@@ -804,6 +804,7 @@ export class CommandosMission {
     const x = t instanceof Unit ? t.x : a.x, z = t instanceof Unit ? t.z : a.z;
     this.planted.push({ target: t, x, z, fuse: COMMANDOS.charges.fuse, mesh });
     this.game.emit("chargePlanted", PLAYER);
+    this.game.ping(x, z, "planted");
   }
 
   private updateCharges(dt: number) {
@@ -875,6 +876,7 @@ export class CommandosMission {
       if (c.target.alive) g.damage(c.target, 9999, null);
     } else if (!c.target.destroyed && Math.hypot(c.x - c.target.x, c.z - c.target.z) <= c.target.radius) {
       c.target.destroy();
+      g.ping(c.target.x, c.target.z, "destroyed");
       this.destroyedOutposts++;
       g.emit("outpostDestroyed", PLAYER);
     }
@@ -1379,6 +1381,7 @@ export class CommandosMission {
         d.alarmT = 3;
         if (this.spottedCooldown <= 0) {
           g.emit("spotted", PLAYER);
+          g.ping(a.x, a.z, "spotted");
           this.spottedCooldown = 12;
         }
         this.rally(u.x, u.z, 45);
@@ -1395,6 +1398,7 @@ export class CommandosMission {
     if (!spotter) return;
     if (this.spottedCooldown <= 0) {
       g.emit("spotted", PLAYER);
+      g.ping(a.x, a.z, "spotted");
       this.spottedCooldown = 12;
     }
     if (this.alertT > 12) return; // re-issue the hunt every few seconds while he is in sight

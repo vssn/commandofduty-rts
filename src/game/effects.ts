@@ -149,6 +149,7 @@ export class Effects {
     }
     this.spawnBlast(x, z, size, at);
     this.onExplosion?.(x, z, size);
+    if (size >= 1) g.ping(x, z, "explosion");
   }
 
   private add(kind: PuffKind, tpl: Mesh, x: number, y: number, z: number, o: Partial<Puff> & { life: number; size: number }) {
