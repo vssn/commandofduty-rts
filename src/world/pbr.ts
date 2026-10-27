@@ -42,8 +42,6 @@ interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: numbe
  * edges come from the rim light, see `rim` in the material's metadata).
  */
 function emissiveOf(m: StandardMaterial, out: Color3): Color3 {
-  // the classic look's LED strips and lit rings are plain paint here
-  if ((m.metadata as { classicGlow?: boolean } | null)?.classicGlow) return out.set(0, 0, 0);
   const f = m.emissiveFresnelParameters;
   out.copyFrom(m.emissiveColor);
   if (f?.isEnabled) out.multiplyInPlace(f.rightColor);
@@ -250,7 +248,7 @@ export class PbrMode {
     // a different look in this mode (e.g. a helmet's camouflage cover)
     const look = (m.metadata as { pbr?: PbrLook } | null)?.pbr;
     if (look?.color) p.albedoColor = new Color3(toLinear(look.color[0]), toLinear(look.color[1]), toLinear(look.color[2]));
-    if (look?.camo) p.albedoTexture = camoTexture(this.scene);
+    if (look?.camo) p.albedoTexture = camoTexture(this.scene, look.camo === "light");
     // searchlights, drone lights and street lamps light the scenery as well
     attachSpotLights(p);
     // a rim light inside the surface (the soldiers' team colour)

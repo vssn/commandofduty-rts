@@ -44,10 +44,12 @@ Die Oberfläche folgt einem Cyberpunk-Militär-Stil statt klassischer Tarnoptik 
   ist schwarz mit einem gelb leuchtenden Streifen rundum und wird beim Ausholen hörbar scharf geschaltet (Klick,
   ansteigendes Laden, zwei Pieptöne). Geländewagen und Panzer sind schwarz-grau, Poller schwarze Zylinder mit gelb
   leuchtendem Ring.
-- Bei den Figuren und Fahrzeugen behält der **realistische Modus** vorerst seine Farben (Tarnmuster, Oliv, Holz, Beton):
-  `restyle(real, classic)` in `src/world/models.ts` gibt einem Teil im Klassik-Look eine andere Farbe als in PBR,
-  `mat(…, { glow })` lässt LED-Streifen nur im Klassik-Look leuchten (in PBR sind sie Lack). Neue **Modelle** gelten
-  dagegen in beiden Modi; der Stil soll später auch farblich konsequent auf PBR übertragen werden.
+- **Soldaten im realistischen Modus:** Anzug, Hose und Helmbezug tragen ein schwarz-graues Stadt-Tarnmuster (der
+  Sanitäter ein weiß-graues), Taschen, Knieschoner, Armbinde und Packklappe sind in Teamfarbe wie im Klassik-Look, und
+  die LED-Bänder an Helm und Rucksack leuchten auch hier. Der Drohnenpilot trägt dieselbe schwarze Uniform, sein Koffer ist
+  schwarz. Nur Gewehrschaft (Holz) und Raketenwerfer (oliv) behalten in PBR ihre realistische Farbe: `restyle(real,
+  classic)` in `src/world/models.ts` gibt einem Teil im Klassik-Look eine andere Farbe als in PBR; auch Geländewagen und
+  Panzer sind in PBR noch oliv. `mat(…, { glow })` macht LED-Streifen und Leuchtringe in beiden Modi leuchtend.
 - **Stellungen** (`src/world/outpostModels.ts`, beide Grafikmodi): Betonwände (T-Wall) und Jersey-Barrieren mit
   gelb-schwarzen Warnstreifen, Container-Module mit LED-Leiste, Maschendrahtzaun mit NATO-Draht, Warnlampen.
   Feldlazarett: weißes Container-Modul mit leuchtenden roten Kreuzen, Sonnensegel über den Tragen, Medizinkoffer,
@@ -636,7 +638,7 @@ src/
     powerPlant.ts     Bauten des Kraftwerks: Halle (durchscheinend), Kühlturm, Schornstein, Mauern, Treppen, Kohlebunker und -band, Züge, Masten
     coal.ts           Kohlehaufen: Würfel (klassisch) bzw. facettierter Haufen (PBR)
     agentModel.ts     Agenten-Figur: lädt swat.glb, backt die Animationen, mischt sie, dreht Knochen von Hand, IK der Arme, Gewehr
-    models.ts         Soldat (detailliert, Flecktarn-Uniform; Helm, Armbinden und Rucksackklappe in Spielerfarbe), Jeep, Kaserne, Stellungen, Auswahlringe, Aura, runder Bodenschatten
+    models.ts         Soldat (detailliert, schwarz-grauer Anzug bzw. Tarnmuster in PBR; Ausrüstung und LEDs in Teamfarbe), Jeep, Panzer, Kaserne, Poller, Auswahlringe, Aura, runder Bodenschatten
     environment.ts    Licht (Herbstnachmittag; Hügelland: Sommertag), Schatten, Dunst
     summer.ts         Hügelland im Klassik-Modus: Sommerfarben (Umfärbung der Grundfarben, grüne Baumkronen)
     meadows.ts        Gras und Büschel auf den Wiesen (Heu, wild, Weide), klassisch und PBR

@@ -26,7 +26,7 @@ function rimFresnel(m: StandardMaterial, rim: RGB) {
 /** Roughness of roof tiles / sheeting in the realistic mode (the default is 0.85: matt). */
 export const ROOF_ROUGH = 0.42;
 /** A different look for the realistic (PBR) copy of a material: another colour and/or the camouflage pattern. */
-export interface PbrLook { color?: RGB; camo?: boolean }
+export interface PbrLook { color?: RGB; camo?: boolean | "light" }
 export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth" | "cloth";
 /** Picks the surface kind of a part by its colour (undefined = plain). */
 export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
@@ -53,10 +53,7 @@ export function restyle(real: RGB, classic: RGB): RGB {
   }
 }
 
-/**
- * `glow`: an LED strip or a lit ring - glows in its colour in the classic look; the realistic copy is plain paint
- * (its emissive is dropped there, see pbr.ts).
- */
+/** `glow`: an LED strip or a lit ring - glows in its colour but stays lit by the scene (in both graphics modes). */
 export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; glow?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook; rim?: RGB } = {}): StandardMaterial {
   const real = realOf.get(colourKey(c));
   if (real && !opts.pbr?.color) opts = { ...opts, pbr: { ...opts.pbr, color: real } };
@@ -74,7 +71,7 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; glow?: boo
     if (opts.glow) m.emissiveColor = new Color3(c[0], c[1], c[2]);
     if (opts.twoSided) m.backFaceCulling = false;
     // `rough` / `metal`: roughness and metallic of the realistic (PBR) copy; smooth parts such as roofs catch the sun
-    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr || opts.rim || opts.glow) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr, rim: opts.rim, classicGlow: opts.glow };
+    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr || opts.rim) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr, rim: opts.rim };
     if (opts.rim) rimFresnel(m, opts.rim);
     matCache.set(key, m);
   }
@@ -84,58 +81,44 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; glow?: boo
 const camoTex = new Map<string, DynamicTexture>();
 
 /**
- * Woodland camouflage cloth: an olive base with overlapping blotches of dark green, brown and
- * pale green. The pattern tiles seamlessly and is shared per scene; `tint` darkens or shifts it.
+ * The soldiers' camouflage cloth of the realistic mode: an urban pattern of overlapping blotches in black and greys
+ * (`light`: the medic's, in white and pale greys). The pattern tiles seamlessly and is shared per scene.
  */
-export function camoMaterial(scene: Scene, tint: RGB = [1, 1, 1], rim?: RGB): StandardMaterial {
-  const key = scene.uid + ":camo:" + tint.map((v) => v.toFixed(3)).join(",") + (rim ? `:rim${rim.join(",")}` : "");
-  let m = matCache.get(key);
-  if (m) return m;
-  let tex = camoTex.get(scene.uid);
-  if (!tex) {
-    const size = 128;
-    tex = new DynamicTexture("camo", { width: size, height: size }, scene, true, Texture.BILINEAR_SAMPLINGMODE);
-    tex.wrapU = tex.wrapV = Texture.WRAP_ADDRESSMODE;
-    const ctx = tex.getContext() as CanvasRenderingContext2D;
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    ctx.fillStyle = "#5c6b3a";
-    ctx.fillRect(0, 0, size, size);
-    const blot = (color: string, count: number, r0: number, r1: number) => {
-      ctx.fillStyle = color;
-      for (let i = 0; i < count; i++) {
-        // a blotch is a small cluster of overlapping circles, drawn wrapped so the tile is seamless
-        const cx = rnd() * size, cy = rnd() * size, n = 3 + Math.floor(rnd() * 3);
-        for (let k = 0; k < n; k++) {
-          const x = cx + (rnd() - 0.5) * r1 * 2.2, y = cy + (rnd() - 0.5) * r1 * 1.4, r = r0 + rnd() * (r1 - r0);
-          for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
-            ctx.beginPath();
-            ctx.ellipse(x + ox, y + oy, r * 1.3, r * 0.8, rnd() * Math.PI, 0, Math.PI * 2);
-            ctx.fill();
-          }
+export function camoTexture(scene: Scene, light = false): Texture {
+  const key = scene.uid + (light ? ":light" : "");
+  let tex = camoTex.get(key);
+  if (tex) return tex;
+  const size = 128;
+  tex = new DynamicTexture(light ? "camoLight" : "camo", { width: size, height: size }, scene, true, Texture.BILINEAR_SAMPLINGMODE);
+  tex.wrapU = tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillStyle = light ? "#d9dbde" : "#3a3c40";
+  ctx.fillRect(0, 0, size, size);
+  const blot = (color: string, count: number, r0: number, r1: number) => {
+    ctx.fillStyle = color;
+    for (let i = 0; i < count; i++) {
+      // a blotch is a small cluster of overlapping circles, drawn wrapped so the tile is seamless
+      const cx = rnd() * size, cy = rnd() * size, n = 3 + Math.floor(rnd() * 3);
+      for (let k = 0; k < n; k++) {
+        const x = cx + (rnd() - 0.5) * r1 * 2.2, y = cy + (rnd() - 0.5) * r1 * 1.4, r = r0 + rnd() * (r1 - r0);
+        for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+          ctx.beginPath();
+          ctx.ellipse(x + ox, y + oy, r * 1.3, r * 0.8, rnd() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
-    };
-    blot("#7f8a52", 7, 4, 9); // pale green
-    blot("#5e4a2e", 8, 4, 9); // brown
-    blot("#2f3d22", 9, 4, 10); // dark green
-    blot("#1f261a", 6, 2, 4); // black specks
-    tex.update(false);
-    camoTex.set(scene.uid, tex);
-  }
-  m = new StandardMaterial("camo" + key, scene);
-  m.diffuseTexture = tex;
-  m.diffuseColor = new Color3(tint[0], tint[1], tint[2]);
-  m.specularColor = Color3.Black();
-  m.metadata = { surface: "cloth", rough: 0.92, rim }; // woven fabric in the realistic mode
-  if (rim) rimFresnel(m, rim);
-  matCache.set(key, m);
-  return m;
-}
-
-/** The camouflage pattern (shared per scene), e.g. for a helmet cover in the realistic mode. */
-export function camoTexture(scene: Scene): Texture {
-  return camoMaterial(scene).diffuseTexture as Texture;
+    }
+  };
+  const [pale, mid, dark, specks] = light ? ["#f2f3f4", "#b8bbc0", "#9a9ea4", "#7c8087"] : ["#62666c", "#4a4d52", "#1e1f22", "#0e0e10"];
+  blot(pale, 7, 4, 9);
+  blot(mid, 8, 4, 9);
+  blot(dark, 9, 4, 10);
+  blot(specks, 6, 2, 4);
+  tex.update(false);
+  camoTex.set(key, tex);
+  return tex;
 }
 
 /** Builds a flat shaded mesh from raw triangles, normals pointing away from `center`. */
@@ -242,22 +225,22 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const red: RGB = [0.8, 0.1, 0.08];
   // the agent wears a long charcoal coat and a peaked cap instead of the team uniform
   const coat: RGB = [0.24, 0.24, 0.21];
-  // classic look: a black-grey combat suit (the medic's white), pouches and knee pads in the team colour, a black and
-  // white weapon, LED strips round the pack. The realistic look keeps the woodland camouflage, olive kit and wooden
-  // stock (restyle: the colour a part keeps there)
+  // a black-grey combat suit (the medic's white), pouches and knee pads in the team colour, LED strips round the pack,
+  // a black and white weapon. The realistic look prints a black-grey (the medic's: white-grey) camouflage on the suit
+  // and the helmet and keeps the wooden stock and olive launcher (restyle: the colour a part keeps there)
   const suit0: RGB = medic ? [0.86, 0.871, 0.893] : [0.197, 0.201, 0.219];
   const uni: RGB = agent ? coat : suit0;
-  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : restyle([0.25, 0.3, 0.18], medic ? [0.69, 0.701, 0.733] : [0.101, 0.103, 0.113]);
+  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : medic ? [0.69, 0.701, 0.733] : [0.101, 0.103, 0.113];
   const helmet: RGB = medic ? [0.9, 0.903, 0.917] : [0.141, 0.143, 0.157];
   const pants: RGB = agent ? [0.14, 0.14, 0.13] : medic ? [0.781, 0.793, 0.817] : [0.129, 0.133, 0.143];
   const teamC: RGB = player ? [0.25, 0.45, 0.95] : [0.9, 0.18, 0.12];
   const gear: RGB = player ? [0.223, 0.413, 0.893] : [0.853, 0.167, 0.113]; // team-coloured kit (classic)
   const flap: RGB = player ? [0.2, 0.36, 0.8] : [0.74, 0.17, 0.12];
   const skin: RGB = [0.86, 0.68, 0.54];
-  const leather: RGB = restyle([0.27, 0.2, 0.13], [0.071, 0.071, 0.077]);
-  const webbing: RGB = restyle([0.5, 0.44, 0.3], [0.241, 0.243, 0.263]);
-  const kit: RGB = restyle([0.35, 0.38, 0.24], gear);
-  const kitGrey: RGB = restyle([0.35, 0.38, 0.24], [0.171, 0.173, 0.189]);
+  const leather: RGB = [0.071, 0.071, 0.077];
+  const webbing: RGB = [0.241, 0.243, 0.263];
+  const kit: RGB = gear;
+  const kitGrey: RGB = [0.171, 0.173, 0.189];
   const wood: RGB = restyle([0.45, 0.3, 0.17], [0.901, 0.903, 0.911]);
   const metal: RGB = [0.12, 0.12, 0.13];
   // what the parts are made of, for the realistic mode: woven cloth, leather, skin, steel, wood
@@ -267,12 +250,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     [leather.join(), { rough: 0.45 }],
     [metal.join(), { rough: 0.3, metal: 0.65 }],
     // realistic mode: the helmet (and pack flap) wear a camouflage cover; the team shows on a band
-    [helmet.join(), { surface: "cloth", rough: 0.9, pbr: { color: [0.92, 0.92, 0.88], camo: true } }],
-    [flap.join(), { surface: "cloth", rough: 0.9, pbr: { color: [0.92, 0.92, 0.88], camo: true } }],
+    [helmet.join(), { surface: "cloth", rough: 0.9, pbr: { color: [1, 1, 1], camo: medic ? "light" as const : true } }],
+    [flap.join(), { surface: "cloth", rough: 0.9 }],
     [wood.join(), { rough: 0.55 }],
     [webbing.join(), cloth], [kit.join(), cloth], [kitGrey.join(), cloth], [uniDark.join(), cloth],
-    [uni.join(), agent ? cloth : { ...cloth, pbr: { color: [1, 1, 1], camo: true } }],
-    [pants.join(), agent ? cloth : { ...cloth, pbr: { color: [0.8, 0.8, 0.78], camo: true } }],
+    [uni.join(), agent ? cloth : { ...cloth, pbr: { color: [1, 1, 1], camo: medic ? "light" as const : true } }],
+    [pants.join(), agent ? cloth : { ...cloth, pbr: { color: [0.82, 0.82, 0.84], camo: medic ? "light" as const : true } }],
   ]);
   // a rim light inside the figure's own materials in the team's colour (not for the agent)
   const rim: RGB | undefined = agent ? undefined : player ? [0.3, 0.55, 1.0] : [1.0, 0.35, 0.25];
@@ -557,7 +540,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   }
   for (const x of [-0.205, 0.205]) box(0.06, 0.1, 0.09, x, 0.87, 0.06, leather);
   for (const x of [-0.09, 0.09]) ball(0.1, x, 0.77, 0, pants, 1.05);
-  box(0.08, 0.06, 0.02, 0, 0.86, 0.14, restyle([0.7, 0.62, 0.35], [0.551, 0.553, 0.583]));
+  box(0.08, 0.06, 0.02, 0, 0.86, 0.14, [0.551, 0.553, 0.583]);
   for (const x of [-0.12, 0.12]) {
     box(0.05, 0.56, 0.02, x, 1.15, 0.145, webbing).rotation.x = 0.1;
     box(0.05, 0.56, 0.02, x, 1.15, -0.145, webbing).rotation.x = -0.1;
@@ -571,7 +554,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const before = parts.length;
     const S = SOLDIER_SCALE;
     const caseZ = PILOT_CASE_Z / S, cw = 0.56, cd = 0.5, ch = 0.18, wall = 0.025;
-    const shell: RGB = [0.22, 0.24, 0.2], foam: RGB = [0.07, 0.07, 0.075], steel: RGB = [0.5, 0.5, 0.52];
+    const shell: RGB = [0.13, 0.135, 0.145], foam: RGB = [0.07, 0.07, 0.075], steel: RGB = [0.5, 0.5, 0.52];
     const near = caseZ - cd / 2; // the hinge side
     box(cw, 0.02, cd, 0, 0.01, caseZ, shell); // bottom
     box(cw - wall * 2, 0.05, cd - wall * 2, 0, 0.045, caseZ, foam); // foam bed (the drone lies on it)
@@ -595,7 +578,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     screen.material = mat(scene, [0.55, 0.85, 1], { emissive: true });
     parts.push(screen);
     box(0.32, 0.02, 0.14, lx, ly + 0.022, lz - 0.05, [0.3, 0.3, 0.32]); // keyboard
-    box(0.25, 0.12, 0.18, 0.42, 0.06, lidZ, [0.26, 0.3, 0.2]); // controller case, on the ground beside
+    box(0.25, 0.12, 0.18, 0.42, 0.06, lidZ, [0.2, 0.205, 0.22]); // controller case, on the ground beside
     laptopParts = parts.splice(before);
     // four thick antennas splayed out of the pack, like a router's
     for (const [x, z, ax, az] of [[-0.1, -0.17, -0.55, 0.15], [-0.05, -0.26, -0.22, -0.45], [0.05, -0.26, 0.22, -0.45], [0.1, -0.17, 0.55, 0.15]]) {
@@ -607,11 +590,11 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     }
   }
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
-  box(0.32, 0.38, 0.15, 0, 1.2, -0.22, restyle([0.38, 0.31, 0.2], [0.151, 0.153, 0.167]));
+  box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.151, 0.153, 0.167]);
   box(0.28, 0.12, 0.03, 0, 1.3, -0.3, flap); // pack flap in team colour
-  for (const x of [-0.18, 0.18]) box(0.08, 0.2, 0.12, x, 1.12, -0.22, restyle([0.34, 0.28, 0.18], [0.191, 0.193, 0.207])); // pack side pockets
-  // LED strips along the pack's frame in the team colour (classic look; plain pack cloth in the realistic one)
-  const led = restyle([0.38, 0.31, 0.2], player ? [0.32, 0.6, 1] : [1, 0.24, 0.17]);
+  for (const x of [-0.18, 0.18]) box(0.08, 0.2, 0.12, x, 1.12, -0.22, [0.191, 0.193, 0.207]); // pack side pockets
+  // LED strips along the pack's frame in the team colour
+  const led: RGB = player ? [0.32, 0.6, 1] : [1, 0.24, 0.17];
   const strip = (w: number, h: number, d: number, x: number, y: number, z: number) => {
     rawBox(w, h, d, x, y, z, led).material = mat(scene, led, { glow: true });
   };
@@ -635,7 +618,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     }
   }
   if (grenadier) {
-    box(0.08, 0.72, 0.04, 0, 1.16, 0.15, restyle([0.55, 0.47, 0.3], [0.091, 0.091, 0.097])).rotation.z = 0.6; // bandolier
+    box(0.08, 0.72, 0.04, 0, 1.16, 0.15, [0.091, 0.091, 0.097]).rotation.z = 0.6; // bandolier
     for (const x of [-0.12, 0, 0.12]) box(0.1, 0.12, 0.08, x, 0.97, 0.16, kit);
   }
   if (medic) {
@@ -710,7 +693,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     // can wind up to throw; the medic's just hangs
     if (grenadier) {
       arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
-      ball(0.08, 0.25, 0.94, 0.28, restyle([0.3, 0.36, 0.2], [0.081, 0.081, 0.087]), 1.25); // grenade
+      ball(0.08, 0.25, 0.94, 0.28, [0.081, 0.081, 0.087], 1.25); // grenade
       // its lit stripe round the middle (yellow glow in the classic look)
       const stripe = MeshBuilder.CreateTorus("grenadeStripe", { diameter: 0.16, thickness: 0.026, tessellation: 14 }, scene);
       stripe.position.set(0.25, 0.94, 0.28);
@@ -759,7 +742,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     // modern combat helmet: a rounded composite shell, longer front to back, with a skirt that runs
     // down over the sides and the back of the head and leaves the face open; a mount on the front,
     // rails on the sides, a retention pad at the back, a chin strap
-    const hl = { rough: 0.55, metal: 0.08, surface: "cloth" as SurfaceKind, pbr: { color: [0.92, 0.92, 0.88] as RGB, camo: true } };
+    const hl = { rough: 0.55, metal: 0.08, surface: "cloth" as SurfaceKind, pbr: { color: [1, 1, 1] as RGB, camo: medic ? "light" as const : true } };
     const helm = MeshBuilder.CreateSphere("helm", { diameter: 0.37, segments: LOW_DETAIL ? 8 : 14, slice: 0.5 }, scene);
     helm.scaling.set(1, 0.95, 1.13);
     helm.position.set(0, 1.755, -0.012);
@@ -790,7 +773,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     parts.push(teamBand);
     if (!medic) box(0.1, 0.016, 0.1, 0, 1.932, -0.01, teamC);
     // a net of dark patches over the shell
-    const helmPatch = restyle([0.26, 0.3, 0.18], medic ? [0.781, 0.783, 0.803] : [0.091, 0.093, 0.101]);
+    const helmPatch: RGB = medic ? [0.781, 0.783, 0.803] : [0.091, 0.093, 0.101];
     for (const [a, el] of (LOW_DETAIL ? [] : [[0.4, 0.9], [2.0, 0.8], [3.6, 1.0], [5.1, 0.85], [1.2, 1.2], [4.4, 1.15]]) as [number, number][]) {
       const r0 = 0.18, ca = Math.cos(a), sa = Math.sin(a), ce = Math.cos(el);
       const patch = box(0.07, 0.02, 0.05, ca * r0 * ce * 0.98, 1.755 + Math.sin(el) * r0 * 0.9, sa * r0 * ce * 0.98, helmPatch, 0, -a);
@@ -822,7 +805,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const band = MeshBuilder.CreateCylinder("band", { height: 0.05, diameter: 0.372, tessellation: 14 }, scene);
     band.scaling.z = 1.13;
     band.position.y = 1.79;
-    band.material = mat(scene, restyle([0.9, 0.86, 0.7], GRENADE_GLOW), { glow: true });
+    band.material = mat(scene, GRENADE_GLOW, { glow: true });
     parts.push(band);
   }
   if (medic) {
@@ -851,8 +834,8 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
 
   // ---- shin (origin = knee joint): trouser, canvas gaiter, boot with sole
   tube(0, 0, 0, 0, -0.16, -0.01, 0.072, 0.066, pants);
-  const bootC = restyle([0.2, 0.16, 0.12], [0.081, 0.083, 0.089]);
-  tube(0, -0.12, -0.01, 0, -0.28, -0.02, 0.074, 0.07, restyle([0.56, 0.5, 0.38], [0.221, 0.223, 0.239]));
+  const bootC: RGB = [0.081, 0.083, 0.089];
+  tube(0, -0.12, -0.01, 0, -0.28, -0.02, 0.074, 0.07, [0.221, 0.223, 0.239]);
   box(0.13, 0.12, 0.26, 0, -0.33, 0.03, bootC);
   box(0.14, 0.035, 0.28, 0, -0.385, 0.03, [0.1, 0.09, 0.08]);
   ball(0.068, 0, -0.35, 0.165, bootC, 0.72); // toe cap
