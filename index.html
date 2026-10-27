@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Command of Duty</title>
+    <title>Battle Vector</title>
     <!-- black from the first moment; the page fades in once the styles, the fonts and the first frame are there -->
     <style>
       html, body { margin: 0; background: #000; }
@@ -15,12 +15,12 @@
       html:not(.ready) .menu-panel { animation-play-state: paused; }
       /* loading progress: a thin gold line on the black page, gone when the menu fades in */
       #boot { position: fixed; left: 50%; bottom: 14vh; width: min(260px, 50vw); height: 3px; margin-left: calc(min(260px, 50vw) / -2); background: rgba(255, 255, 255, 0.08); z-index: 200; transition: opacity 0.5s ease; }
-      #boot-bar { display: block; height: 100%; width: 4%; background: #e9b53c; transition: width 0.35s ease; }
+      #boot-bar { display: block; height: 100%; width: 4%; background: #fcee0a; box-shadow: 0 0 10px rgba(252, 238, 10, 0.7); transition: width 0.35s ease; }
       html.ready #boot { opacity: 0; pointer-events: none; }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body class="in-menu">
     <div id="boot"><span id="boot-bar"></span></div>
@@ -129,7 +129,17 @@
         <div id="menu">
           <div class="menu-panel">
             <div class="menu-kicker" id="menu-kicker">Herbstoffensive · Einsatzgebiet Hügelland</div>
-            <h1 class="menu-title">Command<span>of Duty</span></h1>
+            <div class="menu-brand">
+              <svg class="menu-logo" viewBox="0 0 64 64" aria-hidden="true">
+                <rect width="64" height="64" fill="#fcee0a" />
+                <path d="M9 13h13l10 25 10-25h13L38 51H26z" fill="#0a0a0c" />
+                <path d="M46 8h10v10" fill="none" stroke="#0a0a0c" stroke-width="3.2" stroke-linecap="square" />
+                <path d="M44 20 56 8" stroke="#0a0a0c" stroke-width="3.2" />
+                <rect x="6" y="56" width="22" height="3" fill="#0a0a0c" />
+              </svg>
+              <h1 class="menu-title"><b>Battle</b><span>Vector</span></h1>
+            </div>
+            <div class="menu-versus" aria-hidden="true"><i></i><em>VX // TACTICAL GRID</em><i></i></div>
             <p class="menu-brief">
               Der Feind hat sich im Norden festgesetzt. Nimm Stellungen und Werkstätten ein, stelle
               Soldaten, Grenadiere und Geländewagen auf und zerstöre die feindliche Kaserne.

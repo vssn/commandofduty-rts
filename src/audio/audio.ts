@@ -148,6 +148,7 @@ export class AudioSystem {
     game.onShot = (x, z, kind) => !this.quiet && (kind === "sniper" ? this.sniperShot(x, z) : kind === "shell" ? this.explosion(x, z, 0.7)
       : kind === "rocket" ? this.whoosh(x, z) : this.shot(x, z, kind === "mg"));
     game.onThrow = (x, z) => !this.quiet && this.whoosh(x, z);
+    game.onArm = (x, z) => !this.quiet && this.armed(x, z);
     game.onArmourShot = (x, z, hit, delay) => !this.quiet && (hit ? this.metalHit(x, z, delay) : this.whiz(x, z, delay));
     game.effects.onExplosion = (x, z, size) => !this.quiet && this.explosion(x, z, size);
     // incoming artillery: the whistle starts shortly before the first shell lands
@@ -453,6 +454,59 @@ export class AudioSystem {
       o.connect(g).connect(s.pan);
       o.start(t + delay);
       o.stop(t + delay + 1.55);
+    }
+  }
+
+  /**
+   * A grenade being armed: the hard click of the switch, a charging whine rising sharply, then two short, bright
+   * electronic beeps - "armed".
+   */
+  private armed(x: number, z: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxOn) return;
+    const s = this.spatial(x, z, 0.05, 90);
+    if (!s) return;
+    const t = ctx.currentTime;
+    // click: a very short burst of filtered noise
+    const click = ctx.createBufferSource();
+    click.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 2500;
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(s.level * 1.6, t);
+    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+    click.connect(hp).connect(cg).connect(s.pan);
+    click.start(t, Math.random() * 0.5);
+    click.stop(t + 0.04);
+    // charging whine
+    const w = ctx.createOscillator();
+    w.type = "sawtooth";
+    w.frequency.setValueAtTime(420, t + 0.03);
+    w.frequency.exponentialRampToValueAtTime(2600, t + 0.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 3200;
+    const wg = ctx.createGain();
+    wg.gain.setValueAtTime(0.0001, t + 0.03);
+    wg.gain.exponentialRampToValueAtTime(s.level * 0.35, t + 0.12);
+    wg.gain.exponentialRampToValueAtTime(0.0001, t + 0.21);
+    w.connect(lp).connect(wg).connect(s.pan);
+    w.start(t + 0.03);
+    w.stop(t + 0.22);
+    // two beeps
+    for (const dt of [0.23, 0.31]) {
+      const o = ctx.createOscillator();
+      o.type = "square";
+      o.frequency.value = 3150;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + dt);
+      g.gain.exponentialRampToValueAtTime(s.level * 0.3, t + dt + 0.005);
+      g.gain.setValueAtTime(s.level * 0.3, t + dt + 0.045);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.055);
+      o.connect(g).connect(s.pan);
+      o.start(t + dt);
+      o.stop(t + dt + 0.06);
     }
   }
 

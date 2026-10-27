@@ -230,20 +230,22 @@ export class Overlay {
       this.groundRect(game, bp.x, bp.z, f.hw, f.hd, bp.heading, bp.ok ? "125, 255, 134" : "255, 80, 60");
     }
 
-    // artillery: impact area preview while targeting, countdown over ordered strikes
+    // artillery: impact area preview while targeting, warning rings and countdown over ordered strikes
+    const now = performance.now() / 1000;
     const tp = this.targetPreview;
-    if (tp) this.groundCircle(game, tp.x, tp.z, tp.r, tp.ok ? "255, 80, 60" : "170, 170, 160", true);
+    if (tp) this.strikeRings(game, tp.x, tp.z, tp.r, now, tp.ok ? "255, 42, 68" : "170, 170, 160", false);
     for (const st of game.artillery.active) {
       if (sees && st.team !== PLAYER && !sees(st.x, st.z)) continue;
+      this.strikeRings(game, st.x, st.z, ARTILLERY.spread, now, "255, 42, 68", true);
       const left = ARTILLERY.delay - st.t;
       const p = this.project(st.x, game.terrain.heightAt(st.x, st.z) + 2.5, st.z);
       if (!p) continue;
-      ctx.font = `bold ${15 * s}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+      ctx.font = `700 ${14 * s}px "Chakra Petch", "Arial Narrow", sans-serif`;
       ctx.textAlign = "center";
       ctx.lineWidth = 3 * s;
-      ctx.strokeStyle = "rgba(10, 10, 8, 0.85)";
-      ctx.fillStyle = st.team === PLAYER ? "#ffd27a" : "#ff6a50";
-      const label = left > 0 ? `Einschlag in ${left.toFixed(1)} s` : "Einschlag!";
+      ctx.strokeStyle = "rgba(10, 10, 12, 0.85)";
+      ctx.fillStyle = Math.floor(now * 4) % 2 ? "#ff2a44" : "#ffffff";
+      const label = left > 0 ? `▲ EINSCHLAG IN ${left.toFixed(1)} S` : "▲ EINSCHLAG";
       ctx.strokeText(label, p.x * s, p.y * s);
       ctx.fillText(label, p.x * s, p.y * s);
     }
@@ -362,7 +364,7 @@ export class Overlay {
           const w = 60 * s, x = p.x * s - w / 2, y = p.y * s;
           ctx.fillStyle = "rgba(10, 12, 10, 0.8)";
           ctx.fillRect(x - s, y - s, w + 2 * s, 5 * s + 2 * s);
-          ctx.fillStyle = "#e9b53c";
+          ctx.fillStyle = "#fcee0a";
           ctx.fillRect(x, y, w * Math.min(1, cm.pending.progress), 5 * s);
           label("Ladung wird angebracht", p.x * s, y - 4 * s, "#e9d9a0");
         }
@@ -405,6 +407,93 @@ export class Overlay {
     ctx.strokeStyle = `rgba(${rgb}, 0.95)`;
     ctx.lineWidth = 2 * s;
     ctx.stroke();
+  }
+
+  /** A path along a circular arc on the terrain (from angle a0 to a1); false if nothing of it is on screen. */
+  private groundArc(game: Game, cx: number, cz: number, r: number, a0: number, a1: number): boolean {
+    const ctx = this.ctx, s = this.scale;
+    const n = Math.max(4, Math.ceil((Math.abs(a1 - a0) / (Math.PI * 2)) * 72));
+    let pen = false, any = false;
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + ((a1 - a0) * i) / n;
+      const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      const p = this.project(x, game.terrain.heightAt(x, z) + 0.2, z);
+      if (!p) { pen = false; continue; }
+      if (pen) ctx.lineTo(p.x * s, p.y * s);
+      else { ctx.moveTo(p.x * s, p.y * s); pen = any = true; }
+    }
+    return any;
+  }
+
+  /**
+   * Artillery target as a digital overlay on the ground: a tinted disc in concentric warning rings, rotating arc
+   * segments, tick marks, a pulse that runs outwards; `live` (ordered) pulses faster and brighter than the preview.
+   */
+  private strikeRings(game: Game, cx: number, cz: number, r: number, t: number, rgb: string, live: boolean) {
+    const ctx = this.ctx, s = this.scale;
+    const ring = (rr: number, width: number, alpha: number, dash: number[] = []) => {
+      ctx.beginPath();
+      if (!this.groundArc(game, cx, cz, rr, 0, Math.PI * 2)) return;
+      ctx.setLineDash(dash.map((d) => d * s));
+      ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+      ctx.lineWidth = width * s;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    ctx.save();
+    ctx.shadowColor = `rgba(${rgb}, 0.9)`;
+    ctx.shadowBlur = 10 * s;
+    // tinted disc
+    ctx.beginPath();
+    if (this.groundArc(game, cx, cz, r, 0, Math.PI * 2)) {
+      ctx.fillStyle = `rgba(${rgb}, ${live ? 0.14 + 0.06 * Math.sin(t * 8) : 0.1})`;
+      ctx.fill();
+    }
+    // rings: the impact area, an outer dashed one, two inner ones
+    ring(r, 2.5, 0.95);
+    ring(r * 1.14, 1.2, 0.7, [10, 6]);
+    ring(r * 0.66, 1.2, 0.6);
+    ring(r * 0.3, 1.5, 0.8, [4, 4]);
+    // four arc segments turning round the outside (the other way inside)
+    const spin = t * (live ? 1.6 : 0.8);
+    for (let k = 0; k < 4; k++) {
+      const a = spin + (k * Math.PI) / 2;
+      ctx.beginPath();
+      if (this.groundArc(game, cx, cz, r * 1.06, a, a + 0.75)) {
+        ctx.strokeStyle = `rgba(${rgb}, 0.95)`;
+        ctx.lineWidth = 4 * s;
+        ctx.stroke();
+      }
+      const b = -spin * 1.4 + (k * Math.PI) / 2;
+      ctx.beginPath();
+      if (this.groundArc(game, cx, cz, r * 0.48, b, b + 0.5)) {
+        ctx.strokeStyle = `rgba(${rgb}, 0.8)`;
+        ctx.lineWidth = 2.5 * s;
+        ctx.stroke();
+      }
+    }
+    // tick marks on the four axes and a cross in the centre
+    ctx.strokeStyle = `rgba(${rgb}, 0.95)`;
+    ctx.lineWidth = 2 * s;
+    for (let k = 0; k < 4; k++) {
+      const a = (k * Math.PI) / 2, ca = Math.cos(a), sa = Math.sin(a);
+      for (const [r0, r1] of [[r * 0.88, r * 1.22], [0.25, r * 0.16]]) {
+        const p0x = cx + ca * r0, p0z = cz + sa * r0, p1x = cx + ca * r1, p1z = cz + sa * r1;
+        const p0 = this.project(p0x, game.terrain.heightAt(p0x, p0z) + 0.2, p0z);
+        if (!p0) continue;
+        const ax = p0.x, ay = p0.y;
+        const p1 = this.project(p1x, game.terrain.heightAt(p1x, p1z) + 0.2, p1z);
+        if (!p1) continue;
+        ctx.beginPath();
+        ctx.moveTo(ax * s, ay * s);
+        ctx.lineTo(p1.x * s, p1.y * s);
+        ctx.stroke();
+      }
+    }
+    // a pulse running outwards
+    const period = live ? 0.9 : 1.6, k = (t % period) / period;
+    ring(r * (0.15 + k * 1.0), 2, (1 - k) * 0.9);
+    ctx.restore();
   }
 
   /** Circle on the terrain (follows the hills), optionally filled. */

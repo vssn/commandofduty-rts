@@ -89,7 +89,7 @@ export function createSubwayMesh(scene: Scene, team: Team): Mesh {
 /**
  * The field hospital as a pharmacy: a little shop pavilion (where the ward tent stood) with shop
  * windows, a green awning and the glowing green cross on its corner; medical crates, stretchers and
- * sandbags on the square in front.
+ * jersey barriers on the square in front.
  */
 export function createPharmacyMesh(scene: Scene): Mesh {
   const parts: Mesh[] = [];
@@ -126,7 +126,13 @@ export function createPharmacyMesh(scene: Scene): Mesh {
     box(0.65, 0.05, 0.05, sx, 0.35, 0.8, [0.3, 0.3, 0.3]);
     box(0.65, 0.05, 0.05, sx, 0.35, 2.8, [0.3, 0.3, 0.3]);
   }
-  for (let k = 0; k < 5; k++) box(0.9, 0.34, 0.5, x - w / 2 + 0.5 + k * 0.9, 0.38, z - d / 2 - 0.4, [0.68, 0.6, 0.43]);
+  // jersey barriers against the back wall
+  for (let k = 0; k < 3; k++) {
+    const bx = x - w / 2 + 0.8 + k * 1.5;
+    box(1.45, 0.35, 0.62, bx, 0.38, z - d / 2 - 0.45, [0.6, 0.6, 0.58]);
+    box(1.45, 0.5, 0.28, bx, 0.8, z - d / 2 - 0.45, [0.6, 0.6, 0.58]);
+    box(1.46, 0.12, 0.3, bx, 0.98, z - d / 2 - 0.45, k % 2 ? [0.12, 0.12, 0.13] : [0.95, 0.8, 0.07]);
+  }
   const m = merge("outpost-pharmacy", parts);
   m.receiveShadows = true;
   m.isPickable = false;

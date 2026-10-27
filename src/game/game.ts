@@ -1,7 +1,7 @@
 import { createBarracksDetail } from "../world/barracksDetail";
 import { Axis, Matrix, Quaternion, Vector3, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { ARTILLERY, BUILD, COMBAT, ENEMY, JEEP_MG, MAP_HALF, ROAD, SIGHT, SKIRMISH, type GameMode, PLAYER, START_CREDITS, type StructureType, UNITS, type Team, type UnitType } from "../config";
-import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createSandbags } from "../world/fortification";
+import { COMPOUND, COMPOUND_BASTIONS, COMPOUND_WALLS, createBarricades } from "../world/fortification";
 import { toLocal, toWorld, type MapLayout, type V2 } from "../world/layout";
 import {
   createAuraTemplate, createBarracksMesh, createBollardMesh, createMgNestMesh, createPennant, HOSPITAL_TENT, createBlobShadow, createJeepBody, createJeepGun,
@@ -128,6 +128,8 @@ export class Game {
   onPing: ((x: number, z: number, kind: PingKind) => void) | null = null;
   /** Called when a grenade leaves the hand. */
   onThrow: ((x: number, z: number) => void) | null = null;
+  /** A grenadier arms his grenade (pulls the pin) as he winds up to throw. */
+  onArm: ((x: number, z: number) => void) | null = null;
 
   constructor(
     readonly scene: Scene,
@@ -248,10 +250,10 @@ export class Game {
       }], mesh);
       this.shadows.addShadowCaster(tiles);
     }
-    // sandbagged compound around the building; the walls are solid, only the gate is open
-    const bags = createSandbags(this.scene, `sandbags${team}`);
-    bags.parent = mesh;
-    this.shadows.addShadowCaster(bags);
+    // barricaded compound around the building; the walls are solid, only the gate is open
+    const walls = createBarricades(this.scene, `barricades${team}`);
+    walls.parent = mesh;
+    this.shadows.addShadowCaster(walls);
     const ring = createRing(this.scene, `bRing${team}`, 21, 0.3, [0.4, 1, 0.45]);
     const b = new Barracks(team, p.x, p.z, rot, mesh, ring, this.terrain.heightAt(p.x, p.z));
     mesh.metadata = { building: b };
@@ -393,6 +395,11 @@ export class Game {
     }
     for (const b of this.buildings) {
       this.credits[b.team] = SKIRMISH.credits;
+      // every unit is placed where it can get out from: on ground connected to the compound's gate (on foot and,
+      // for the vehicles, by vehicle) - not in a walled or hedged garden next to the line-up
+      const gate = toWorld(b.x, b.z, b.rot, 0, COMPOUND.hd + 3);
+      const reach = [this.nav.reachableFrom(gate.x, gate.z, 0), this.nav.reachableFrom(gate.x, gate.z, 1)] as const;
+      const spot = (x: number, z: number, layer: 0 | 1) => this.nav.nearestIn(x, z, reach[layer], layer);
       // rows in front of the gate: medics closest to the base, then riflemen, grenadiers, RPG gunners and the
       // jeeps at the head of the column, facing the enemy (5 infantry per row); the tanks stand on either side of
       // the infantry (ahead of the column they would stand beyond the hill country's walls)
@@ -409,14 +416,14 @@ export class Game {
       }
       for (let i = 0; i < SKIRMISH.forces.tank; i++) {
         const p = toWorld(b.x, b.z, b.rot, (i % 2 ? 1 : -1) * 9.5, 17 + Math.floor(i / 2) * 7.5);
-        const free = this.nav.freePoint(p.x, p.z, 1);
+        const free = spot(p.x, p.z, 1);
         const u = this.spawnUnit("tank", b.team, free.x, free.z);
         u.heading = u.turret = b.rot;
       }
       for (const r of rows) {
         for (let i = 0; i < r.count; i++) {
           const p = toWorld(b.x, b.z, b.rot, (i - (r.count - 1) / 2) * r.spacing, r.depth);
-          const free = this.nav.freePoint(p.x, p.z, r.type === "jeep" ? 1 : 0);
+          const free = spot(p.x, p.z, r.type === "jeep" ? 1 : 0);
           const u = this.spawnUnit(r.type, b.team, free.x, free.z);
           u.heading = u.turret = b.rot;
           if (r.type === "jeep") {

@@ -42,6 +42,8 @@ interface Classic { sunIntensity: number; sunColor: Color3; hemiIntensity: numbe
  * edges come from the rim light, see `rim` in the material's metadata).
  */
 function emissiveOf(m: StandardMaterial, out: Color3): Color3 {
+  // the classic look's LED strips and lit rings are plain paint here
+  if ((m.metadata as { classicGlow?: boolean } | null)?.classicGlow) return out.set(0, 0, 0);
   const f = m.emissiveFresnelParameters;
   out.copyFrom(m.emissiveColor);
   if (f?.isEnabled) out.multiplyInPlace(f.rightColor);

@@ -1,14 +1,16 @@
 import { MeshBuilder, Vector3, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { CAPTURE_BONUS, CAPTURE_TIME, HOSPITAL_HEAL, OUTPOST_HEAL, OUTPOSTS, PLAYER, type OutpostKind, type Team } from "../config";
 import { toWorld, type OutpostSpec, type RGB } from "../world/layout";
-import { createOutpostDetail } from "../world/outpostDetail";
 import { createGarageExitMesh, createPharmacyMesh } from "../world/cityModels";
-import { createOutpostMesh, createRing, mat, RADAR_DIM, TEAM_COLOR } from "../world/models";
+import { createRing, mat, TEAM_COLOR } from "../world/models";
+import { createOutpostMesh, RADAR_DIM } from "../world/outpostModels";
 import type { Terrain } from "../world/terrain";
 import type { Game } from "./game";
 import { Production } from "./production";
 
-const NEUTRAL: RGB = [0.9, 0.88, 0.8];
+const NEUTRAL: RGB = [0.62, 0.64, 0.68];
+/** Masts and display housings. */
+const MAST: RGB = [0.18, 0.185, 0.2];
 
 /**
  * Capturable map object. A team takes it by keeping at least one soldier inside the area
@@ -43,16 +45,12 @@ export class Outpost {
   private readonly ring: Mesh;
   private readonly flag: Mesh;
   /** Extra flags around the area, hoisted in the owner's colour once the outpost is taken. */
-  private readonly banners: { flag: Mesh; x: number; z: number; y: number }[] = [];
-  /** 0 = banners lowered, 1 = fully hoisted. */
+  private readonly banners: { flag: Mesh; frame: Mesh; x: number; z: number; y: number }[] = [];
+  /** The main display's housing. */
+  private readonly flagFrame: Mesh;
+  /** 0 = the edge displays are dark, 1 = fully switched on. */
   private hoist = 0;
   private readonly model: Mesh;
-  /** Extra detail of the realistic graphics mode (built on first use). */
-  private detail: Mesh | null = null;
-  private detailOn = false;
-  private readonly scene: Scene;
-  private readonly shadows: ShadowGenerator;
-  private readonly seed: number;
   /** Radar only: red warning light on top of the dome, blinking while the station is manned. */
   private readonly beacon: Mesh | null = null;
   /** Blown up (commandos): no owner, no income, cannot be taken any more. */
@@ -81,9 +79,6 @@ export class Outpost {
     this.spawn = toWorld(spec.x, spec.z, spec.rot, 0, 6.5);
     this.rally = toWorld(spec.x, spec.z, spec.rot, 0, 13);
 
-    this.scene = scene;
-    this.shadows = shadows;
-    this.seed = Math.round(spec.x * 31 + spec.z * 17) | 1;
     const mesh = spec.look === "pharmacy" ? createPharmacyMesh(scene) : spec.look === "garage" ? createGarageExitMesh(scene) : createOutpostMesh(scene, spec.kind);
     this.model = mesh;
     mesh.position.set(spec.x, this.y, spec.z);
@@ -92,7 +87,7 @@ export class Outpost {
     shadows.addShadowCaster(mesh);
     if (spec.kind === "radar") {
       this.beacon = MeshBuilder.CreateSphere("radarBeacon", { diameter: 0.32, segments: 6 }, scene);
-      this.beacon.position.set(spec.x, this.y + RADAR_DIM.domeY + RADAR_DIM.domeR + 0.08, spec.z);
+      this.beacon.position.set(spec.x, this.y + RADAR_DIM.top + 0.1, spec.z);
       this.beacon.material = mat(scene, [1, 0.12, 0.08], { emissive: true });
       this.beacon.isPickable = false;
       this.beacon.setEnabled(false);
@@ -103,50 +98,36 @@ export class Outpost {
 
     const polePos = toWorld(spec.x, spec.z, spec.rot, this.radius * 0.55, -this.radius * 0.55);
     const poleY = ground(polePos.x, polePos.z);
-    const pole = MeshBuilder.CreateCylinder("outpostPole", { height: 6, diameter: 0.14, tessellation: 6 }, scene);
-    pole.position.set(polePos.x, poleY + 3, polePos.z);
-    pole.material = mat(scene, [0.7, 0.7, 0.7]);
-    pole.isPickable = false;
-    shadows.addShadowCaster(pole);
+    // instead of flags: displays on steel masts, lit in the owner's colour (facing the camera, i.e. south)
+    const display = (name: string, x: number, y: number, z: number, w: number, h: number, mast: number) => {
+      const pole = MeshBuilder.CreateBox(`${name}Mast`, { width: 0.14, height: mast, depth: 0.14 }, scene);
+      pole.position.set(x, y + mast / 2, z);
+      pole.material = mat(scene, MAST);
+      pole.isPickable = false;
+      shadows.addShadowCaster(pole);
+      const frame = MeshBuilder.CreateBox(`${name}Frame`, { width: w + 0.16, height: h + 0.16, depth: 0.1 }, scene);
+      frame.position.set(x, y + mast - h / 2 - 0.1, z + 0.08);
+      frame.material = mat(scene, MAST);
+      frame.isPickable = false;
+      shadows.addShadowCaster(frame);
+      const screen = MeshBuilder.CreatePlane(name, { width: w, height: h }, scene);
+      screen.position.set(x, y + mast - h / 2 - 0.1, z + 0.02);
+      screen.isPickable = false;
+      return { screen, frame };
+    };
+    const main = display("outpostFlag", polePos.x, poleY, polePos.z, 1.8, 1.1, 6);
+    this.flag = main.screen;
+    this.flagFrame = main.frame;
 
-    this.flag = MeshBuilder.CreateBox("outpostFlag", { width: 1.8, height: 1.1, depth: 0.06 }, scene);
-    this.flag.setPivotPoint(new Vector3(-0.9, 0, 0));
-    this.flag.position.set(polePos.x + 0.9, poleY + 5.35, polePos.z);
-    this.flag.isPickable = false;
-    shadows.addShadowCaster(this.flag);
-
-    // three more flagpoles on the edge of the area; bare until the outpost has an owner
+    // three more displays on the edge of the area; dark until the outpost has an owner
     for (const a of [0.5, 2.6, 4.6]) {
       const p = toWorld(spec.x, spec.z, spec.rot, Math.sin(a) * this.radius * 0.88, Math.cos(a) * this.radius * 0.88);
       const y = ground(p.x, p.z);
-      const bannerPole = MeshBuilder.CreateCylinder("bannerPole", { height: 4, diameter: 0.1, tessellation: 6 }, scene);
-      bannerPole.position.set(p.x, y + 2, p.z);
-      bannerPole.material = mat(scene, [0.62, 0.6, 0.55]);
-      bannerPole.isPickable = false;
-      shadows.addShadowCaster(bannerPole);
-      const flag = MeshBuilder.CreateBox("banner", { width: 1.3, height: 0.8, depth: 0.05 }, scene);
-      flag.setPivotPoint(new Vector3(-0.65, 0, 0));
-      flag.position.set(p.x + 0.65, y, p.z);
-      flag.isPickable = false;
-      flag.setEnabled(false);
-      shadows.addShadowCaster(flag);
-      this.banners.push({ flag, x: p.x, z: p.z, y });
+      const { screen, frame } = display("banner", p.x, y, p.z, 1.3, 0.8, 4);
+      screen.setEnabled(false);
+      this.banners.push({ flag: screen, frame, x: p.x, z: p.z, y });
     }
     this.applyOwnerColors();
-  }
-
-  /** Shows the extra model detail of the realistic graphics mode (built the first time it is needed). */
-  setDetail(on: boolean) {
-    this.detailOn = on;
-    if (on && !this.detail && !this.look) {
-      this.detail = createOutpostDetail(this.scene, this.kind, this.seed);
-      this.detail.position.copyFrom(this.model.position);
-      this.detail.rotation.copyFrom(this.model.rotation);
-      this.detail.scaling.copyFrom(this.model.scaling);
-      this.detail.freezeWorldMatrix();
-      this.shadows.addShadowCaster(this.detail);
-    }
-    this.detail?.setEnabled(on && !this.destroyed);
   }
 
   /** Back to the start of a game: neutral, capture bonus unpaid, rebuilt if it was blown up. */
@@ -157,8 +138,9 @@ export class Outpost {
       this.model.rotation.z = 0;
       this.model.position.y = this.y;
       this.model.freezeWorldMatrix();
-      this.setDetail(this.detailOn);
       this.flag.setEnabled(true);
+      this.flagFrame.setEnabled(true);
+      for (const b of this.banners) b.frame.setEnabled(true);
       this.ring.setEnabled(true);
     }
     this.owner = null;
@@ -183,8 +165,8 @@ export class Outpost {
 
   private applyOwnerColors() {
     const c = this.owner === null ? NEUTRAL : TEAM_COLOR[this.owner];
-    this.flag.material = mat(this.flag.getScene(), c);
-    // a new owner hoists his own flags from the bottom
+    this.flag.material = mat(this.flag.getScene(), c, { emissive: true });
+    // a new owner's displays switch on one after the other
     this.hoist = 0;
     for (const b of this.banners) b.flag.material = this.flag.material;
     this.ring.material = mat(this.ring.getScene(), c, { emissive: true });
@@ -202,10 +184,13 @@ export class Outpost {
     this.model.scaling.set(1.1, 0.22, 1.1);
     this.model.rotation.z = 0.08;
     this.model.position.y -= 0.15;
-    this.detail?.setEnabled(false); // the rubble heap is the plain model
     this.flag.setEnabled(false);
+    this.flagFrame.setEnabled(false);
     this.ring.setEnabled(false);
-    for (const b of this.banners) b.flag.setEnabled(false);
+    for (const b of this.banners) {
+      b.flag.setEnabled(false);
+      b.frame.setEnabled(false);
+    }
   }
 
   update(dt: number, g: Game) {
@@ -213,15 +198,15 @@ export class Outpost {
     this.flagT += dt;
     this.warnCooldown -= dt;
     if (this.production && this.owner !== null) this.production.update(dt, g, this.owner, this.spawn, this.rally);
-    this.flag.rotation.y = Math.sin(this.flagT * 2.1) * 0.25;
     // the radar is in use: its warning light blinks
     this.beacon?.setEnabled(this.owner !== null && this.flagT % 1.4 < 0.7);
     this.hoist = this.owner === null ? 0 : Math.min(1, this.hoist + dt / 2.5);
     const up = this.hoist * this.hoist * (3 - 2 * this.hoist);
+    // each display switches on like a screen: a bright line that opens up, a short flicker
     this.banners.forEach((b, i) => {
-      b.flag.setEnabled(up > 0.02);
-      b.flag.position.y = b.y + 0.7 + up * 2.85;
-      b.flag.rotation.y = Math.sin(this.flagT * 2.3 + i * 1.7) * 0.3;
+      const k = Math.max(0, Math.min(1, up * 1.6 - i * 0.3));
+      b.flag.setEnabled(k > 0.02 && !(k < 1 && (this.flagT * 30 + i * 7) % 5 < 1));
+      b.flag.scaling.y = Math.max(0.04, k);
     });
 
     this.guarded = false;

@@ -1,4 +1,4 @@
-import { MeshBuilder, type InstancedMesh, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
+import { MeshBuilder, type Mesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { MAP_HALF } from "../config";
 import { conveyorDistance, inBox } from "./power";
 import type { NavGrid } from "../game/nav";
@@ -39,10 +39,23 @@ const DARK: RGB = [0.12, 0.12, 0.12];
 const GLASS: RGB = [0.24, 0.3, 0.36];
 const TYRE: RGB = [0.1, 0.1, 0.1];
 
-/** ISO shipping container (6 x 2.4 x 2.5 m) in a military paint scheme, long side along x. */
+const WHITE: RGB = [0.88, 0.89, 0.9];
+const SENSOR: RGB = [0.05, 0.06, 0.08];
+/** Lights (glow in both graphics modes): white front light bars, red rear ones, status green, warning yellow. */
+const LIGHT_FRONT: RGB = [0.9, 0.96, 1];
+const LIGHT_REAR: RGB = [1, 0.12, 0.1];
+const LIGHT_STATUS: RGB = [0.25, 1, 0.5];
+const LIGHT_WARN: RGB = [1, 0.8, 0.1];
+
+/** A glowing part (light bar, status LED) in a template. */
+function lit(box: PartFn, scene: Scene, w: number, h: number, d: number, x: number, y: number, z: number, c: RGB) {
+  box(w, h, d, x, y, z, c).material = mat(scene, c, { emissive: true });
+}
+
+/** ISO shipping container (6 x 2.4 x 2.5 m), long side along x: plain paint, stencilled code, a status light by the doors. */
 function containerTpl(scene: Scene, color: RGB, name: string): Mesh {
   return template(scene, name, (box) => {
-    const dark: RGB = [color[0] * 0.75, color[1] * 0.75, color[2] * 0.75];
+    const dark: RGB = [color[0] * 0.78, color[1] * 0.78, color[2] * 0.78];
     box(6, 2.5, 2.35, 0, 1.25, 0, color);
     // corrugation on the long sides and the roof
     for (let x = -2.7; x <= 2.7; x += 0.45) {
@@ -51,35 +64,50 @@ function containerTpl(scene: Scene, color: RGB, name: string): Mesh {
     }
     // doors with lock bars at one end, corner castings
     box(0.06, 2.4, 2.3, 3.02, 1.25, 0, dark);
-    for (const z of [-0.75, -0.3, 0.3, 0.75]) box(0.06, 2.2, 0.05, 3.06, 1.25, z, [0.25, 0.25, 0.23]);
+    for (const z of [-0.75, -0.3, 0.3, 0.75]) box(0.06, 2.2, 0.05, 3.06, 1.25, z, [0.2, 0.2, 0.22]);
     for (const x of [-2.95, 2.95]) for (const z of [-1.12, 1.12]) for (const y of [0.08, 2.42]) box(0.18, 0.16, 0.18, x, y, z, DARK);
-    box(1.2, 0.35, 0.02, -1.6, 1.9, 1.23, [0.85, 0.85, 0.8]); // stencilled marking
+    box(1.4, 0.3, 0.02, -1.6, 2.0, 1.23, [0.1, 0.1, 0.11]); // stencilled code
+    box(0.5, 0.3, 0.02, 1.9, 2.0, 1.23, [0.95, 0.78, 0.1]); // hazard label
+    lit(box, scene, 0.08, 0.08, 0.3, 3.08, 2.25, 0.9, LIGHT_STATUS);
   }, () => "metal"); // corrugated steel all over (the realistic mode's texture)
 }
 
-/** Portable living cabin (Wohncontainer): light walls, windows, door, small step. */
+/** Living module: white walls, a dark window band, a door with a lit keypad, an LED strip under the roof edge. */
 function cabinTpl(scene: Scene): Mesh {
   return template(scene, "cabin", (box) => {
-    const wall: RGB = [0.86, 0.85, 0.8];
-    box(6, 2.6, 2.4, 0, 1.3, 0, wall);
-    box(6.1, 0.12, 2.5, 0, 2.62, 0, [0.6, 0.6, 0.58]); // roof edge
-    box(6.1, 0.12, 2.5, 0, 0.06, 0, [0.5, 0.5, 0.48]); // frame
-    for (const x of [-1.8, 1.2]) box(1.0, 0.8, 0.05, x, 1.6, 1.22, GLASS);
-    box(0.9, 2.0, 0.05, -0.3, 1.05, 1.22, [0.45, 0.48, 0.52]); // door
-    box(1.0, 0.25, 0.6, -0.3, 0.12, 1.55, [0.5, 0.5, 0.48]); // step
-    for (const x of [-1.8, 1.2]) box(1.0, 0.8, 0.05, x, 1.6, -1.22, GLASS);
+    box(6, 2.6, 2.4, 0, 1.3, 0, WHITE);
+    box(6.1, 0.12, 2.5, 0, 2.62, 0, [0.3, 0.31, 0.33]); // roof edge
+    box(6.1, 0.12, 2.5, 0, 0.06, 0, [0.25, 0.25, 0.27]); // frame
+    for (const z of [1.22, -1.22]) box(5.2, 0.7, 0.05, 0.3, 1.65, z, SENSOR); // window band
+    box(0.9, 2.0, 0.06, -2.3, 1.05, 1.22, [0.3, 0.31, 0.33]); // door
+    lit(box, scene, 0.12, 0.18, 0.03, -1.7, 1.15, 1.25, LIGHT_STATUS); // keypad
+    lit(box, scene, 5.8, 0.05, 0.03, 0, 2.48, 1.24, LIGHT_FRONT);
+    box(1.0, 0.25, 0.6, -2.3, 0.12, 1.55, [0.4, 0.4, 0.42]); // step
   });
 }
 
-/** Small car parked at the roadside, long side along x. */
-function carTpl(scene: Scene, color: RGB, name: string): Mesh {
+/**
+ * Electric car parked at the roadside, long side along x (front +x): a smooth body without a grille, a glass roof, flush
+ * wheels, a light bar across the front and the back; `taxi`: a robotaxi with a sensor dome on the roof.
+ */
+function carTpl(scene: Scene, color: RGB, name: string, taxi = false): Mesh {
   return template(scene, name, (box, cyl) => {
-    box(3.9, 0.7, 1.7, 0, 0.62, 0, color);
-    box(2.1, 0.6, 1.5, -0.2, 1.25, 0, color);
-    box(2.0, 0.5, 1.52, -0.2, 1.26, 0, GLASS); // windows
-    box(0.06, 0.5, 1.3, 0.86, 1.22, 0, GLASS); // windscreen
-    for (const x of [-1.25, 1.25]) for (const z of [-0.8, 0.8]) cyl(0.28, 0.62, x, 0.31, z, TYRE, Math.PI / 2);
-    for (const z of [-0.55, 0.55]) box(0.05, 0.14, 0.3, 1.96, 0.72, z, [0.95, 0.92, 0.75]); // headlights
+    box(4.0, 0.62, 1.78, 0, 0.6, 0, color); // body
+    box(0.5, 0.42, 1.74, 1.8, 0.58, 0, color, 0, 0); // nose
+    box(2.5, 0.5, 1.6, -0.2, 1.14, 0, SENSOR); // glass cabin
+    box(2.3, 0.06, 1.62, -0.25, 1.4, 0, color); // roof strip
+    box(0.06, 0.08, 1.7, 2.04, 0.78, 0, color);
+    for (const x of [-1.3, 1.3]) for (const z of [-0.84, 0.84]) {
+      cyl(0.26, 0.66, x, 0.33, z, TYRE, Math.PI / 2);
+      cyl(0.04, 0.46, x, 0.33, z * 1.17, [0.75, 0.76, 0.78], Math.PI / 2); // aero hubcaps
+    }
+    lit(box, scene, 0.04, 0.05, 1.6, 2.06, 0.8, 0, LIGHT_FRONT); // front light bar
+    lit(box, scene, 0.04, 0.06, 1.66, -2.02, 0.82, 0, LIGHT_REAR); // rear light bar
+    if (taxi) {
+      cyl(0.22, 0.42, -0.2, 1.54, 0, SENSOR); // lidar dome
+      lit(box, scene, 0.44, 0.04, 0.44, -0.2, 1.45, 0, LIGHT_WARN);
+      for (const z of [-0.82, 0.82]) box(0.12, 0.08, 0.06, 1.0, 1.04, z, SENSOR); // side cameras
+    }
   });
 }
 
@@ -103,179 +131,79 @@ function fenceTpl(scene: Scene, color: RGB, name: string): Mesh {
   });
 }
 
-/** Hay wagon: flatbed trailer on four wheels with a drawbar and a load of bales. */
+/**
+ * Self-driving transport module (instead of the hay wagon): a white flatbed on four wheels with a sensor nose and light
+ * bars at both ends, no drawbar; hay bales strapped on its bed.
+ */
 function hayWagonTpl(scene: Scene): Mesh {
   return template(scene, "hayWagon", (box, cyl) => {
-    const wood: RGB = [0.5, 0.36, 0.22];
-    box(4.2, 0.15, 2.1, 0, 0.95, 0, wood);
-    for (const z of [-1.0, 1.0]) box(4.2, 0.45, 0.08, 0, 1.25, z, wood);
-    box(0.08, 0.45, 2.1, -2.1, 1.25, 0, wood);
-    box(4.0, 0.1, 0.12, 0, 0.75, 0, DARK); // chassis
-    for (const x of [-1.4, 1.4]) for (const z of [-0.95, 0.95]) cyl(0.25, 0.8, x, 0.4, z, TYRE, Math.PI / 2);
-    box(1.6, 0.08, 0.08, 2.9, 0.6, 0, DARK); // drawbar
+    box(4.6, 0.55, 2.0, 0, 0.75, 0, WHITE); // chassis
+    box(4.4, 0.08, 1.9, 0, 1.06, 0, [0.3, 0.31, 0.33]); // bed
+    for (const z of [-0.98, 0.98]) box(4.4, 0.25, 0.06, 0, 1.2, z, [0.3, 0.31, 0.33]); // low side rails
+    for (const x of [-1.6, 1.6]) for (const z of [-0.95, 0.95]) cyl(0.32, 0.86, x, 0.43, z, TYRE, Math.PI / 2);
+    for (const x of [-1.6, 1.6]) for (const z of [-1.12, 1.12]) cyl(0.04, 0.5, x, 0.43, z, [0.75, 0.76, 0.78], Math.PI / 2);
+    // sensor noses at both ends, light bars, a status light
+    for (const sx of [-1, 1]) {
+      box(0.12, 0.3, 1.6, sx * 2.32, 0.78, 0, SENSOR);
+      lit(box, scene, 0.04, 0.05, 1.5, sx * 2.39, 0.9, 0, sx > 0 ? LIGHT_FRONT : LIGHT_REAR);
+    }
+    lit(box, scene, 0.3, 0.05, 0.05, 1.6, 1.04, 1.0, LIGHT_STATUS);
     const hay: RGB = [0.86, 0.74, 0.42];
     for (const [x, z, y] of [[-1.2, -0.5, 1.35], [-1.2, 0.5, 1.35], [0, -0.5, 1.35], [0, 0.5, 1.35], [1.2, 0, 1.35], [-0.6, 0, 1.85], [0.6, 0, 1.85]]) {
       box(1.1, 0.5, 0.95, x, y, z, hay);
     }
+    for (const x of [-0.6, 0.6]) box(0.08, 0.02, 2.0, x, 2.12, 0, [0.95, 0.78, 0.1]); // straps
   });
 }
 
-/** Mouldboard plough: diagonal frame, three curved shares, a depth wheel and a hitch. */
+/** Robotic tillage unit (instead of the plough): a white tool bar with three shares, a sensor mast with a status light. */
 function ploughTpl(scene: Scene): Mesh {
   return template(scene, "plough", (box, cyl) => {
-    const steel: RGB = [0.28, 0.3, 0.32];
-    const red: RGB = [0.62, 0.16, 0.12];
-    box(2.8, 0.18, 0.18, 0, 0.75, 0, red, 0, 0.35);
+    const steel: RGB = [0.3, 0.31, 0.33];
+    box(2.8, 0.22, 0.3, 0, 0.75, 0, WHITE, 0, 0.35);
     for (let i = -1; i <= 1; i++) {
-      const s = box(0.7, 0.5, 0.06, i * 0.85, 0.35, i * -0.3 + 0.25, steel);
-      s.rotation.set(0, 0.6, 0.35);
-      box(0.08, 0.5, 0.08, i * 0.85, 0.6, i * -0.3, red);
+      const sh = box(0.7, 0.5, 0.06, i * 0.85, 0.35, i * -0.3 + 0.25, steel);
+      sh.rotation.set(0, 0.6, 0.35);
+      box(0.08, 0.5, 0.08, i * 0.85, 0.6, i * -0.3, steel);
     }
     cyl(0.12, 0.6, -1.4, 0.3, 0.6, TYRE, Math.PI / 2);
-    box(0.9, 0.12, 0.12, 1.7, 0.7, -0.4, red, 0, 0.35); // hitch
-  });
-}
-
-/** Small farm tractor: bonnet, open cab with roof, big rear and small front wheels. */
-function tractorTpl(scene: Scene, color: RGB, name: string): Mesh {
-  return template(scene, name, (box, cyl) => {
-    box(1.8, 0.8, 0.9, 0.7, 1.05, 0, color); // bonnet
-    box(0.1, 0.6, 0.8, 1.62, 1.05, 0, [0.2, 0.2, 0.2]); // grille
-    box(1.1, 0.25, 1.2, -0.6, 1.0, 0, color); // floor / fenders
-    for (const z of [-0.65, 0.65]) box(1.0, 0.12, 0.5, -0.6, 1.5, z * 1.2, color); // rear mudguards
-    for (const [x, z] of [[-1.05, -0.55], [-1.05, 0.55], [-0.15, -0.55], [-0.15, 0.55]]) box(0.06, 1.4, 0.06, x, 2.0, z, DARK); // cab posts
-    box(1.15, 0.08, 1.3, -0.6, 2.72, 0, color); // roof
-    box(0.4, 0.5, 0.45, -0.75, 1.35, 0, [0.15, 0.15, 0.15]); // seat
-    box(0.08, 0.7, 0.08, 1.2, 1.75, 0.25, DARK); // exhaust
-    for (const z of [-0.85, 0.85]) {
-      cyl(0.45, 1.5, -0.6, 0.75, z, TYRE, Math.PI / 2);
-      cyl(0.3, 0.8, 1.15, 0.4, z * 0.9, TYRE, Math.PI / 2);
-    }
-  });
-}
-
-
-// ------------------------------------------------------------------ detail of the realistic mode
-
-const CHROME: RGB = [0.7, 0.7, 0.72];
-const STEEL: RGB = [0.3, 0.3, 0.28];
-const LAMP: RGB = [0.95, 0.88, 0.6];
-const TAIL: RGB = [0.7, 0.08, 0.06];
-const ROPE: RGB = [0.62, 0.55, 0.4];
-const WOOD_DARK: RGB = [0.38, 0.27, 0.16];
-
-/** Detail laid over `carTpl` (same axes): bumpers, grille, plates, lights, door seams, mirrors, hubcaps, wheel arches. */
-function carDetailTpl(scene: Scene): Mesh {
-  return template(scene, "carDetail", (box, cyl) => {
-    box(3.6, 0.1, 1.6, 0, 0.28, 0, DARK); // underbody
-    box(0.18, 0.22, 1.74, 1.99, 0.4, 0, DARK); // bumpers
-    box(0.18, 0.22, 1.74, -1.99, 0.4, 0, DARK);
-    box(0.04, 0.2, 0.9, 1.97, 0.62, 0, [0.18, 0.18, 0.18]); // grille
-    box(0.05, 0.04, 0.9, 1.98, 0.74, 0, CHROME);
-    box(0.05, 0.04, 0.9, 1.98, 0.52, 0, CHROME);
-    box(0.03, 0.14, 0.42, 2.09, 0.4, 0, [0.9, 0.9, 0.85]); // number plates
-    box(0.03, 0.14, 0.42, -2.09, 0.4, 0, [0.9, 0.9, 0.85]);
-    for (const z of [-0.55, 0.55]) {
-      box(0.03, 0.2, 0.4, 1.94, 0.72, z, CHROME); // headlight rims
-      box(0.05, 0.14, 0.3, -1.96, 0.76, z, TAIL); // tail lights
-      box(0.04, 0.05, 0.3, -1.97, 0.62, z, [0.9, 0.5, 0.1]);
-    }
-    for (const side of [-1, 1]) {
-      const z = side * 0.866;
-      for (const x of [-1.0, 0.1, 1.0]) box(0.02, 0.56, 0.02, x, 0.7, z, [0.08, 0.08, 0.08]); // door seams
-      for (const x of [-0.5, 0.45]) box(0.18, 0.04, 0.04, x, 0.9, z + side * 0.01, CHROME); // handles
-      box(0.78, 0.36, 0.03, -1.25, 0.46, z, [0.06, 0.06, 0.06]); // wheel arches
-      box(0.78, 0.36, 0.03, 1.25, 0.46, z, [0.06, 0.06, 0.06]);
-      box(0.12, 0.1, 0.18, 0.78, 1.1, side * 0.94, DARK); // mirrors
-      box(0.04, 0.04, 0.14, 0.78, 1.08, side * 0.84, DARK);
-      for (const x of [-1.15, -0.2, 0.8]) box(0.1, 0.52, 0.06, x, 1.26, side * 0.77, DARK); // window pillars
-      box(1.6, 0.04, 0.05, -0.3, 1.6, side * 0.55, DARK); // roof rails
-      for (const wx of [-1.25, 1.25]) {
-        cyl(0.04, 0.36, wx, 0.31, side * 0.94, CHROME, Math.PI / 2); // hubcaps
-        cyl(0.05, 0.12, wx, 0.31, side * 0.96, DARK, Math.PI / 2);
-      }
-      box(0.02, 0.02, 0.55, 0.84, 1.0, side * 0.3, DARK); // wipers
-    }
-    cyl(0.3, 0.08, -1.9, 0.25, 0.55, STEEL, 0, Math.PI / 2); // exhaust
-    cyl(0.6, 0.02, -1.0, 1.9, 0.55, DARK); // aerial
-  });
-}
-
-/** Detail laid over `tractorTpl`: tyre lugs, rims and axles, headlights, steering wheel, dashboard, windscreen, hitch. */
-function tractorDetailTpl(scene: Scene): Mesh {
-  return template(scene, "tractorDetail", (box, cyl) => {
-    // lugs round the tyres (rear: radius 0.75 at (-0.6, 0.75); front: radius 0.4 at (1.15, 0.4))
-    for (const side of [-1, 1]) {
-      for (let k = 0; k < 18; k++) {
-        const a = (k / 18) * Math.PI * 2;
-        box(0.12, 0.1, 0.46, -0.6 + Math.cos(a) * 0.78, 0.75 + Math.sin(a) * 0.78, side * 0.85, TYRE).rotation.z = a;
-      }
-      for (let k = 0; k < 12; k++) {
-        const a = (k / 12) * Math.PI * 2;
-        box(0.08, 0.07, 0.3, 1.15 + Math.cos(a) * 0.42, 0.4 + Math.sin(a) * 0.42, side * 0.77, TYRE).rotation.z = a;
-      }
-      cyl(0.04, 0.8, -0.6, 0.75, side * 1.08, CHROME, Math.PI / 2); // rims and hubs
-      cyl(0.1, 0.22, -0.6, 0.75, side * 1.12, DARK, Math.PI / 2);
-      cyl(0.04, 0.46, 1.15, 0.4, side * 0.94, CHROME, Math.PI / 2);
-      cyl(0.08, 0.14, 1.15, 0.4, side * 0.97, DARK, Math.PI / 2);
-      box(0.7, 0.05, 0.3, 1.15, 0.78, side * 0.77, DARK); // front fenders
-      cyl(0.1, 0.22, 1.7, 1.15, side * 0.28, LAMP, 0, Math.PI / 2); // headlights
-      cyl(0.04, 0.28, 1.66, 1.15, side * 0.28, CHROME, 0, Math.PI / 2);
-      box(0.12, 0.1, 0.05, -0.15, 2.3, side * 0.78, DARK); // mirrors
-      box(0.12, 0.1, 0.2, -0.1, 2.8, side * 0.4, LAMP); // roof lights
-      for (let i = 0; i < 5; i++) box(0.04, 0.3, 0.02, 0.1 + i * 0.22, 1.05, side * 0.46, DARK); // bonnet slits
-      box(0.5, 0.1, 0.1, -1.35, 0.6, side * 0.4, STEEL).rotation.y = side * 0.15; // three-point linkage
-    }
-    box(0.12, 0.12, 1.6, -0.6, 0.75, 0, DARK); // axles
-    box(0.1, 0.1, 1.3, 1.15, 0.4, 0, DARK);
-    box(1.7, 0.04, 0.12, 0.7, 1.47, 0, DARK); // bonnet ridge
-    box(0.2, 0.3, 0.8, 1.78, 0.62, 0, DARK); // front weight
-    box(0.3, 0.2, 0.7, 0.2, 1.65, 0, DARK); // dashboard
-    box(0.05, 0.5, 0.05, 0.0, 1.55, 0, DARK).rotation.z = 0.5; // steering column
-    cyl(0.04, 0.36, -0.1, 1.82, 0, DARK); // steering wheel
-    box(0.03, 1.2, 1.0, -0.15, 2.1, 0, GLASS); // windscreen and rear window
-    box(0.03, 1.0, 0.9, -1.05, 2.15, 0, GLASS);
-    cyl(0.14, 0.14, 1.2, 2.18, 0.25, STEEL); // exhaust cap
-    box(0.5, 0.1, 0.3, -1.35, 0.45, 0, DARK); // drawbar hitch
-  });
-}
-
-/** Detail laid over `hayWagonTpl`: stakes, plank lines, axles with springs, spoked hubs, hitch eye, reflectors, strapped bales. */
-function hayWagonDetailTpl(scene: Scene): Mesh {
-  return template(scene, "hayWagonDetail", (box, cyl) => {
-    for (const z of [-1.06, 1.06]) {
-      for (let x = -1.9; x <= 1.91; x += 0.475) box(0.1, 0.55, 0.1, x, 1.3, z, WOOD_DARK); // stakes
-      box(4.2, 0.02, 0.1, 0, 1.2, z - Math.sign(z) * 0.04, WOOD_DARK); // plank lines on the side boards
-      box(4.2, 0.02, 0.1, 0, 1.4, z - Math.sign(z) * 0.04, WOOD_DARK);
-    }
-    box(0.1, 0.55, 2.2, -2.14, 1.3, 0, WOOD_DARK);
-    for (let z = -0.9; z <= 0.91; z += 0.3) box(4.0, 0.02, 0.03, 0, 1.035, z, WOOD_DARK); // floor planks
-    for (const x of [-1.4, 1.4]) {
-      box(0.12, 0.12, 2.1, x, 0.4, 0, STEEL); // axle
-      for (const z of [-0.6, 0.6]) box(1.0, 0.06, 0.12, x, 0.55, z, STEEL); // leaf springs
-      for (const side of [-1, 1]) {
-        cyl(0.06, 0.3, x, 0.4, side * 1.1, STEEL, Math.PI / 2); // hub
-        for (let k = 0; k < 8; k++) box(0.7, 0.05, 0.04, x, 0.4, side * 1.09, WOOD_DARK).rotation.z = (k / 8) * Math.PI;
-      }
-    }
-    for (const dz of [-0.12, 0.12]) box(0.12, 0.12, 0.05, 3.78, 0.62, dz, STEEL); // hitch eye
-    box(0.05, 0.12, 0.3, 3.85, 0.62, 0, STEEL);
-    box(0.3, 0.1, 0.1, 3.7, 0.62, 0, STEEL);
-    for (const z of [-0.9, 0.9]) box(0.05, 0.08, 0.08, -2.17, 1.05, z, TAIL); // reflectors
-    // bale strings and two straps over the load (same bale positions as the model)
-    for (const [x, z, y] of [[-1.2, -0.5, 1.35], [-1.2, 0.5, 1.35], [0, -0.5, 1.35], [0, 0.5, 1.35], [1.2, 0, 1.35], [-0.6, 0, 1.85], [0.6, 0, 1.85]]) {
-      for (const dx of [-0.25, 0.25]) box(0.03, 0.52, 0.97, x + dx, y, z, ROPE);
-    }
-    for (const x of [-0.6, 0.6]) box(0.08, 0.02, 2.1, x, 2.12, 0, ROPE);
+    box(0.08, 0.7, 0.08, 1.2, 1.2, -0.4, steel); // sensor mast
+    box(0.3, 0.14, 0.2, 1.2, 1.58, -0.4, SENSOR);
+    lit(box, scene, 0.1, 0.1, 0.1, 1.2, 1.7, -0.4, LIGHT_WARN);
   });
 }
 
 /**
- * Scenery details: military containers by the outposts; in the villages a cabin camp, cars at the
+ * Driverless field robot (instead of the tractor): no cab, a long white body between big black wheels, a sensor bar
+ * across the front, a lidar puck and a solar panel on top, light bars front and back, status lights.
+ */
+function tractorTpl(scene: Scene, color: RGB, name: string): Mesh {
+  return template(scene, name, (box, cyl) => {
+    box(2.9, 0.75, 1.0, 0.1, 1.05, 0, WHITE); // body
+    box(0.5, 0.5, 0.9, 1.65, 0.85, 0, WHITE); // nose
+    box(0.08, 0.22, 1.0, 1.92, 1.0, 0, SENSOR); // sensor bar
+    lit(box, scene, 0.03, 0.04, 0.8, 1.97, 1.13, 0, LIGHT_FRONT);
+    lit(box, scene, 0.03, 0.05, 0.8, -1.37, 1.15, 0, LIGHT_REAR);
+    box(2.2, 0.06, 1.3, -0.1, 1.48, 0, [0.12, 0.16, 0.26]); // solar panel
+    box(2.24, 0.03, 1.34, -0.1, 1.45, 0, [0.6, 0.62, 0.65]);
+    cyl(0.18, 0.3, 1.1, 1.6, 0, SENSOR); // lidar
+    lit(box, scene, 0.32, 0.03, 0.32, 1.1, 1.53, 0, color); // its status ring: the maker's colour
+    for (const z of [-0.6, 0.6]) box(2.0, 0.08, 0.06, 0.1, 1.25, z * 0.85, color); // coloured stripe
+    for (const z of [-0.85, 0.85]) {
+      cyl(0.45, 1.5, -0.6, 0.75, z, TYRE, Math.PI / 2);
+      cyl(0.04, 0.8, -0.6, 0.75, z * 1.28, [0.75, 0.76, 0.78], Math.PI / 2);
+      cyl(0.3, 0.9, 1.25, 0.45, z * 0.95, TYRE, Math.PI / 2);
+    }
+    lit(box, scene, 0.12, 0.06, 0.04, 0.6, 1.3, 0.52, LIGHT_STATUS);
+  });
+}
+
+/**
+ * Scenery details: containers by the outposts; in the villages a cabin camp, cars at the
  * kerb, garages and garden fences; farm machinery (hay wagons, ploughs, the odd tractor) beside
  * the fields. Returns the solid ones so the caller can block movement, sight and give cover.
  */
-export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator, nav: NavGrid): Obstacle[] & { setDetail(on: boolean): void } {
+export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, shadows: ShadowGenerator, nav: NavGrid): Obstacle[] {
   const r = rng(4242);
   const obstacles: Obstacle[] = [];
   const placed: { x: number; z: number; rad: number }[] = [];
@@ -316,9 +244,9 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
 
   // ---- military containers beside the outposts
   const containers = [
-    containerTpl(scene, [0.33, 0.37, 0.22], "containerOlive"),
-    containerTpl(scene, [0.58, 0.5, 0.34], "containerSand"),
-    containerTpl(scene, [0.42, 0.44, 0.42], "containerGrey"),
+    containerTpl(scene, [0.27, 0.28, 0.3], "containerGraphite"),
+    containerTpl(scene, [0.82, 0.83, 0.84], "containerWhite"),
+    containerTpl(scene, [0.85, 0.68, 0.1], "containerYellow"),
   ];
   for (const o of layout.outposts) {
     const n = 1 + Math.floor(r() * 2);
@@ -337,9 +265,11 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
   const cabin = cabinTpl(scene);
   const garage = garageTpl(scene);
   const fences = [fenceTpl(scene, [0.92, 0.9, 0.84], "fenceWhite"), fenceTpl(scene, [0.48, 0.34, 0.2], "fenceWood")];
+  // electric cars in white, greys and black, an accent colour here and there, and robotaxis
   const cars: Mesh[] = (
-    [[0.66, 0.14, 0.12], [0.2, 0.32, 0.6], [0.86, 0.82, 0.66], [0.22, 0.36, 0.24], [0.5, 0.5, 0.52], [0.62, 0.48, 0.18]] as RGB[]
+    [[0.9, 0.9, 0.91], [0.5, 0.51, 0.53], [0.1, 0.1, 0.11], [0.9, 0.9, 0.91], [0.3, 0.31, 0.33], [0.62, 0.12, 0.14]] as RGB[]
   ).map((c, i) => carTpl(scene, c, `car${i}`));
+  cars.push(carTpl(scene, [0.92, 0.92, 0.93], "robotaxi", true), carTpl(scene, [0.95, 0.78, 0.1], "robotaxiYellow", true));
 
   layout.suburbs.forEach((s) => {
     // a camp of living containers on open ground at the edge of the village
@@ -429,7 +359,7 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
   // ---- farm machinery beside the fields
   const wagon = hayWagonTpl(scene);
   const plough = ploughTpl(scene);
-  const tractors = ([[0.7, 0.16, 0.1], [0.22, 0.45, 0.2], [0.2, 0.33, 0.62]] as RGB[]).map((c, i) => tractorTpl(scene, c, `tractor${i}`));
+  const tractors = ([[1, 0.8, 0.1], [0.25, 1, 0.5], [0.3, 0.7, 1]] as RGB[]).map((c, i) => tractorTpl(scene, c, `tractor${i}`));
   for (const f of layout.fields) {
     if (f.garden || r() < 0.35) continue;
     const kinds: ("wagon" | "plough" | "tractor")[] = [r() < 0.55 ? "wagon" : "plough"];
@@ -463,34 +393,5 @@ export function createProps(scene: Scene, layout: MapLayout, terrain: Terrain, s
     if (!fences.includes(i.tpl)) shadows.addShadowCaster(m);
   }
 
-  // the vehicles' detail of the realistic mode: built and placed on first use
-  const detailOf = new Map<Mesh, (scene: Scene) => Mesh>();
-  for (const c of cars) detailOf.set(c, carDetailTpl);
-  for (const t of tractors) detailOf.set(t, tractorDetailTpl);
-  detailOf.set(wagon, hayWagonDetailTpl);
-  let detail: InstancedMesh[] | null = null;
-  const setDetail = (on: boolean) => {
-    if (on && !detail) {
-      detail = [];
-      const shared = new Map<(scene: Scene) => Mesh, Mesh>();
-      for (const i of instances) {
-        const build = detailOf.get(i.tpl);
-        if (!build) continue;
-        let t = shared.get(build);
-        if (!t) {
-          t = build(scene);
-          shared.set(build, t);
-        }
-        const m = t.createInstance(t.name);
-        m.position.set(i.x, i.y ?? terrain.heightAt(i.x, i.z), i.z);
-        m.rotation.y = i.rot;
-        m.isPickable = false;
-        m.freezeWorldMatrix();
-        shadows.addShadowCaster(m);
-        detail.push(m);
-      }
-    }
-    for (const m of detail ?? []) m.setEnabled(on);
-  };
-  return Object.assign(obstacles, { setDetail });
+  return obstacles;
 }

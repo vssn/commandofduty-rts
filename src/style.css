@@ -891,34 +891,6 @@ body.in-menu #btn-pause { display: none; }
   .pause-box .graphics-note { margin: -2px 2px 2px; }
 }
 
-/* ------------------------------------------------------------------ realistic graphics: brushed metal
-   With "Grafik: Realistisch" the menus get a subtle brushed-metal surface: fine horizontal streaks
-   (stretched SVG noise), a soft diagonal sheen and a slight bevel. The colours stay the same. */
-body.gfx-real {
-  --metal-streaks: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.9' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.24 0 0 0 -0.085'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --metal-sheen: linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.035) 58%, rgba(0, 0, 0, 0.12) 100%);
-  --metal-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(0, 0, 0, 0.45);
-}
-body.gfx-real .menu-btn,
-body.gfx-real .pause-box,
-body.gfx-real .panel,
-body.gfx-real .mode-body,
-body.gfx-real #btn-pause,
-body.gfx-real #btn-fullscreen {
-  background-image: var(--metal-sheen), var(--metal-streaks);
-  background-size: 100% 100%, 240px 240px;
-}
-body.gfx-real .menu-btn,
-body.gfx-real .panel,
-body.gfx-real #btn-pause,
-body.gfx-real #btn-fullscreen { box-shadow: var(--metal-bevel); }
-body.gfx-real .pause-box { box-shadow: var(--metal-bevel), 0 18px 60px rgba(0, 0, 0, 0.55); }
-/* the gold button: brushed brass, the sheen a little stronger */
-body.gfx-real .menu-btn.primary {
-  background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.14) 100%), var(--metal-streaks);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
-}
-
 /* hint below the graphics switch */
 .graphics-note { margin: -4px 4px 4px; font-size: 0.8em; line-height: 1.3; color: rgba(255, 255, 255, 0.55); text-align: left; }
 
@@ -1031,3 +1003,276 @@ body.cutscene #sel-tag, body.in-menu #sel-tag { display: none; }
 }
 #sb-switch[hidden] { display: none; }
 #sb-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px; }
+
+/* ==================================================================================================================
+   BATTLE VECTOR - design layer
+   Flat surfaces with cut corners, thin glowing edges and cyber ornaments (corner brackets, tick rules, small
+   monospaced labels, grid and scanlines). Two colours face each other: signal yellow and alarm red. In the game the
+   interface is a HUD: dark glass over the view, edges lit in yellow.
+   ================================================================================================================== */
+:root {
+  --bg: #07080a;
+  --panel: rgba(12, 13, 16, 0.66);
+  --panel-hi: rgba(24, 26, 31, 0.78);
+  --line: rgba(252, 238, 10, 0.3);
+  --text: #f1efe6;
+  --muted: #8d939b;
+  --accent: #fcee0a;
+  --red: #ff2a44;
+  --green: #3dffa0;
+  --glow: 0 0 12px rgba(252, 238, 10, 0.35);
+  --glow-red: 0 0 12px rgba(255, 42, 68, 0.45);
+  --cut: 10px;
+  --mono: "Chakra Petch", ui-monospace, Menlo, monospace;
+  --clip: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}
+html, body { font-family: "Rajdhani", "Avenir Next Condensed", "Arial Narrow", sans-serif; font-weight: 600; }
+
+/* ---------------------------------------------------------------- main menu */
+#menu {
+  background:
+    /* grid and scanlines */
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(252, 238, 10, 0.05) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(252, 238, 10, 0.05) 1px, transparent 1px) 0 0 / 48px 48px,
+    /* dark on the left where the menu is, the fly-over shows on the right */
+    linear-gradient(90deg, rgba(6, 7, 9, 0.95) 0%, rgba(6, 7, 9, 0.84) 38%, rgba(6, 7, 9, 0.2) 74%, rgba(6, 7, 9, 0.05) 100%);
+}
+/* the two colours facing each other: a yellow edge on the left, a red one on the right, both with notches */
+#menu::before, #menu::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  pointer-events: none;
+  z-index: 1;
+}
+#menu::before { left: 0; background: repeating-linear-gradient(180deg, var(--accent) 0 72px, transparent 72px 80px); box-shadow: var(--glow); }
+#menu::after { right: 0; background: repeating-linear-gradient(180deg, var(--red) 0 72px, transparent 72px 80px); box-shadow: var(--glow-red); }
+.menu-panel { max-width: 500px; position: relative; }
+.menu-kicker {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.24em;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.menu-kicker::before { content: ""; width: 10px; height: 10px; background: var(--red); box-shadow: var(--glow-red); flex: none; }
+.menu-brand { display: flex; align-items: center; gap: 18px; }
+.menu-logo { width: clamp(64px, 8vw, 96px); height: auto; flex: none; filter: drop-shadow(0 0 14px rgba(252, 238, 10, 0.35)); }
+.menu-title {
+  font-family: "Chakra Petch", "Rajdhani", Impact, sans-serif;
+  font-weight: 700;
+  font-size: clamp(44px, 6.4vw, 82px);
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-shadow: 0 0 22px rgba(252, 238, 10, 0.25);
+}
+.menu-title b { display: block; font-weight: 700; }
+.menu-title span {
+  display: block;
+  font-size: 1em;
+  letter-spacing: 0.04em;
+  color: var(--red);
+  text-shadow: 0 0 22px rgba(255, 42, 68, 0.3);
+}
+/* a rule split in the two colours, with the grid's label between them */
+.menu-versus { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; }
+.menu-versus i { flex: 1; height: 3px; }
+.menu-versus i:first-child { background: var(--accent); box-shadow: var(--glow); }
+.menu-versus i:last-child { background: var(--red); box-shadow: var(--glow-red); }
+.menu-versus em { font: 600 11px/1 var(--mono); font-style: normal; letter-spacing: 0.3em; color: var(--muted); white-space: nowrap; }
+.menu-brief { color: #c7c9cc; font-weight: 500; font-size: 17px; }
+.menu-sub { font-family: var(--mono); font-size: 15px; letter-spacing: 0.26em; }
+.menu-sub::before { content: "// "; color: var(--red); }
+.menu-btn {
+  position: relative;
+  font-family: "Rajdhani", sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.2em;
+  color: var(--text);
+  background: rgba(14, 15, 19, 0.82);
+  border: 1px solid rgba(252, 238, 10, 0.28);
+  border-left: 3px solid var(--accent);
+  clip-path: var(--clip);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.menu-btn:hover { background: rgba(252, 238, 10, 0.14); border-left-color: var(--accent); color: #fff; transform: translateX(4px); }
+.menu-btn.primary { color: #0a0a0c; background: var(--accent); border-color: var(--accent); }
+.menu-btn.primary:hover { background: #fff36b; color: #0a0a0c; }
+.menu-btn.menu-back { border-left-color: var(--red); }
+.menu-btn.menu-back:hover { background: rgba(255, 42, 68, 0.16); }
+.menu-help { background: rgba(10, 11, 14, 0.8); border: 1px solid var(--line); clip-path: var(--clip); }
+.menu-foot { font-family: var(--mono); color: #5d636b; letter-spacing: 0.24em; }
+.menu-foot::before { content: "◢ "; color: var(--accent); }
+.menu-slider input[type="range"]::-webkit-slider-thumb { background: var(--accent) !important; }
+.menu-slider input[type="range"]::-moz-range-thumb { background: var(--accent) !important; }
+
+/* mode and map cards: flat, cut corners, a coloured edge - conquest yellow, skirmish both, commandos red */
+.mode-card {
+  --tone: var(--accent);
+  background: rgba(10, 11, 14, 0.9);
+  border: 1px solid rgba(252, 238, 10, 0.22);
+  border-top: 3px solid var(--tone);
+  clip-path: var(--clip);
+  box-shadow: none;
+}
+#mode-commandos { --tone: var(--red); border-color: rgba(255, 42, 68, 0.28); }
+#mode-skirmish { border-image: linear-gradient(90deg, var(--accent) 50%, var(--red) 50%) 3 0 0 0 / 3px 0 0 0; }
+.mode-card:hover { border-color: var(--tone); box-shadow: inset 0 0 0 1px var(--tone), inset 0 0 26px rgba(252, 238, 10, 0.08); transform: translateY(-4px); }
+#mode-commandos:hover { box-shadow: inset 0 0 0 1px var(--red), inset 0 0 26px rgba(255, 42, 68, 0.12); }
+.mode-img { background: #0b0c0f; }
+.mode-img::after {
+  background:
+    linear-gradient(180deg, transparent 50%, rgba(8, 9, 11, 0.92)),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
+}
+.mode-title {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+}
+.mode-title::before { content: "▮ "; color: var(--tone, var(--accent)); }
+.mode-text { color: #b9bcc1; font-weight: 500; }
+.mode-tags em {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--tone, var(--accent));
+  border: 1px solid currentColor;
+  background: transparent;
+  clip-path: polygon(5px 0, 100% 0, 100% 100%, 0 100%, 0 5px);
+}
+
+/* ---------------------------------------------------------------- in-game HUD: glass, glowing edges */
+#sidebar {
+  background:
+    linear-gradient(rgba(252, 238, 10, 0.035) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, rgba(252, 238, 10, 0.035) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(180deg, rgba(10, 11, 14, 0.94), rgba(6, 7, 9, 0.97));
+  border-left: 1px solid rgba(252, 238, 10, 0.55);
+  box-shadow: -1px 0 14px rgba(252, 238, 10, 0.18), inset 2px 0 0 rgba(255, 42, 68, 0.0);
+}
+.radar {
+  position: relative;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(252, 238, 10, 0.4);
+  box-shadow: var(--glow), inset 0 0 18px rgba(252, 238, 10, 0.08);
+}
+/* corner brackets round the radar */
+.radar::before, .radar::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+.radar::before { left: -4px; top: -4px; border-left: 2px solid var(--accent); border-top: 2px solid var(--accent); }
+.radar::after { right: -4px; bottom: -4px; border-right: 2px solid var(--red); border-bottom: 2px solid var(--red); }
+.credits-row { background: rgba(252, 238, 10, 0.06); border: 1px solid var(--line); clip-path: var(--clip); }
+.credits-row .label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.24em; }
+.credits { font-family: "Chakra Petch", sans-serif; color: var(--accent); text-shadow: 0 0 10px rgba(252, 238, 10, 0.55); }
+.income { color: var(--green); text-shadow: 0 0 8px rgba(61, 255, 160, 0.45); }
+.panel {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  clip-path: var(--clip);
+  box-shadow: inset 0 0 20px rgba(252, 238, 10, 0.04);
+}
+.panel h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.24em; color: var(--accent); }
+.panel h2::before { content: "▸ "; color: var(--red); }
+.sb-tab { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); border-radius: 0; clip-path: var(--clip); }
+.sb-tab.active { background: var(--accent); border-color: var(--accent); box-shadow: var(--glow); }
+.sb-tab .tab-badge { border-radius: 0; background: var(--red); color: #fff; border-color: #0a0a0c; box-shadow: var(--glow-red); }
+.build-btn {
+  border: 1px solid rgba(252, 238, 10, 0.32);
+  clip-path: var(--clip);
+  background:
+    radial-gradient(circle at 50% 36%, rgba(252, 238, 10, 0.12), transparent 62%),
+    linear-gradient(180deg, #1b1d23 0%, #0f1014 60%, #08090b 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.build-btn:hover { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 18px rgba(252, 238, 10, 0.2); }
+.build-btn kbd { font-family: var(--mono); color: #0a0a0c; background: var(--accent); border: 0; }
+.build-cost { font-family: "Chakra Petch", sans-serif; color: var(--accent); text-shadow: 0 0 8px rgba(0, 0, 0, 0.9); }
+.build-name { font-family: "Rajdhani", sans-serif; background: linear-gradient(180deg, transparent, rgba(6, 7, 9, 0.92)); }
+.wipe { background: conic-gradient(transparent calc(var(--p, 1) * 1turn), rgba(6, 7, 9, 0.7) 0); }
+.action-btn.armed { border-color: var(--red); box-shadow: inset 0 0 0 2px var(--red), inset 0 0 18px rgba(255, 42, 68, 0.3); }
+.help dt { font-family: var(--mono); font-size: 13px; }
+.help dd { font-weight: 500; }
+.mission-info .pip { border-color: rgba(255, 42, 68, 0.6); background: rgba(255, 42, 68, 0.12); }
+.mission-info .pip.done { background: var(--red); border-color: #ff8a9a; box-shadow: var(--glow-red); }
+
+/* floating parts of the HUD: dark glass with a lit edge */
+#toast {
+  font-family: "Rajdhani", sans-serif;
+  background: rgba(8, 9, 12, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  box-shadow: var(--glow);
+  clip-path: var(--clip);
+}
+#btn-pause, #btn-fullscreen {
+  background: rgba(8, 9, 12, 0.6) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(252, 238, 10, 0.45) !important;
+  box-shadow: var(--glow);
+  border-radius: 0 !important;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  font-family: var(--mono);
+  color: var(--accent) !important;
+}
+#btn-pause svg, #btn-fullscreen svg { stroke: var(--accent) !important; }
+.sel-icon { color: #0a0a0c; background: var(--accent); border: 0; border-radius: 0; clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); box-shadow: none; filter: drop-shadow(0 0 6px rgba(252, 238, 10, 0.7)); font-family: "Chakra Petch", sans-serif; }
+.sel-card {
+  background: rgba(8, 9, 12, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  clip-path: var(--clip);
+}
+.cap-square { border: 0; outline: 1px solid rgba(252, 238, 10, 0.5); box-shadow: var(--glow); }
+.cap-square::after { background: rgba(8, 9, 12, 0.88); font-family: "Chakra Petch", sans-serif; }
+.cap-name, .cap-state { background: rgba(8, 9, 12, 0.72); font-family: var(--mono); font-size: 12px; }
+#banner { background: rgba(4, 5, 7, 0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.banner-box {
+  position: relative;
+  background: rgba(8, 9, 12, 0.86);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  clip-path: var(--clip);
+  box-shadow: inset 0 0 40px rgba(252, 238, 10, 0.06);
+}
+#banner.lose .banner-box { border-top-color: var(--red); }
+.banner-box h1 { font-family: "Chakra Petch", sans-serif; }
+#banner.win h1 { color: var(--accent); text-shadow: 0 0 24px rgba(252, 238, 10, 0.5); }
+#banner.lose h1 { color: var(--red); text-shadow: 0 0 24px rgba(255, 42, 68, 0.5); }
+.banner-box button { font-family: "Rajdhani", sans-serif; font-weight: 700; color: #0a0a0c; background: var(--accent); clip-path: var(--clip); }
+.pause-box {
+  background: rgba(8, 9, 12, 0.84) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line) !important;
+  border-top: 3px solid var(--accent) !important;
+  clip-path: var(--clip);
+}
+.pause-title { font-family: "Chakra Petch", sans-serif; color: var(--accent); }
+.pad, .t-btn { background: rgba(8, 9, 12, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid rgba(252, 238, 10, 0.4); border-radius: 0; clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); color: var(--accent); }
+.pad:active, .pad.held, .t-btn:active { background: var(--accent); color: #0a0a0c; }
+.t-btn.warn { color: #fff; background: rgba(255, 42, 68, 0.85); border-color: var(--red); }
+.touch-hint { background: rgba(8, 9, 12, 0.6); font-family: var(--mono); font-size: 12px; }
+#fps-counter { color: var(--accent); background: rgba(8, 9, 12, 0.6); border: 1px solid var(--line); border-radius: 0; }
+#rotate-hint { color: var(--accent); font-family: "Chakra Petch", sans-serif; background: rgba(6, 7, 9, 0.97); }
+.sb-box { background: rgba(8, 9, 12, 0.88) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important; clip-path: var(--clip); }
+.sb-box h2 { font-family: "Chakra Petch", sans-serif; }
+#loading { font-family: var(--mono); color: var(--accent); background: var(--bg); }

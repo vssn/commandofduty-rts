@@ -2,11 +2,11 @@ import { Color3, Matrix, MeshBuilder, Quaternion, StandardMaterial, Vector3, typ
 import { rng } from "../util/noise";
 import type { RGB } from "./layout";
 
-/** Sandbag wall segment in the barracks' local frame (front / gate facing +z). */
+/** Barricade wall segment in the barracks' local frame (front / gate facing +z). */
 export interface WallSegment { ax: number; az: number; bx: number; bz: number }
 export interface Bastion { x: number; z: number; r: number }
 
-/** Perimeter of the sandbagged compound around the barracks (local coordinates). */
+/** Perimeter of the barricaded compound around the barracks (local coordinates). */
 export const COMPOUND = { hw: 9.8, hd: 7.8, gate: 2.3 };
 
 export const COMPOUND_WALLS: WallSegment[] = [
@@ -25,38 +25,38 @@ export const COMPOUND_BASTIONS: Bastion[] = [
 ];
 
 const BAG = { len: 0.9, h: 0.34, depth: 0.52 };
-const SAND: RGB[] = [[0.7, 0.62, 0.45], [0.66, 0.58, 0.41], [0.74, 0.66, 0.48], [0.5, 0.49, 0.33]];
+/** The barricade blocks: a few flat shades from black to mid grey (pixel look). */
+const BLOCK: RGB[] = [[0.07, 0.07, 0.08], [0.15, 0.15, 0.165], [0.23, 0.23, 0.25], [0.33, 0.33, 0.355]];
 
 /**
- * Sandbag fortification of the barracks: perimeter walls in staggered courses (double thickness at
- * the bottom), round bastions at the corners, taller gate posts and bags piled in front of the
- * windows. One thin-instanced "pillow" mesh with per-bag colour, in the barracks' local frame.
+ * Fortification of the barracks: perimeter walls in staggered courses (double thickness at the bottom), round
+ * bastions at the corners, taller gate posts and barricades in front of the windows, in the barracks' local frame.
+ * Black-grey barricades in a pixel look, laid in courses like sandbags: every "bag" two square-cut blocks in flat
+ * shades, set straight. One thin-instanced box mesh with per-block colour.
  */
-export function createSandbags(scene: Scene, name: string): Mesh {
+export function createBarricades(scene: Scene, name: string): Mesh {
   const r = rng(name.length * 17 + 5);
-  const bag = MeshBuilder.CreateSphere(name, { segments: 4, diameter: 1 }, scene);
-  bag.scaling.set(BAG.len, BAG.h, BAG.depth);
-  bag.bakeCurrentTransformIntoVertices();
-  const mt = new StandardMaterial(name + "Mat", scene);
-  mt.diffuseColor = Color3.White();
-  mt.specularColor = Color3.Black();
-  bag.material = mt;
-
-  const matrices: number[] = [];
-  const colors: number[] = [];
+  const block = MeshBuilder.CreateBox(name + "Blocks", { size: 1 }, scene);
+  const bm = new StandardMaterial(name + "BlockMat", scene);
+  bm.diffuseColor = Color3.White();
+  bm.specularColor = new Color3(0.08, 0.08, 0.09);
+  block.material = bm;
+  const blockM: number[] = [], blockC: number[] = [];
   const m = new Matrix();
   const put = (x: number, y: number, z: number, yaw: number) => {
-    const s = 0.94 + r() * 0.12;
-    Matrix.ComposeToRef(
-      new Vector3(s, 0.9 + r() * 0.2, s),
-      Quaternion.RotationYawPitchRoll(yaw + (r() - 0.5) * 0.14, (r() - 0.5) * 0.06, (r() - 0.5) * 0.08),
-      new Vector3(x + (r() - 0.5) * 0.05, y, z + (r() - 0.5) * 0.05),
-      m,
-    );
-    matrices.push(...m.asArray());
-    const c = SAND[r() < 0.12 ? 3 : Math.floor(r() * 3)];
-    const k = 0.92 + r() * 0.14;
-    colors.push(c[0] * k, c[1] * k, c[2] * k, 1);
+    // two blocks per bag, along it
+    const ux = Math.cos(yaw), uz = -Math.sin(yaw), half = BAG.len / 4; // (the bag's length lies along its local x)
+    for (const side of [-1, 1]) {
+      Matrix.ComposeToRef(
+        new Vector3(BAG.len / 2 - 0.02, BAG.h * 0.88, BAG.depth * 0.97),
+        Quaternion.RotationYawPitchRoll(yaw, 0, 0),
+        new Vector3(x + ux * half * side, y, z + uz * half * side),
+        m,
+      );
+      blockM.push(...m.asArray());
+      const b = BLOCK[Math.floor(r() * BLOCK.length)];
+      blockC.push(b[0], b[1], b[2], 1);
+    }
   };
   const courseY = (c: number) => BAG.h * 0.5 + c * BAG.h * 0.88;
 
@@ -103,10 +103,10 @@ export function createSandbags(scene: Scene, name: string): Mesh {
   wall({ ax: -3.2, az: 5.6, bx: -1.9, bz: 5.6 }, 3, 2);
   wall({ ax: 1.9, az: 5.6, bx: 3.2, bz: 5.6 }, 3, 2);
 
-  bag.thinInstanceSetBuffer("matrix", new Float32Array(matrices), 16, true);
-  bag.thinInstanceSetBuffer("color", new Float32Array(colors), 4, true);
-  bag.thinInstanceRefreshBoundingInfo(false);
-  bag.isPickable = false;
-  bag.receiveShadows = true;
-  return bag;
+  block.thinInstanceSetBuffer("matrix", new Float32Array(blockM), 16, true);
+  block.thinInstanceSetBuffer("color", new Float32Array(blockC), 4, true);
+  block.thinInstanceRefreshBoundingInfo(false);
+  block.isPickable = false;
+  block.receiveShadows = true;
+  return block;
 }

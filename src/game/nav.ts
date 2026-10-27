@@ -245,6 +245,51 @@ export class NavGrid {
     return this.center(k % this.n, Math.floor(k / this.n));
   }
 
+  /** The cells reachable from (x, z) on `layer` (a flood fill with the moves of findPath): 1 = reachable. */
+  reachableFrom(x: number, z: number, layer: NavLayer = 0): Uint8Array {
+    const blocked = this.blocked[layer], n = this.n;
+    const [i0, j0] = this.cellCoords(x, z);
+    const start = this.nearestFree(i0 + j0 * n, layer);
+    const seen = new Uint8Array(n * n), queue = new Int32Array(n * n);
+    let head = 0, tail = 0;
+    seen[start] = 1;
+    queue[tail++] = start;
+    while (head < tail) {
+      const cur = queue[head++], ci = cur % n, cj = Math.floor(cur / n);
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) continue;
+          const ni = ci + di, nj = cj + dj;
+          if (ni < 0 || nj < 0 || ni >= n || nj >= n) continue;
+          const k = ni + nj * n;
+          if (seen[k] || blocked[k]) continue;
+          if (di && dj && (blocked[ci + di + cj * n] || blocked[ci + (cj + dj) * n])) continue;
+          seen[k] = 1;
+          queue[tail++] = k;
+        }
+      }
+    }
+    return seen;
+  }
+
+  /** Nearest point to (x, z) inside `region` (from reachableFrom); a plain free point if there is none near. */
+  nearestIn(x: number, z: number, region: Uint8Array, layer: NavLayer = 0): V2 {
+    const n = this.n, [ci, cj] = this.cellCoords(x, z);
+    if (region[ci + cj * n]) return this.isBlocked(x, z, layer) ? this.center(ci, cj) : { x, z };
+    for (let r = 1; r < 60; r++) {
+      let best = -1, bd = Infinity;
+      for (let j = cj - r; j <= cj + r; j++) {
+        for (let i = ci - r; i <= ci + r; i++) {
+          if (i < 0 || j < 0 || i >= n || j >= n || Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== r) continue;
+          const k = i + j * n, d = (i - ci) ** 2 + (j - cj) ** 2;
+          if (region[k] && d < bd) { bd = d; best = k; }
+        }
+      }
+      if (best >= 0) return this.center(best % n, Math.floor(best / n));
+    }
+    return this.freePoint(x, z, layer);
+  }
+
   /** Returns waypoints (excluding the start) from start to target. */
   findPath(sx: number, sz: number, tx: number, tz: number, layer: NavLayer = 0): V2[] {
     const blocked = this.blocked[layer];

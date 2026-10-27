@@ -1,4 +1,4 @@
-# Command of Duty
+# Battle Vector
 
 2.5D-Echtzeitstrategie, gebaut mit Babylon.js, TypeScript und Vite.
 Low-Poly-Optik (klassisch ohne Texturen, optional realistisch mit PBR), feste RTS-Kameraperspektive. Modi: Eroberung, Gefecht
@@ -23,6 +23,52 @@ mit Jeeps, Schützenlinie und Artilleriesalve in verschiedenen Phasen, und – b
 gesehen, vor einer bewachten Stellung mit Scheinwerfer. „Steuerung“ zeigt die Tastenbelegung,
 „Einstellungen“ öffnet ein Untermenü mit Musik und Grafik; „Vollbild ein/aus“ schaltet den Vollbildmodus (im Spiel über den Button oben rechts oder F). Der Regler „Musik“ stellt die Lautstärke der Musik in fünf Stufen ein (Aus, Leise, Mittel, Laut, Voll; wird gespeichert), im Spiel stellt man Musik und Effekte im Pausenmenü (Esc) ein. Nach Sieg oder Niederlage
 führt „Zum Hauptmenü“ zurück (neue Karte, neues Spiel).
+
+## Design
+
+Die Oberfläche folgt einem Cyberpunk-Militär-Stil statt klassischer Tarnoptik (die Ebene steht am Ende von
+`src/style.css`, Farben und Maße als Variablen in `:root`):
+
+- **Zwei Fraktionsfarben:** Gelb (`--accent #fcee0a`) und Rot (`--red #ff2a44`) stehen sich gegenüber: im Menü eine gelbe
+  linke und eine rote rechte Kantenleiste, der Titel **BATTLE** gelb / **VECTOR** rot, darunter eine geteilte Linie; die
+  Moduskarten sind gelb (Eroberung), gelb-rot (Gefecht) und rot (Commandos).
+- **Menüs im Flat Design:** schwarzer Grund mit feinem Raster und Scanlines, Flächen mit abgeschrägten Ecken
+  (`clip-path`), eckiges Logo, Schriften *Chakra Petch* (Titel, Zahlen) und *Rajdhani* (Text).
+- **HUD:** halbtransparente Flächen mit Hintergrundunschärfe und leuchtenden Kanten – Seitenleiste, Minimap mit
+  gelb/roten Eckwinkeln, Credits, Reiter, Bau-Tasten, Auswahl-Icon und -Karte, Meldungen, Pausenmenü und Sieg- (gelb)
+  bzw. Niederlage-Banner (rot).
+- **Klassik-Grafik im Cyberpunk-Stil:** Soldaten tragen schwarz-graue Kampfanzüge statt Tarnmuster; Taschen,
+  Knieschoner, Armbinde und Packklappe sind in Teamfarbe, ein LED-Band leuchtet um den Helm, LED-Linien laufen am
+  Rahmen des Rucksacks entlang. Gewehre sind schwarz-weiß (weißer Schaft), der Raketenwerfer ein weißes Rohr mit
+  schwarzem Gefechtskopf. Der Sanitäter ist ganz in Weiß. Grenadiere tragen ein gelb leuchtendes Helmband; ihre Granate
+  ist schwarz mit einem gelb leuchtenden Streifen rundum und wird beim Ausholen hörbar scharf geschaltet (Klick,
+  ansteigendes Laden, zwei Pieptöne). Geländewagen und Panzer sind schwarz-grau, Poller schwarze Zylinder mit gelb
+  leuchtendem Ring.
+- Bei den Figuren und Fahrzeugen behält der **realistische Modus** vorerst seine Farben (Tarnmuster, Oliv, Holz, Beton):
+  `restyle(real, classic)` in `src/world/models.ts` gibt einem Teil im Klassik-Look eine andere Farbe als in PBR,
+  `mat(…, { glow })` lässt LED-Streifen nur im Klassik-Look leuchten (in PBR sind sie Lack). Neue **Modelle** gelten
+  dagegen in beiden Modi; der Stil soll später auch farblich konsequent auf PBR übertragen werden.
+- **Stellungen** (`src/world/outpostModels.ts`, beide Grafikmodi): Betonwände (T-Wall) und Jersey-Barrieren mit
+  gelb-schwarzen Warnstreifen, Container-Module mit LED-Leiste, Maschendrahtzaun mit NATO-Draht, Warnlampen.
+  Feldlazarett: weißes Container-Modul mit leuchtenden roten Kreuzen, Sonnensegel über den Tragen, Medizinkoffer,
+  Wassertanks. Unterstand: Betonbunker mit Sehschlitzen, Plane auf dem Dach, Warnstreifen an den Ecken. Graben:
+  Zickzack aus Jersey-Barrieren, Zaun mit NATO-Draht. Wachturm: Stahlgerüst mit Kanzel, Glasband, LED-Leiste,
+  Suchscheinwerfer. Werkstatt: Halle mit gestreiften Torpfosten und Kranbalken, Lichtleiste, Ladesäule und
+  Batteriepacks. Radar: Sensorkopf mit vier geneigten Antennenflächen und Leuchtring statt der Kuppel. Statt Fahnen
+  tragen die Masten **Displays**, die in der Farbe des Besitzers leuchten. Die Kaserne und das MG-Nest sind von
+  schwarz-grauen **Barrikaden aus Blöcken** (Pixel-Optik) umgeben, die Apotheke von Jersey-Barrieren.
+- **Deko-Fahrzeuge** (`src/world/props.ts`, beide Grafikmodi): Elektroautos ohne Kühlergrill mit Glasdach und
+  durchgehendem Lichtband vorn (weiß) und hinten (rot), dazu weiße und gelbe Robotaxis mit Lidar-Kuppel; statt
+  Traktoren fahrerlose weiße Feldroboter (ohne Kabine, Sensorleiste, Lidar, Solarpaneel, Statusleuchten), statt
+  Heuwagen selbstfahrende Transportmodule mit Sensornasen, statt Pflügen Bodenbearbeitungs-Roboter. Container sind
+  graphit, weiß oder gelb mit Statusleuchte, Wohncontainer weiß mit Fensterband und LED-Leiste.
+- **Warn-Hologramme** (`src/world/holograms.ts`): frei stehende Displays über einem Projektor-Puck mit Leuchtring, ein
+  Lichtfächer führt zur Tafel hinauf. Die halbtransparente Tafel hat einen roten Kopf mit Warndreieck und gelben Text, eine
+  Scanlinie läuft hinab, ab und zu flackert sie. In den Dörfern des Hügellands bitten sie verbliebene Bewohner, nicht zu
+  bleiben („Evakuierung“, „Lebensgefahr“ …), im Botschaftsquartier warnen sie an Straßenecken und Straßensperren
+  („Sperrzone“, „Ausgangssperre“ …), höchstens zwölf je Karte. Sie stehen frei von Häusern, Laternen und Stellungen,
+  blockieren nichts und zeigen nach Süden zur Kamera.
+- Gelände, Gebäude und Vegetation behalten vorerst ihre Farben.
 
 ## Karten
 
@@ -112,7 +158,7 @@ punktsymmetrisch um die Kartenmitte (die Hälfte des Feindes ist die Spiegelung 
 - **Quartiere** um die Startpunkte: Blöcke als Villengärten – Rasen in Mähstreifen mit Kiesweg am Rand und Hecke ringsum
   (die Logik der Felder des Hügellands), darin drei- und vierstöckige Stadtvillen auf einem Steinsockel (die Fensterreihen beginnen darüber). Jede gerade Wand hat eine ganze Zahl Fensterachsen, so sitzt an den Hauskanten immer ein Mauerpfeiler statt eines angeschnittenen Fensters.
 - **Basis** ist der Ausgang einer **U-Bahn-Station** auf einem gepflasterten Platz: ein Glaspavillon in Metro-Grün mit
-  Treppenabgang (dort kommen die Truppen herauf), Metro-Laternen mit Schild, Fassadenband in Teamfarbe, Sandsackwall wie
+  Treppenabgang (dort kommen die Truppen herauf), Metro-Laternen mit Schild, Fassadenband in Teamfarbe, Barrikadenwall wie
   bei der Kaserne. Das **Feldlazarett** ist eine nahe **Apotheke** (Ladenpavillon, grüne Markisen, leuchtendes Kreuz),
   die **Werkstatt** die Ausfahrt einer **Tiefgarage** (Betonportal mit dunkler Einfahrt, Rampe, Schranke, P-Schild).
   Im Spiel heißen sie so (Seitenleiste, Meldungen, Sieg/Niederlage).
@@ -186,7 +232,7 @@ zum nächsten Asphalt- bzw. Feldweg, ±4 m): Asphalt, Bordstein (0–0,6 m) und 
 kantenglatte Ränder in jedem Winkel, auch an Kreuzungen und Straßenenden in den Orten.
 
 **Stellungen und Container** bekommen Fototexturen nach ihrem Material (`src/world/surfacePbr.ts`): Holz, Sackleinen
-(Sandsäcke, Zelt), Beton, Wellblech und Erde. Die Teile sind in den Modellen nach Farbe markiert (`SurfaceKind`); der
+(Planen), Beton, Wellblech und Erde. Die Teile sind in den Modellen nach Farbe markiert (`SurfaceKind`); der
 Shader projiziert die Textur von drei Seiten in Weltmaßstab, so dass keine Texturkoordinaten nötig sind, und behält die
 Farbe des Teils (Tarnfarben, Teamfarben). Dorfhäuser und Kaserne bleiben wie sie sind.
 Die Projektion folgt den Achsen des Modells: Wellblechrippen, Dielen und Fugen laufen rechtwinklig zu Container oder
@@ -212,10 +258,15 @@ eine schmale Fase; der goldene Button wirkt wie gebürstetes Messing. Rein per C
 ## Spielmodus „Gefecht“
 
 Kein Nachschub: Beide Seiten starten mit 10 Soldaten, 5 Grenadieren, 3 RPG-Schützen, 2 Sanitätern, 3 Geländewagen (bereits mit
-MG-Schütze besetzt) und 2 Panzern vor ihrer Sandsack-Stellung, die Geländewagen an der Spitze, die Panzer links und rechts der Infanterie; Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
+MG-Schütze besetzt) und 2 Panzern vor ihrer Barrikaden-Stellung, die Geländewagen an der Spitze, die Panzer links und rechts der Infanterie
+(jede Einheit steht auf Boden, der mit dem Tor der Basis verbunden ist – zu Fuß bzw. für Fahrzeuge befahrbar –, nie in
+einem umschlossenen Garten neben der Aufstellung); Kaserne und Werkstatt produzieren nichts. Stellungen bringen wie gewohnt Bonus und
 Einkommen (Start: 400 Credits). Die Credits bezahlen **Artillerieschläge** (Taste **A** oder Aktions-Kachel, 300
 Credits, 25 s Abklingzeit): Ziel mit Linksklick wählen – es muss im eigenen Sichtbereich liegen –, nach gut 3 Sekunden
 schlagen 7 Granaten gestreut im Radius 6 ein (Flächenschaden, auch für eigene Einheiten). Rechtsklick/Esc bricht ab.
+Ziel und laufende Schläge zeigt ein **digitales Overlay** auf dem Boden: rot getönte Fläche in konzentrischen
+Warnringen, außen und innen gegenläufig drehende Bogensegmente, Markierungen auf den Achsen, ein nach außen laufender
+Puls, alles leicht glühend; darüber blinkt „▲ EINSCHLAG IN … S“.
 Verloren hat, wer alle Einheiten oder seine Kaserne verliert. Die KI setzt ebenfalls Artillerie ein, aber nur auf
 Ziele in der Nähe ihrer Truppen und nie nahe den eigenen Leuten. KI-Einheiten im Zielgebiet eines Schlags (Streuradius
 plus Explosionsradius) reagieren nach einer Schrecksekunde (0,6–1,6 s) und rennen auf kürzestem Weg aus dem Gebiet –
@@ -378,7 +429,7 @@ der Stellung aus nach oben ein und am Ende wieder zu ihr zurück (liegt sie auß
 eigene Stellung ein, frisst sich sein Rot in das eigene Blau und das Quadrat pulsiert als Warnung. Umkämpft (angehalten)
 blinkt es, am Ende zeigt es kurz „Eingenommen“ bzw. „Verloren“. Sobald der Feind beginnt, eine eigene Stellung einzunehmen, warnt der
 Funk („Achtung! Der Feind nimmt die Stellung … ein“, höchstens alle 30 s pro Stellung); ihr Verlust wird ebenfalls angesagt. Eingenommene Stellungen hissen zusätzlich an drei
-Masten am Rand ihres Bereichs Flaggen in der Farbe des Besitzers; beim Besitzerwechsel werden sie neu gehisst.
+Masten am Rand ihres Bereichs Displays, die in der Farbe des Besitzers aufleuchten; beim Besitzerwechsel schalten sie sich neu ein.
 
 ## Einheiten
 
@@ -424,8 +475,8 @@ wird, springt er ab und ist wieder ein normaler Soldat.
 
 | Bau | Kosten | Taste | Besonderheit |
 | --- | --- | --- | --- |
-| MG-Nest | 400 | N | Sandsackring mit MG (480 HP, Reichweite 16); schießt nur, wenn ein Soldat es besetzt (Soldat auswählen, Rechtsklick aufs Nest) |
-| Poller | 50 | B | Reihe aus drei Betonpollern: Fahrzeuge kommen nicht durch, Fußtruppen laufen zwischen den Pfosten hindurch |
+| MG-Nest | 400 | N | Barrikadenring mit MG (480 HP, Reichweite 16); schießt nur, wenn ein Soldat es besetzt (Soldat auswählen, Rechtsklick aufs Nest) |
+| Poller | 50 | B | Reihe aus drei Pollern (Klassik: schwarz mit Leuchtring, realistisch: Beton): Fahrzeuge kommen nicht durch, Fußtruppen laufen zwischen den Pfosten hindurch |
 
 Kachel anklicken (oder Taste) und den Platz mit Linksklick wählen; Shift hält den Baumodus für mehrere Stück, Rechtsklick/Esc
 bricht ab. Gebaut werden darf auf freiem Gelände nahe einer eigenen Stellung (bis 5 Einheiten über ihren Kreis hinaus) oder
@@ -447,7 +498,7 @@ Sichtbereich zu sehen, anzuklicken und auf der Minimap. Soldaten sehen 17–18 E
 Die Sicht ist höhenabhängig: Jeder Sichtstrahl merkt sich den steilsten „Horizont“ (Hügelkamm, Baumkrone, Dachfirst)
 und nur was darüber hinausragt ist sichtbar. Wer oben steht, blickt über Wälder und Dörfer ins Tal, ein Hügelkamm
 verdeckt dagegen, was dahinter liegt; Einheiten auf Anhöhen sehen außerdem weiter (bis +12, „Weitsicht“ in der
-Auswahl-Anzeige). Über Hecken, Felder und Sandsäcke kann man hinwegsehen. Die Kaserne (20) und
+Auswahl-Anzeige). Über Hecken, Felder und Barrikaden kann man hinwegsehen. Die Kaserne (20) und
 eingenommene Stellungen (13) haben ungehinderte Rundumsicht. Eigene Einheiten greifen nur Gegner an, die sie sehen.
 Die Darstellung ist ein Post-Processing-Effekt, der die Weltposition jedes Pixels aus dem Tiefenpuffer rekonstruiert.
 
@@ -559,9 +610,11 @@ src/
                       Zellen mit Kanten/Furchen werden 3×3 feiner unterteilt (gleiche Geländeform);
                       feine, kachelbare Körnungstextur über den Vertex-Farben
     crops.ts          Bewuchs der Felder (kleine, unterschiedlich hohe Büschel in Reihen)
-    fortification.ts  Sandsack-Befestigung der Kaserne (Mauer, Eckbastionen, Tor, verbarrikadierte Fenster)
-    props.ts          Umgebungsdetails: Militärcontainer an Stellungen, Wohncontainer-Lager, Garagen, Gartenzäune und parkende
-                      Autos in den Dörfern, Ladewagen, Pflüge und Traktoren an Feldern (massiv, Deckung, Sichtblocker)
+    fortification.ts  Befestigung der Kaserne (Mauer, Eckbastionen, Tor, verbarrikadierte Fenster) aus Barrikaden-Blöcken
+    outpostModels.ts  Stellungen (Lazarett, Unterstand, Graben, Wachturm, Werkstatt, Radar): Betonwände, Container, Zäune, Warnstreifen
+    holograms.ts      Warn-Hologramme (frei stehende Displays) in den Dörfern und im Botschaftsquartier
+    props.ts          Umgebungsdetails: Container an Stellungen, Wohncontainer-Lager, Garagen, Gartenzäune und parkende
+                      Elektroautos/Robotaxis in den Dörfern, autonome Transportmodule, Feldroboter an Feldern (massiv, Deckung, Sichtblocker)
     dirtTracks.ts     Feldwege als durchgehende texturierte Bänder (Fahrrinnen mit Reifenprofil, grüner Mittelstreifen,
                       ausfransende Ränder; an Kreuzungen laufen einmündende Wege spitz zu, über Asphalt ausgespart),
                       Trampelpfade von jeder Stellung zum nächsten Weg und Pfützen mit angedeuteter Himmelsspiegelung
@@ -590,7 +643,7 @@ src/
     villageDecay.ts   Müll und Grasbüschel in den Dörfern („in Eile verlassen“)
     pathMap.ts        Karte der Trampelpfade/Feldwege für die gebackenen Masken des PBR-Geländes
     lawnTexture.ts    erzeugte Rasen-Textur-Schichten (in Scheiben, ohne den Browser zu blockieren)
-    barracksDetail.ts / outpostDetail.ts   Detailmodelle von Kaserne und Stellungen im PBR-Modus
+    barracksDetail.ts  Detailmodell der Kaserne im PBR-Modus
     rimPbr.ts / spotPbr.ts   Shader-Plugins: Randlicht der Figuren; Scheinwerfer, Drohnen und Laternen beleuchten die Szenerie
     pbr.ts            Grafik-Option PBR: Materialtausch Standard → PBR, lineare Farben, Atmosphäre (Tag), umkehrbar
     surfacePbr.ts     Texturen für Stellungen/Container im PBR-Modus (dreiseitige Projektion, Shader-Plugin)
@@ -607,7 +660,7 @@ src/
     cover.ts          Deckungskarte (Bäume, Hecken, Gebäude)
     commandos.ts      Commandos-Missionen: Agent, Fähigkeiten, Sprengladungen, Verstecke, Patrouillen, Alarm, Scheinwerfer, Zeitlimit; Botschaften, Dokumente, Deckung/Erkennung, Eskorte
     muzzleFlash.ts    Mündungsfeuer, das den Boden ringsum beleuchtet
-    artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten, Zielmarkierung
+    artillery.ts      Artillerieschläge (Gefecht): Salve, fallende Granaten (die Zielmarkierung zeichnet overlay.ts)
     effects.ts        Granaten, Explosionen (Feuerball, Druckwelle, Trümmer mit Abprall, Funken, Staub, Rauchsäule; Flächenschaden inkl. Friendly Fire), Brandflecken
     blastFx.ts        Partikel-Explosionen und Krater des PBR-Modus
     dropCutscene.ts   Absprung-Cutscene der Commandos-Mission (Wingsuit, Fallschirm, Briefing, Landung)

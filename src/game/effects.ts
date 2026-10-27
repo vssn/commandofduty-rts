@@ -1,6 +1,6 @@
 import { Mesh, VertexData, type AbstractMesh, type InstancedMesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
 import { GRENADE, TANK, UNITS } from "../config";
-import { createExplosionTemplates, createGrenadeTemplate, type ExplosionTemplates } from "../world/models";
+import { createExplosionTemplates, createGrenadeTemplate, createShellTemplate, type ExplosionTemplates } from "../world/models";
 import { RealisticBlasts } from "./blastFx";
 import type { Game } from "./game";
 import type { Unit } from "./unit";
@@ -72,6 +72,7 @@ const SCORCH_FADE = 60;
 /** Grenades in flight, explosions and their leftovers. */
 export class Effects {
   private readonly grenadeTpl: Mesh;
+  private readonly shellTpl: Mesh;
   private readonly tpl: ExplosionTemplates;
   private readonly grenades: Grenade[] = [];
   private readonly projectiles: Projectile[] = [];
@@ -95,9 +96,11 @@ export class Effects {
 
   constructor(private readonly scene: Scene, private readonly shadows: ShadowGenerator, private readonly game: Game) {
     this.grenadeTpl = createGrenadeTemplate(scene);
+    this.shellTpl = createShellTemplate(scene);
     this.tpl = createExplosionTemplates(scene);
     this.real = new RealisticBlasts(scene);
     shadows.addShadowCaster(this.grenadeTpl);
+    shadows.addShadowCaster(this.shellTpl);
     shadows.addShadowCaster(this.tpl.smoke);
     shadows.addShadowCaster(this.tpl.darkSmoke);
     shadows.addShadowCaster(this.tpl.debris);
@@ -107,6 +110,7 @@ export class Effects {
     // (scattered off the walkway it falls to the ground)
     if (level === 1 && this.game.decks?.height(tx, tz) == null) level = 0;
     this.grenades.push({ thrower, tx, tz, level, delay: RELEASE, t: 0, flight: 0, sx: 0, sy: 0, sz: 0, ty: 0, apex: 0, mesh: null });
+    this.game.onArm?.(thrower.x, thrower.z);
   }
 
   /**
@@ -116,7 +120,7 @@ export class Effects {
   launch(kind: "shell" | "rocket", from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number },
     speed: number, damage: number, radius: number, by: Unit | null, vs: number, size: number) {
     const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
-    const mesh = this.grenadeTpl.createInstance(kind);
+    const mesh = this.shellTpl.createInstance(kind);
     mesh.isPickable = false;
     if (kind === "shell") mesh.scaling.set(0.5, 0.5, 0.9);
     else mesh.scaling.set(0.42, 0.42, 1.7);

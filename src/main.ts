@@ -29,6 +29,7 @@ import { createEnvironment } from "./world/environment";
 import { MapLayout, toWorld } from "./world/layout";
 import { createStreetLights } from "./world/lighting";
 import { createProps } from "./world/props";
+import { createHolograms } from "./world/holograms";
 import { createVillageDecay } from "./world/villageDecay";
 import { Birds } from "./world/birds";
 import { createDirtTracks } from "./world/dirtTracks";
@@ -127,6 +128,8 @@ createScarpBarrier(scene, layout, terrain, env.shadows, nav);
 const props = createProps(scene, layout, terrain, env.shadows, nav);
 // the villages look left in a hurry: rubbish in the streets and gardens, a few tufts of grass at the walls
 createVillageDecay(scene, layout, terrain, env.shadows, props);
+// warning holograms in the villages and the city's streets: residents are told not to stay
+const holograms = createHolograms(scene, layout, terrain, props);
 // (on the power station they fly round the cooling tower and the chimney, its widest part and a margin)
 const birdSolids = layout.plant ? [
   { x: layout.plant.tower.x, z: layout.plant.tower.z, r: layout.plant.tower.r + 5, h: layout.plant.tower.height + 6 },
@@ -259,10 +262,8 @@ const pbr = new PbrMode(scene, env.sun, env.hemi, env.shadows, [
   { enable: () => { hedges.setRealistic(true); tussocks.setRealistic(true); scarpRocks.setRealistic(true); }, disable: () => { hedges.setRealistic(false); tussocks.setRealistic(false); scarpRocks.setRealistic(false); } },
   // the power station's coal: piled cubes in the classic look, lumpy mounds here
   { enable: () => plant?.setRealistic(true), disable: () => plant?.setRealistic(false) },
-  // cars, tractors and trailers, the base buildings and the outposts get their detailed models
-  { enable: () => props.setDetail(true), disable: () => props.setDetail(false) },
+  // the base buildings get their detailed models
   { enable: () => game.setBaseDetail(true), disable: () => game.setBaseDetail(false) },
-  { enable: () => game.outposts.forEach((o) => o.setDetail(true)), disable: () => game.outposts.forEach((o) => o.setDetail(false)) },
   // the realistic ground draws the farm tracks and footpaths itself (irregular edges, ruts, gravel, trampled earth)
   { enable: () => { tracks.trackBands.setEnabled(false); tracks.pathBands.setEnabled(false); }, disable: () => { tracks.trackBands.setEnabled(true); tracks.pathBands.setEnabled(true); } },
   { enable: () => game.effects.real.enable(), disable: () => game.effects.real.disable() },
@@ -730,6 +731,7 @@ scene.onBeforeRenderObservable.add(() => {
   audio.update(dt, !paused && !hud.bannerShown);
   if (!paused && !hud.bannerShown) {
     birds.update(dt);
+    holograms.update(dt);
     tracks.update(dt);
     muzzle.update(dt);
     tussocks.update(dt, game.units); // the tall grass bends away from whatever passes
@@ -823,17 +825,10 @@ async function prewarmRealistic() {
   await tick();
   preloadSurfaceTextures(scene);
   // (build the detail models, then leave them as they were: shown when the realistic mode is on)
-  for (const o of game.outposts) {
-    await tick();
-    o.setDetail(true);
-    o.setDetail(pbr.active);
-  }
   await tick();
   game.setBaseDetail(true);
   game.setBaseDetail(pbr.active);
   await tick();
-  props.setDetail(true);
-  props.setDetail(pbr.active);
   // the realistic ground's surface maps and the PBR copies of all materials in use (a slice per frame)
   await realTerrain.prepare(tick);
   await pbr.prepare(tick);

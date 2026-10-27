@@ -234,11 +234,11 @@ export class Minimap {
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(10, 11, 8, 0.75)";
     ctx.fillRect(0, S / 2 - 46, S, 92);
-    ctx.fillStyle = "#e9b53c";
-    ctx.font = `bold ${Math.round(S * 0.075)}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+    ctx.fillStyle = "#fcee0a";
+    ctx.font = `bold ${Math.round(S * 0.075)}px "Chakra Petch", "Arial Narrow", sans-serif`;
     ctx.fillText("KEIN RADAR", S / 2, S / 2 - 6);
     ctx.fillStyle = "#cfcab3";
-    ctx.font = `${Math.round(S * 0.05)}px "Avenir Next Condensed", "Arial Narrow", sans-serif`;
+    ctx.font = `${Math.round(S * 0.05)}px "Chakra Petch", "Arial Narrow", sans-serif`;
     ctx.fillText("Radarturm einnehmen", S / 2, S / 2 + 28);
   }
 

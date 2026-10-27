@@ -1,10 +1,10 @@
 import { MeshBuilder, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
 import { ARTILLERY, type Team } from "../config";
-import { createRing } from "../world/models";
 import type { Game } from "./game";
 
 interface Shell { x: number; z: number; t: number; mesh: InstancedMesh | null }
-interface Strike { team: Team; x: number; z: number; t: number; shells: Shell[]; marker: InstancedMesh }
+/** (The target is marked by the overlay: warning rings on the ground, see Overlay.strikeRings.) */
+interface Strike { team: Team; x: number; z: number; t: number; shells: Shell[] }
 
 /** Seconds a shell is visible falling before it hits. */
 const FALL = 0.55;
@@ -18,7 +18,6 @@ export class Artillery {
   private readonly strikes: Strike[] = [];
   private readonly cooldown: [number, number] = [0, 0];
   private readonly shellTpl: Mesh;
-  private readonly markerTpl: Mesh;
   /** Called when a strike has been ordered (sound: incoming whistle). */
   onOrder: ((team: Team, x: number, z: number) => void) | null = null;
 
@@ -28,15 +27,12 @@ export class Artillery {
     this.shellTpl.bakeCurrentTransformIntoVertices();
     this.shellTpl.isVisible = false;
     this.shellTpl.isPickable = false;
-    this.markerTpl = createRing(scene, "artilleryMarker", ARTILLERY.spread * 2, 0.22, [1, 0.28, 0.2]);
-    this.markerTpl.isVisible = false;
   }
 
   /** Seconds until `team` may order again (0 = ready). */
   /** Cancels all strikes (new game). */
   clear() {
     for (const st of this.strikes) {
-      st.marker.dispose();
       for (const sh of st.shells) sh.mesh?.dispose();
     }
     this.strikes.length = 0;
@@ -61,9 +57,7 @@ export class Artillery {
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * ARTILLERY.spread;
       shells.push({ x: x + Math.cos(a) * r, z: z + Math.sin(a) * r, t: -(ARTILLERY.delay + i * ARTILLERY.interval * (0.7 + Math.random() * 0.6)), mesh: null });
     }
-    const marker = this.markerTpl.createInstance("strikeMarker");
-    marker.position.set(x, this.game.terrain.heightAt(x, z) + 0.35, z);
-    this.strikes.push({ team, x, z, t: 0, shells, marker });
+    this.strikes.push({ team, x, z, t: 0, shells });
     this.onOrder?.(team, x, z);
     return true;
   }
@@ -79,9 +73,6 @@ export class Artillery {
     for (let s = this.strikes.length - 1; s >= 0; s--) {
       const strike = this.strikes[s];
       strike.t += dt;
-      // target marker pulses until the salvo is over
-      const pulse = 1 + Math.sin(strike.t * 9) * 0.04;
-      strike.marker.scaling.set(pulse, 1, pulse);
       for (let i = strike.shells.length - 1; i >= 0; i--) {
         const sh = strike.shells[i];
         sh.t += dt;
@@ -97,7 +88,6 @@ export class Artillery {
         }
       }
       if (!strike.shells.length) {
-        strike.marker.dispose();
         this.strikes.splice(s, 1);
       }
     }

@@ -31,9 +31,37 @@ export type SurfaceKind = "wood" | "fabric" | "concrete" | "metal" | "earth" | "
 /** Picks the surface kind of a part by its colour (undefined = plain). */
 export type SurfaceOf = (c: RGB) => SurfaceKind | undefined;
 
-export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook; rim?: RGB } = {}): StandardMaterial {
+/** Classic colour (as a key) -> the colour the same part keeps in the realistic look; see restyle(). */
+const realOf = new Map<string, RGB>();
+const colourKey = (c: RGB) => c.map((v) => v.toFixed(3)).join(",");
+
+/**
+ * The stylised (cyberpunk) classic look: a part built with the returned colour shows `classic` in the classic look and
+ * keeps `real` in the realistic one (mat() passes it on as the PBR colour). Where the same classic colour already
+ * stands for another real one, it is nudged by a hair so the two stay apart.
+ */
+export function restyle(real: RGB, classic: RGB): RGB {
+  const c: RGB = [classic[0], classic[1], classic[2]];
+  for (;;) {
+    const r = realOf.get(colourKey(c));
+    if (!r) {
+      realOf.set(colourKey(c), real);
+      return c;
+    }
+    if (colourKey(r) === colourKey(real)) return c;
+    c[2] += 0.001;
+  }
+}
+
+/**
+ * `glow`: an LED strip or a lit ring - glows in its colour in the classic look; the realistic copy is plain paint
+ * (its emissive is dropped there, see pbr.ts).
+ */
+export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; glow?: boolean; twoSided?: boolean; surface?: SurfaceKind; rough?: number; metal?: number; pbr?: PbrLook; rim?: RGB } = {}): StandardMaterial {
+  const real = realOf.get(colourKey(c));
+  if (real && !opts.pbr?.color) opts = { ...opts, pbr: { ...opts.pbr, color: real } };
   // materials belong to a scene, so the cache is per scene (the build-menu portraits use their own)
-  const key = scene.uid + ":" + c.map((v) => v.toFixed(3)).join(",") + (opts.emissive ? "e" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "") + (opts.metal !== undefined ? `m${opts.metal}` : "") + (opts.pbr ? `p${JSON.stringify(opts.pbr)}` : "") + (opts.rim ? `rim${opts.rim.join(",")}` : "");
+  const key = scene.uid + ":" + colourKey(c) + (opts.emissive ? "e" : "") + (opts.glow ? "g" : "") + (opts.twoSided ? "t" : "") + (opts.surface ? `:${opts.surface}` : "") + (opts.rough !== undefined ? `r${opts.rough}` : "") + (opts.metal !== undefined ? `m${opts.metal}` : "") + (opts.pbr ? `p${JSON.stringify(opts.pbr)}` : "") + (opts.rim ? `rim${opts.rim.join(",")}` : "");
   let m = matCache.get(key);
   if (!m) {
     m = new StandardMaterial("m" + key, scene);
@@ -43,9 +71,10 @@ export function mat(scene: Scene, c: RGB, opts: { emissive?: boolean; twoSided?:
       m.emissiveColor = new Color3(c[0], c[1], c[2]);
       m.disableLighting = true;
     }
+    if (opts.glow) m.emissiveColor = new Color3(c[0], c[1], c[2]);
     if (opts.twoSided) m.backFaceCulling = false;
     // `rough` / `metal`: roughness and metallic of the realistic (PBR) copy; smooth parts such as roofs catch the sun
-    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr || opts.rim) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr, rim: opts.rim };
+    if (opts.surface || opts.rough !== undefined || opts.metal !== undefined || opts.pbr || opts.rim || opts.glow) m.metadata = { surface: opts.surface, rough: opts.rough, metal: opts.metal, pbr: opts.pbr, rim: opts.rim, classicGlow: opts.glow };
     if (opts.rim) rimFresnel(m, opts.rim);
     matCache.set(key, m);
   }
@@ -196,6 +225,9 @@ export const KNEE = { y: -0.4 * SOLDIER_SCALE, z: 0.02 * SOLDIER_SCALE };
 /** Drone pilot: how far in front of him (world units) he sets down the drone's case; the drone starts from it. */
 export const PILOT_CASE_Z = 1.95;
 
+/** The grenades' lit stripe (and the grenadier's helmet band) in the classic look. */
+export const GRENADE_GLOW: RGB = [1, 0.86, 0.06];
+
 export type SoldierVariant = "rifleman" | "grenadier" | "rpg" | "agent" | "medic" | "pilot";
 
 export function createSoldierTemplates(scene: Scene, team: Team, variant: SoldierVariant | boolean = "rifleman"): SoldierTemplates {
@@ -210,19 +242,23 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   const red: RGB = [0.8, 0.1, 0.08];
   // the agent wears a long charcoal coat and a peaked cap instead of the team uniform
   const coat: RGB = [0.24, 0.24, 0.21];
-  // both sides wear the same woodland camouflage; helmet, armbands and pack flap carry the team colour
-  const CAMO: RGB = [1, 1, 1];
-  const CAMO_PANTS: RGB = [0.8, 0.8, 0.78];
-  const uni: RGB = agent ? coat : CAMO;
-  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : [0.25, 0.3, 0.18];
-  const helmet: RGB = player ? [0.2, 0.36, 0.8] : [0.74, 0.17, 0.12];
-  const pants: RGB = agent ? [0.14, 0.14, 0.13] : CAMO_PANTS;
+  // classic look: a black-grey combat suit (the medic's white), pouches and knee pads in the team colour, a black and
+  // white weapon, LED strips round the pack. The realistic look keeps the woodland camouflage, olive kit and wooden
+  // stock (restyle: the colour a part keeps there)
+  const suit0: RGB = medic ? [0.86, 0.871, 0.893] : [0.197, 0.201, 0.219];
+  const uni: RGB = agent ? coat : suit0;
+  const uniDark: RGB = agent ? [0.17, 0.17, 0.15] : restyle([0.25, 0.3, 0.18], medic ? [0.69, 0.701, 0.733] : [0.101, 0.103, 0.113]);
+  const helmet: RGB = medic ? [0.9, 0.903, 0.917] : [0.141, 0.143, 0.157];
+  const pants: RGB = agent ? [0.14, 0.14, 0.13] : medic ? [0.781, 0.793, 0.817] : [0.129, 0.133, 0.143];
   const teamC: RGB = player ? [0.25, 0.45, 0.95] : [0.9, 0.18, 0.12];
+  const gear: RGB = player ? [0.223, 0.413, 0.893] : [0.853, 0.167, 0.113]; // team-coloured kit (classic)
+  const flap: RGB = player ? [0.2, 0.36, 0.8] : [0.74, 0.17, 0.12];
   const skin: RGB = [0.86, 0.68, 0.54];
-  const leather: RGB = [0.27, 0.2, 0.13];
-  const webbing: RGB = [0.5, 0.44, 0.3];
-  const kit: RGB = [0.35, 0.38, 0.24];
-  const wood: RGB = [0.45, 0.3, 0.17];
+  const leather: RGB = restyle([0.27, 0.2, 0.13], [0.071, 0.071, 0.077]);
+  const webbing: RGB = restyle([0.5, 0.44, 0.3], [0.241, 0.243, 0.263]);
+  const kit: RGB = restyle([0.35, 0.38, 0.24], gear);
+  const kitGrey: RGB = restyle([0.35, 0.38, 0.24], [0.171, 0.173, 0.189]);
+  const wood: RGB = restyle([0.45, 0.3, 0.17], [0.901, 0.903, 0.911]);
   const metal: RGB = [0.12, 0.12, 0.13];
   // what the parts are made of, for the realistic mode: woven cloth, leather, skin, steel, wood
   const cloth = { surface: "cloth" as SurfaceKind, rough: 0.92 };
@@ -232,19 +268,19 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     [metal.join(), { rough: 0.3, metal: 0.65 }],
     // realistic mode: the helmet (and pack flap) wear a camouflage cover; the team shows on a band
     [helmet.join(), { surface: "cloth", rough: 0.9, pbr: { color: [0.92, 0.92, 0.88], camo: true } }],
+    [flap.join(), { surface: "cloth", rough: 0.9, pbr: { color: [0.92, 0.92, 0.88], camo: true } }],
     [wood.join(), { rough: 0.55 }],
-    [webbing.join(), cloth], [kit.join(), cloth], [uni.join(), cloth], [uniDark.join(), cloth], [pants.join(), cloth],
+    [webbing.join(), cloth], [kit.join(), cloth], [kitGrey.join(), cloth], [uniDark.join(), cloth],
+    [uni.join(), agent ? cloth : { ...cloth, pbr: { color: [1, 1, 1], camo: true } }],
+    [pants.join(), agent ? cloth : { ...cloth, pbr: { color: [0.8, 0.8, 0.78], camo: true } }],
   ]);
   // a rim light inside the figure's own materials in the team's colour (not for the agent)
   const rim: RGB | undefined = agent ? undefined : player ? [0.3, 0.55, 1.0] : [1.0, 0.35, 0.25];
   const parts: Mesh[] = [];
-  /** Camouflage parts get the camo material, with UVs scaled to world size so the blotches stay even. */
+  /** Uniform parts wear camouflage in the realistic look: their UVs are scaled to world size so the blotches stay even. */
   const paint = (m: Mesh, c: RGB, uSize = 1, vSize = 1) => {
-    if (c !== CAMO && c !== CAMO_PANTS) {
-      m.material = mat(scene, c, { ...(looks.get(c.join()) ?? {}), rim });
-      return;
-    }
-    m.material = camoMaterial(scene, c, rim);
+    m.material = mat(scene, c, { ...(looks.get(c.join()) ?? {}), rim });
+    if (agent || (c !== uni && c !== pants)) return;
     const uv = m.getVerticesData("uv");
     if (uv) {
       const ref = 0.9; // cloth size covered by one tile of the pattern
@@ -521,7 +557,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   }
   for (const x of [-0.205, 0.205]) box(0.06, 0.1, 0.09, x, 0.87, 0.06, leather);
   for (const x of [-0.09, 0.09]) ball(0.1, x, 0.77, 0, pants, 1.05);
-  box(0.08, 0.06, 0.02, 0, 0.86, 0.14, [0.7, 0.62, 0.35]);
+  box(0.08, 0.06, 0.02, 0, 0.86, 0.14, restyle([0.7, 0.62, 0.35], [0.551, 0.553, 0.583]));
   for (const x of [-0.12, 0.12]) {
     box(0.05, 0.56, 0.02, x, 1.15, 0.145, webbing).rotation.x = 0.1;
     box(0.05, 0.56, 0.02, x, 1.15, -0.145, webbing).rotation.x = -0.1;
@@ -571,22 +607,35 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     }
   }
   tube(0.24, 0.72, -0.06, 0.24, 0.92, -0.06, 0.065, 0.065, kit);
-  box(0.32, 0.38, 0.15, 0, 1.2, -0.22, [0.38, 0.31, 0.2]);
-  box(0.28, 0.12, 0.03, 0, 1.3, -0.3, helmet); // pack flap in team colour
-  for (const x of [-0.18, 0.18]) box(0.08, 0.2, 0.12, x, 1.12, -0.22, [0.34, 0.28, 0.18]); // pack side pockets
+  box(0.32, 0.38, 0.15, 0, 1.2, -0.22, restyle([0.38, 0.31, 0.2], [0.151, 0.153, 0.167]));
+  box(0.28, 0.12, 0.03, 0, 1.3, -0.3, flap); // pack flap in team colour
+  for (const x of [-0.18, 0.18]) box(0.08, 0.2, 0.12, x, 1.12, -0.22, restyle([0.34, 0.28, 0.18], [0.191, 0.193, 0.207])); // pack side pockets
+  // LED strips along the pack's frame in the team colour (classic look; plain pack cloth in the realistic one)
+  const led = restyle([0.38, 0.31, 0.2], player ? [0.32, 0.6, 1] : [1, 0.24, 0.17]);
+  const strip = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    rawBox(w, h, d, x, y, z, led).material = mat(scene, led, { glow: true });
+  };
+  for (const x of [-0.157, 0.157]) {
+    strip(0.022, 0.38, 0.022, x, 1.2, -0.296);
+    strip(0.022, 0.022, 0.15, x, 1.385, -0.22);
+  }
+  strip(0.32, 0.022, 0.022, 0, 1.015, -0.296);
+  strip(0.32, 0.022, 0.022, 0, 1.385, -0.296);
   box(0.04, 0.32, 0.015, 0.1, 1.05, -0.31, metal); // entrenching tool
   box(0.03, 0.18, 0.016, 0.1, 0.84, -0.31, wood);
-  tube(-0.2, 1.46, -0.2, 0.2, 1.46, -0.2, 0.075, 0.075, kit); // bedroll
+  tube(-0.2, 1.46, -0.2, 0.2, 1.46, -0.2, 0.075, 0.075, kitGrey); // bedroll
   tube(0, 1.44, 0, 0, 1.56, 0, 0.1, 0.06, uniDark); // collar
+  // the launcher: a white tube, black warheads (realistic: olive)
+  const rpgTube = restyle([0.3, 0.34, 0.2], [0.881, 0.883, 0.893]), rpgHead = restyle([0.24, 0.27, 0.17], [0.061, 0.061, 0.067]);
   if (rpg) {
     // two spare rockets strapped upright to the pack
     for (const x of [-0.09, 0.09]) {
-      tube(x, 1.0, -0.33, x, 1.42, -0.33, 0.045, 0.045, [0.3, 0.34, 0.2]);
-      tube(x, 1.42, -0.33, x, 1.58, -0.33, 0.07, 0.02, [0.24, 0.27, 0.17]);
+      tube(x, 1.0, -0.33, x, 1.42, -0.33, 0.045, 0.045, rpgTube);
+      tube(x, 1.42, -0.33, x, 1.58, -0.33, 0.07, 0.02, rpgHead);
     }
   }
   if (grenadier) {
-    box(0.08, 0.72, 0.04, 0, 1.16, 0.15, [0.55, 0.47, 0.3]).rotation.z = 0.6; // bandolier
+    box(0.08, 0.72, 0.04, 0, 1.16, 0.15, restyle([0.55, 0.47, 0.3], [0.091, 0.091, 0.097])).rotation.z = 0.6; // bandolier
     for (const x of [-0.12, 0, 0.12]) box(0.1, 0.12, 0.08, x, 0.97, 0.16, kit);
   }
   if (medic) {
@@ -621,7 +670,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
   } else if (rpg) {
     // rocket launcher on the right shoulder: an olive tube with a flared back end, the warhead (a long
     // bulb with its nose cone) sticking out at the front, pistol and fore grips, a sight on the left
-    const tubeC: RGB = [0.3, 0.34, 0.2], head: RGB = [0.24, 0.27, 0.17];
+    const tubeC = rpgTube, head = rpgHead;
     const y = 1.37, x = 0.13;
     tube(x, y, -0.5, x, y, 0.62, 0.055, 0.055, tubeC);
     tube(x, y, -0.62, x, y, -0.5, 0.08, 0.06, metal); // flared back end
@@ -661,7 +710,12 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     // can wind up to throw; the medic's just hangs
     if (grenadier) {
       arm([0.26, 1.4, 0], [0.31, 1.12, 0.06], [0.25, 0.95, 0.2]);
-      ball(0.08, 0.25, 0.94, 0.28, [0.3, 0.36, 0.2], 1.25); // grenade
+      ball(0.08, 0.25, 0.94, 0.28, restyle([0.3, 0.36, 0.2], [0.081, 0.081, 0.087]), 1.25); // grenade
+      // its lit stripe round the middle (yellow glow in the classic look)
+      const stripe = MeshBuilder.CreateTorus("grenadeStripe", { diameter: 0.16, thickness: 0.026, tessellation: 14 }, scene);
+      stripe.position.set(0.25, 0.94, 0.28);
+      stripe.material = mat(scene, GRENADE_GLOW, { glow: true });
+      parts.push(stripe);
     } else {
       arm([0.26, 1.4, 0], [0.31, 1.12, 0.04], [0.3, 0.9, 0.12]);
     }
@@ -732,13 +786,14 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const teamBand = MeshBuilder.CreateTorus("helmBand", { diameter: 0.372, thickness: 0.022, tessellation: LOW_DETAIL ? 10 : 20 }, scene);
     teamBand.scaling.z = 1.13;
     teamBand.position.set(0, 1.775, -0.012);
-    teamBand.material = mat(scene, teamC, { rough: 0.7 });
+    teamBand.material = mat(scene, teamC, { rough: 0.7, glow: true }); // an LED band in the classic look
     parts.push(teamBand);
     if (!medic) box(0.1, 0.016, 0.1, 0, 1.932, -0.01, teamC);
     // a net of dark patches over the shell
+    const helmPatch = restyle([0.26, 0.3, 0.18], medic ? [0.781, 0.783, 0.803] : [0.091, 0.093, 0.101]);
     for (const [a, el] of (LOW_DETAIL ? [] : [[0.4, 0.9], [2.0, 0.8], [3.6, 1.0], [5.1, 0.85], [1.2, 1.2], [4.4, 1.15]]) as [number, number][]) {
       const r0 = 0.18, ca = Math.cos(a), sa = Math.sin(a), ce = Math.cos(el);
-      const patch = box(0.07, 0.02, 0.05, ca * r0 * ce * 0.98, 1.755 + Math.sin(el) * r0 * 0.9, sa * r0 * ce * 0.98, [0.26, 0.3, 0.18], 0, -a);
+      const patch = box(0.07, 0.02, 0.05, ca * r0 * ce * 0.98, 1.755 + Math.sin(el) * r0 * 0.9, sa * r0 * ce * 0.98, helmPatch, 0, -a);
       patch.rotation.x = 0.4 * (sa > 0 ? 1 : -1);
     }
     if (grenadier) {
@@ -767,7 +822,7 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
     const band = MeshBuilder.CreateCylinder("band", { height: 0.05, diameter: 0.372, tessellation: 14 }, scene);
     band.scaling.z = 1.13;
     band.position.y = 1.79;
-    band.material = mat(scene, [0.9, 0.86, 0.7]);
+    band.material = mat(scene, restyle([0.9, 0.86, 0.7], GRENADE_GLOW), { glow: true });
     parts.push(band);
   }
   if (medic) {
@@ -796,10 +851,11 @@ export function createSoldierTemplates(scene: Scene, team: Team, variant: Soldie
 
   // ---- shin (origin = knee joint): trouser, canvas gaiter, boot with sole
   tube(0, 0, 0, 0, -0.16, -0.01, 0.072, 0.066, pants);
-  tube(0, -0.12, -0.01, 0, -0.28, -0.02, 0.074, 0.07, [0.56, 0.5, 0.38]);
-  box(0.13, 0.12, 0.26, 0, -0.33, 0.03, [0.2, 0.16, 0.12]);
+  const bootC = restyle([0.2, 0.16, 0.12], [0.081, 0.083, 0.089]);
+  tube(0, -0.12, -0.01, 0, -0.28, -0.02, 0.074, 0.07, restyle([0.56, 0.5, 0.38], [0.221, 0.223, 0.239]));
+  box(0.13, 0.12, 0.26, 0, -0.33, 0.03, bootC);
   box(0.14, 0.035, 0.28, 0, -0.385, 0.03, [0.1, 0.09, 0.08]);
-  ball(0.068, 0, -0.35, 0.165, [0.2, 0.16, 0.12], 0.72); // toe cap
+  ball(0.068, 0, -0.35, 0.165, bootC, 0.72); // toe cap
   for (const z of [-0.02, 0.04, 0.1]) box(0.09, 0.008, 0.014, 0, -0.268, z, [0.12, 0.1, 0.08]); // laces
   box(0.14, 0.03, 0.08, 0, -0.41, -0.06, [0.07, 0.06, 0.06]); // heel
   const shin = merge(`soldierShin${team}`, parts.splice(0));
@@ -925,12 +981,8 @@ export function createRing(scene: Scene, name: string, diameter: number, thickne
   return ring;
 }
 
-/** Neutral model of a capturable outpost (no team colours; the flag is separate). */
 /** Ward tent of the field hospital (local offset and half size); it blocks movement. */
 export const HOSPITAL_TENT = { x: -0.8, z: -0.8, hw: 2.3, hd: 2.1 };
-
-/** Radome dimensions shared by the model and its warning light. */
-export const RADAR_DIM = { drumH: 2.4, drumR: 2.2, domeR: 2.9, domeY: 4.5 };
 
 /** What the outposts' parts are made of, by colour (for the textures of the realistic mode). */
 const OUTPOST_SURFACES = new Map<string, SurfaceKind>([
@@ -955,176 +1007,6 @@ const OUTPOST_SURFACES = new Map<string, SurfaceKind>([
   ["0.36,0.27,0.18", "earth"],
 ]);
 export const outpostSurface: SurfaceOf = (c) => OUTPOST_SURFACES.get(c.join(","));
-
-export function createOutpostMesh(scene: Scene, kind: OutpostKind): Mesh {
-  const parts: Mesh[] = [];
-  const box = partBuilder(scene, parts, outpostSurface);
-  const sand: RGB = [0.68, 0.6, 0.43];
-  const wood: RGB = [0.45, 0.32, 0.2];
-  const darkWood: RGB = [0.32, 0.23, 0.15];
-  const olive: RGB = [0.4, 0.43, 0.26];
-  const crate: RGB = [0.5, 0.37, 0.22];
-  const dark: RGB = [0.13, 0.12, 0.11];
-  const cyl = (h: number, d: number, x: number, y: number, z: number, c: RGB, rz = 0) => {
-    const m = MeshBuilder.CreateCylinder("cyl", { height: h, diameter: d, tessellation: 8 }, scene);
-    m.position.set(x, y, z);
-    m.rotation.z = rz;
-    m.material = mat(scene, c, { surface: outpostSurface(c) });
-    parts.push(m);
-  };
-
-  if (kind === "hospital") {
-    // field hospital: ward tent with red crosses, stretchers, medical crates and water drums
-    const canvas: RGB = [0.84, 0.82, 0.72];
-    const white: RGB = [0.94, 0.93, 0.88];
-    const red: RGB = [0.78, 0.1, 0.08];
-    const T = HOSPITAL_TENT;
-    box(7.5, 0.4, 6, 0, 0.1, 0, [0.58, 0.56, 0.5]);
-    const tent = createGable("wardTent", scene);
-    tent.scaling.set(T.hw * 2, 2.8, T.hd * 2);
-    tent.position.set(T.x, 0.3, T.z);
-    tent.material = mat(scene, canvas, { twoSided: true, surface: "fabric" });
-    parts.push(tent);
-    /** Red cross on a white field; `rz` tilts it onto a roof slope, `ry` turns it to face along x. */
-    const redCross = (x: number, y: number, z: number, size: number, rz: number, ry = 0) => {
-      const panel = box(size, 0.03, size, x, y, z, white, 0, ry);
-      const a = box(size * 0.7, 0.05, size * 0.22, x, y, z, red, 0, ry);
-      const b = box(size * 0.22, 0.05, size * 0.7, x, y, z, red, 0, ry);
-      for (const m of [panel, a, b]) m.rotation.z = rz;
-    };
-    // on both roof slopes (outward normal = the box's local y after tilting)
-    const slope = Math.atan2(2.8, T.hw);
-    const nx = Math.sin(slope), ny = Math.cos(slope);
-    redCross(T.x - T.hw / 2 - nx * 0.03, 0.3 + 1.4 + ny * 0.03, T.z, 1.5, slope);
-    redCross(T.x + T.hw / 2 + nx * 0.03, 0.3 + 1.4 + ny * 0.03, T.z, 1.5, -slope);
-    // front gable: open door flap and a cross above it
-    const front = T.z + T.hd + 0.03;
-    box(1.0, 1.15, 0.04, T.x, 0.88, front, [0.22, 0.2, 0.16]);
-    box(0.5, 1.2, 0.06, T.x - 0.75, 0.9, front + 0.03, canvas, 0, 0.5); // flap tied back
-    const cross = (x: number, y: number, z: number, s: number) => {
-      box(s, s, 0.03, x, y, z, white);
-      box(s * 0.7, s * 0.22, 0.05, x, y, z + 0.01, red);
-      box(s * 0.22, s * 0.7, 0.05, x, y, z + 0.01, red);
-    };
-    cross(T.x, 2.05, front, 0.7);
-    // stretchers in a row beside the tent
-    for (const [i, z] of [-1.9, -0.6, 0.7].entries()) {
-      const x = 2.3 + (i % 2) * 0.15;
-      box(0.75, 0.06, 1.95, x, 0.55, z, [0.42, 0.44, 0.28]); // canvas
-      for (const sx of [-0.4, 0.4]) box(0.06, 0.06, 2.3, x + sx, 0.55, z, darkWood); // poles
-      for (const sx of [-0.4, 0.4]) for (const sz of [-0.8, 0.8]) box(0.06, 0.28, 0.06, x + sx, 0.4, z + sz, darkWood);
-      box(0.5, 0.12, 0.3, x, 0.63, z - 0.75, white); // pillow
-      if (i === 1) box(0.7, 0.1, 1.2, x, 0.64, z + 0.2, [0.55, 0.5, 0.36]); // blanket
-    }
-    // medical crates, marked on top
-    const medCrate = (x: number, z: number, ry: number) => {
-      box(0.9, 0.7, 0.7, x, 0.65, z, white, 0, ry);
-      const a = box(0.55, 0.03, 0.16, x, 1.01, z, red, 0, ry);
-      const b = box(0.16, 0.03, 0.55, x, 1.01, z, red, 0, ry);
-      return [a, b];
-    };
-    medCrate(2.5, 2.2, 0.15);
-    medCrate(1.4, 2.4, -0.2);
-    box(1.1, 1.1, 1.1, -3.0, 0.85, 2.0, crate, 0, 0.3);
-    // water drums
-    for (const [x, z] of [[-3.1, 0.6], [-3.2, -0.2]]) cyl(1.0, 0.6, x, 0.8, z, [0.28, 0.36, 0.22]);
-  } else if (kind === "bunker") {
-    // dugout: sandbag walls, log roof, dark entrance
-    box(5, 1.2, 0.9, 0, 0.6, -2, sand);
-    box(0.9, 1.2, 4.9, -2.05, 0.6, 0, sand);
-    box(0.9, 1.2, 4.9, 2.05, 0.6, 0, sand);
-    box(1.6, 1.2, 0.9, -1.7, 0.6, 2, sand);
-    box(1.6, 1.2, 0.9, 1.7, 0.6, 2, sand);
-    for (let i = 0; i < 6; i++) cyl(5.4, 0.36, 0, 1.38, -2.05 + i * 0.82, darkWood, Math.PI / 2);
-    box(4.6, 0.3, 4.6, 0, 1.7, 0, [0.44, 0.4, 0.26]); // earth cover
-    box(1.7, 1.0, 0.2, 0, 0.55, 2.2, dark);
-  } else if (kind === "trench") {
-    // zig-zag sandbag parapet with a firing step
-    const segs: [number, number, number][] = [[-6, 0, 0.5], [-2, 0, -0.5], [2, 0, 0.5], [6, 0, -0.5]];
-    for (const [x, , ry] of segs) {
-      box(4.4, 0.8, 0.9, x, 0.4, ry > 0 ? 0.9 : -0.9, sand, 0, ry);
-      box(4.4, 0.35, 1.2, x, 0.05, ry > 0 ? -0.3 : -2.1, [0.36, 0.27, 0.18], 0, ry); // dug earth
-    }
-    box(0.4, 1.4, 0.4, -7.8, 0.7, 1.4, wood);
-    box(0.4, 1.4, 0.4, 7.8, 0.7, -1.4, wood);
-    // barbed wire posts
-    for (let i = -3; i <= 3; i++) box(0.12, 1.0, 0.12, i * 2.6, 0.5, 3.2 + (i % 2) * 0.3, darkWood);
-    box(16, 0.05, 0.05, 0, 0.8, 3.3, [0.5, 0.5, 0.5]);
-    box(16, 0.05, 0.05, 0, 0.45, 3.3, [0.5, 0.5, 0.5]);
-  } else if (kind === "radar") {
-    // radome station: white geodesic ball on a concrete drum, operators' hut, generator, aerial mast
-    const R = RADAR_DIM;
-    box(7, 0.3, 7, 0, 0.1, 0, [0.55, 0.53, 0.48]);
-    cyl(R.drumH, R.drumR * 2, 0, 0.2 + R.drumH / 2, 0, [0.6, 0.59, 0.55]);
-    cyl(0.25, R.drumR * 2 + 0.25, 0, 0.2 + R.drumH, 0, [0.42, 0.42, 0.4]); // ring beam under the dome
-    box(0.9, 1.6, 0.06, 0, 1.0, R.drumR - 0.02, [0.24, 0.24, 0.24]); // door
-    const dome = MeshBuilder.CreateIcoSphere("radome", { radius: R.domeR, subdivisions: 2, flat: true }, scene);
-    dome.position.y = R.domeY;
-    dome.material = mat(scene, [0.92, 0.92, 0.88]);
-    parts.push(dome);
-    // hut with a flat roof and a window
-    box(2.2, 1.8, 1.6, -2.6, 1.15, 2.2, [0.44, 0.47, 0.36]);
-    box(2.4, 0.15, 1.8, -2.6, 2.1, 2.2, [0.3, 0.3, 0.28]);
-    box(0.5, 0.35, 0.05, -2.2, 1.45, 3.02, [0.55, 0.7, 0.75]);
-    box(1.2, 0.8, 0.8, 2.6, 0.65, -2.4, [0.32, 0.38, 0.24]); // generator
-    box(0.08, 4.5, 0.08, 2.9, 2.45, 2.6, [0.3, 0.3, 0.3]); // aerial mast
-    box(0.9, 0.05, 0.05, 2.9, 4.5, 2.6, [0.3, 0.3, 0.3]);
-  } else if (kind === "workshop") {
-    // vehicle workshop: open-fronted hall with a corrugated roof, crane, barrels and spare parts
-    const wall: RGB = [0.56, 0.54, 0.46];
-    box(9, 0.3, 11, 0, 0.1, 0.5, [0.55, 0.53, 0.48]); // concrete apron
-    const brickWall = (w: number, h: number, d: number, x: number, y: number, z: number) => {
-      const m = brickBox(scene, "wall", w, h, d, wall);
-      m.position.set(x, y, z);
-      parts.push(m);
-    };
-    brickWall(7, 3.6, 0.3, 0, 2.05, -2.85); // back wall
-    brickWall(0.3, 3.6, 5.7, -3.35, 2.05, 0);
-    brickWall(0.3, 3.6, 5.7, 3.35, 2.05, 0);
-    brickWall(7, 0.6, 0.3, 0, 3.55, 2.85); // lintel over the open front
-    box(6.4, 0.05, 5.4, 0, 0.26, 0, [0.2, 0.19, 0.17]); // oily floor
-    const roof = createGable("workshopRoof", scene);
-    roof.scaling.set(7.8, 1.3, 6.6);
-    roof.position.y = 3.85;
-    roof.material = mat(scene, [0.46, 0.48, 0.5], { twoSided: true, surface: "metal" });
-    parts.push(roof);
-    // gantry crane over the bay
-    box(0.2, 3.2, 0.2, -2.6, 1.85, 2.2, [0.8, 0.6, 0.15]);
-    box(0.2, 3.2, 0.2, 2.6, 1.85, 2.2, [0.8, 0.6, 0.15]);
-    box(5.4, 0.25, 0.25, 0, 3.4, 2.2, [0.8, 0.6, 0.15]);
-    box(0.05, 1.2, 0.05, 0.8, 2.7, 2.2, dark);
-    // workbench, tyres, barrels
-    box(2.4, 0.9, 0.7, -1.6, 0.7, -2.2, wood);
-    const tyre = (x: number, y: number, z: number) => cyl(0.35, 1.0, x, y, z, dark);
-    tyre(2.6, 0.45, -1.8);
-    tyre(2.6, 0.8, -1.8);
-    tyre(2.6, 1.15, -1.8);
-    for (const [x, z] of [[4.0, 3.2], [4.1, 4.0], [3.4, 3.7]]) cyl(1.0, 0.6, x, 0.75, z, [0.55, 0.22, 0.14]);
-    box(1.2, 0.8, 0.9, -4.0, 0.65, 3.6, crate);
-  } else {
-    // wooden watchtower
-    for (const [x, z] of [[-1.3, -1.3], [1.3, -1.3], [1.3, 1.3], [-1.3, 1.3]]) box(0.3, 6, 0.3, x, 3, z, wood);
-    box(3.6, 0.3, 3.6, 0, 5.2, 0, darkWood);
-    box(3.6, 1.0, 0.15, 0, 5.85, 1.75, wood);
-    box(3.6, 1.0, 0.15, 0, 5.85, -1.75, wood);
-    box(0.15, 1.0, 3.6, 1.75, 5.85, 0, wood);
-    box(0.15, 1.0, 3.6, -1.75, 5.85, 0, wood);
-    for (const [x, z] of [[-1.6, -1.6], [1.6, -1.6], [1.6, 1.6], [-1.6, 1.6]]) box(0.15, 1.6, 0.15, x, 6.8, z, wood);
-    const roof = createGable("towerRoof", scene);
-    roof.scaling.set(4.2, 1.4, 4.2);
-    roof.position.y = 7.6;
-    roof.material = mat(scene, [0.4, 0.3, 0.22], { twoSided: true, surface: "wood" });
-    parts.push(roof);
-    box(0.2, 5, 0.2, 0.6, 2.4, 1.9, darkWood, 0.25); // ladder rails
-    box(0.2, 5, 0.2, -0.6, 2.4, 1.9, darkWood, 0.25);
-    box(1.6, 1.2, 1.2, -2.2, 0.6, -1.6, sand);
-  }
-
-  const m = merge(`outpost-${kind}`, parts);
-  m.receiveShadows = true;
-  m.isPickable = false;
-  return m;
-}
 
 /**
  * Demolition charge (origin at its underside, ~0.5 wide): a bundle of three dynamite sticks held by
@@ -1172,10 +1054,13 @@ export const JEEP_DIM = {
 export function createJeepBody(scene: Scene, team: Team): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
-  const olive: RGB = team === PLAYER ? [0.35, 0.41, 0.28] : [0.42, 0.37, 0.27];
+  // classic look: black-grey paint; the realistic one keeps the olive drab (restyle)
+  const olive = restyle(team === PLAYER ? [0.35, 0.41, 0.28] : [0.42, 0.37, 0.27], [0.231, 0.233, 0.249]);
   const dark: RGB = [0.14, 0.13, 0.12];
-  const seat: RGB = [0.3, 0.22, 0.14];
+  const seat = restyle([0.3, 0.22, 0.14], [0.101, 0.101, 0.109]);
   const teamC = TEAM_COLOR[team];
+  const can = restyle([0.3, 0.36, 0.2], [0.281, 0.283, 0.303]), canRib = restyle([0.22, 0.27, 0.15], [0.211, 0.213, 0.229]);
+  const tool = restyle([0.45, 0.3, 0.17], [0.341, 0.343, 0.361]), cushion = restyle([0.24, 0.17, 0.1], [0.141, 0.141, 0.151]);
 
   box(2.1, 0.35, 4.4, 0, 0.75, 0, dark); // chassis
   box(2.0, 0.12, 2.9, 0, 0.95, -0.6, olive); // floor
@@ -1196,7 +1081,7 @@ export function createJeepBody(scene: Scene, team: Team): Mesh {
   box(0.62, 0.6, 0.12, -0.5, 1.55, -0.38, seat);
   box(0.62, 0.6, 0.12, 0.5, 1.55, -0.38, seat);
   box(0.14, 1.2, 0.14, 0, 1.55, JEEP_DIM.turret.z, [0.35, 0.35, 0.35]); // MG post
-  box(0.4, 0.5, 0.3, 0.7, 1.25, -1.8, [0.3, 0.36, 0.2]); // jerry can
+  box(0.4, 0.5, 0.3, 0.7, 1.25, -1.8, can); // jerry can
   box(0.7, 0.03, 0.7, 0, 1.44, 1.35, teamC); // bonnet marking
   box(0.02, 0.2, 1.2, -1.07, 1.3, -0.8, teamC);
   box(0.02, 0.2, 1.2, 1.07, 1.3, -0.8, teamC);
@@ -1224,7 +1109,7 @@ export function createJeepBody(scene: Scene, team: Team): Mesh {
   const steel: RGB = [0.3, 0.3, 0.29];
   const lamp: RGB = [0.95, 0.9, 0.7];
   const tail: RGB = [0.62, 0.08, 0.06];
-  const olive2: RGB = [olive[0] * 0.8, olive[1] * 0.8, olive[2] * 0.8];
+  const olive2 = restyle(team === PLAYER ? [0.28, 0.328, 0.224] : [0.336, 0.296, 0.216], [0.171, 0.173, 0.187]);
   for (const x of [-1, 1]) {
     cyl(0.1, 0.34, x * 0.66, 1.16, 2.2, dark, Math.PI / 2); // headlight housing and glass
     cyl(0.05, 0.27, x * 0.66, 1.16, 2.27, lamp, Math.PI / 2);
@@ -1270,19 +1155,19 @@ export function createJeepBody(scene: Scene, team: Team): Mesh {
   }
   cyl(0.04, 0.55, 0, 1.25, -2.44, olive2, Math.PI / 2);
   // stowed tools on the left side: a shovel and an axe
-  box(0.04, 0.04, 1.1, -1.13, 1.2, -1.0, [0.45, 0.3, 0.17]);
+  box(0.04, 0.04, 1.1, -1.13, 1.2, -1.0, tool);
   box(0.04, 0.3, 0.2, -1.13, 1.2, -0.35, steel);
-  box(0.04, 0.04, 0.7, -1.13, 1.05, -1.3, [0.45, 0.3, 0.17]);
+  box(0.04, 0.04, 0.7, -1.13, 1.05, -1.3, tool);
   box(0.04, 0.12, 0.2, -1.13, 1.05, -0.9, steel);
   // jerry can: handle, spout and cross-shaped stamping
-  box(0.3, 0.04, 0.05, 0.7, 1.52, -1.8, [0.3, 0.36, 0.2]);
+  box(0.3, 0.04, 0.05, 0.7, 1.52, -1.8, can);
   box(0.08, 0.06, 0.08, 0.82, 1.52, -1.7, dark);
-  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, [0.22, 0.27, 0.15]).rotation.z = 0.7;
-  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, [0.22, 0.27, 0.15]).rotation.z = -0.7;
+  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, canRib).rotation.z = 0.7;
+  box(0.36, 0.03, 0.03, 0.7, 1.25, -1.64, canRib).rotation.z = -0.7;
   // seats: cushions with a stitched edge, head rests
   for (const x of [-0.5, 0.5]) {
-    box(0.6, 0.06, 0.58, x, 1.4, -0.05, [0.24, 0.17, 0.1]);
-    box(0.6, 0.08, 0.1, x, 1.88, -0.38, [0.24, 0.17, 0.1]);
+    box(0.6, 0.06, 0.58, x, 1.4, -0.05, cushion);
+    box(0.6, 0.08, 0.1, x, 1.88, -0.38, cushion);
   }
   // team marking on the doors: a white star-like square under the stripe
   for (const x of [-1, 1]) box(0.02, 0.22, 0.22, x * 1.076, 1.18, -0.2, [0.9, 0.88, 0.8]);
@@ -1297,7 +1182,7 @@ export function createJeepWheel(scene: Scene): Mesh {
   const tyre = MeshBuilder.CreateCylinder("tyre", { height: 0.42, diameter: JEEP_DIM.wheelR * 2, tessellation: 10 }, scene);
   tyre.material = mat(scene, [0.1, 0.1, 0.1]);
   const hub = MeshBuilder.CreateCylinder("hub", { height: 0.44, diameter: 0.5, tessellation: 6 }, scene);
-  hub.material = mat(scene, [0.33, 0.37, 0.26]);
+  hub.material = mat(scene, restyle([0.33, 0.37, 0.26], [0.221, 0.223, 0.239]));
   // tread blocks in two staggered rows, a rim with lug nuts on both faces
   const extra: Mesh[] = [];
   const dark: RGB = [0.07, 0.07, 0.07];
@@ -1315,7 +1200,7 @@ export function createJeepWheel(scene: Scene): Mesh {
   for (const side of [-1, 1]) {
     const rim = MeshBuilder.CreateCylinder("rim", { height: 0.03, diameter: 0.64, tessellation: 18 }, scene);
     rim.position.y = side * 0.21;
-    rim.material = mat(scene, [0.27, 0.3, 0.22]);
+    rim.material = mat(scene, restyle([0.27, 0.3, 0.22], [0.181, 0.183, 0.197]));
     const cap = MeshBuilder.CreateCylinder("cap", { height: 0.05, diameter: 0.2, tessellation: 10 }, scene);
     cap.position.y = side * 0.235;
     cap.material = mat(scene, [0.2, 0.2, 0.19]);
@@ -1348,13 +1233,21 @@ export const TANK_DIM = {
   length: 6.4,
 };
 
+/** Tank paint: black-grey in the classic look, olive drab (by team) in the realistic one. */
+function tankPaint(team: Team): { olive: RGB; shade: RGB } {
+  const p = team === PLAYER;
+  return {
+    olive: restyle(p ? [0.33, 0.38, 0.26] : [0.4, 0.36, 0.26], [0.219, 0.221, 0.237]),
+    shade: restyle(p ? [0.27, 0.31, 0.21] : [0.33, 0.29, 0.21], [0.159, 0.161, 0.175]),
+  };
+}
+
 /** Tank hull with tracks and road wheels (front +z); team colours on the glacis and the sides. */
 export function createTankHull(scene: Scene, team: Team): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
   const D = TANK_DIM;
-  const olive: RGB = team === PLAYER ? [0.33, 0.38, 0.26] : [0.4, 0.36, 0.26];
-  const shade: RGB = team === PLAYER ? [0.27, 0.31, 0.21] : [0.33, 0.29, 0.21];
+  const { olive, shade } = tankPaint(team);
   const dark: RGB = [0.12, 0.12, 0.11];
   const steel: RGB = [0.24, 0.24, 0.23];
   const teamC = TEAM_COLOR[team];
@@ -1372,7 +1265,7 @@ export function createTankHull(scene: Scene, team: Team): Mesh {
       const w = MeshBuilder.CreateCylinder("roadWheel", { height: 0.5, diameter: D.wheelR * 2, tessellation: 12 }, scene);
       w.rotation.z = Math.PI / 2;
       w.position.set(x, D.wheelR + 0.06, -L / 2 + 1.05 + i * ((L - 2.1) / 5));
-      w.material = mat(scene, [0.22, 0.24, 0.19], { metal: 0.3, rough: 0.6 });
+      w.material = mat(scene, restyle([0.22, 0.24, 0.19], [0.151, 0.153, 0.165]), { metal: 0.3, rough: 0.6 });
       const hub = MeshBuilder.CreateCylinder("hub", { height: 0.54, diameter: 0.22, tessellation: 8 }, scene);
       hub.rotation.z = Math.PI / 2;
       hub.position.copyFrom(w.position);
@@ -1430,8 +1323,7 @@ export function createTankTurret(scene: Scene, team: Team): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
   const D = TANK_DIM;
-  const olive: RGB = team === PLAYER ? [0.33, 0.38, 0.26] : [0.4, 0.36, 0.26];
-  const shade: RGB = team === PLAYER ? [0.27, 0.31, 0.21] : [0.33, 0.29, 0.21];
+  const { olive, shade } = tankPaint(team);
   const dark: RGB = [0.12, 0.12, 0.11];
   const teamC = TEAM_COLOR[team];
   // a low, angular turret: flat roof, sloped cheeks, a bustle at the back
@@ -1488,10 +1380,10 @@ export function createJeepGun(scene: Scene): Mesh {
   box(0.26, 0.26, 0.7, 0, 0, 0.1, metal);
   box(0.09, 0.09, 1.2, 0, 0.03, 1.0, metal);
   box(0.16, 0.16, 0.2, 0, 0.03, 1.55, metal); // muzzle
-  box(0.28, 0.3, 0.32, 0.25, -0.08, 0.05, [0.3, 0.36, 0.2]); // ammo box
+  box(0.28, 0.3, 0.32, 0.25, -0.08, 0.05, restyle([0.3, 0.36, 0.2], [0.261, 0.263, 0.281])); // ammo box
   box(0.06, 0.2, 0.06, -0.12, -0.12, -0.3, metal);
   box(0.06, 0.2, 0.06, 0.12, -0.12, -0.3, metal);
-  box(0.5, 0.35, 0.05, 0, 0.12, 0.55, [0.3, 0.33, 0.25]); // gun shield
+  box(0.5, 0.35, 0.05, 0, 0.12, 0.55, restyle([0.3, 0.33, 0.25], [0.201, 0.203, 0.219])); // gun shield
   // cooling jacket with vent holes, flash hider, sights, carry handle, spade grips, ammunition belt
   const jacket = MeshBuilder.CreateCylinder("jacket", { height: 0.7, diameter: 0.15, tessellation: 12 }, scene);
   jacket.rotation.x = Math.PI / 2;
@@ -1577,13 +1469,14 @@ export const NEST_DIM = {
 };
 
 /**
- * MG nest (hidden template): a shallow pit ringed by two courses of sandbags, open at the back,
+ * MG nest (hidden template): a shallow pit ringed by two courses of barricade blocks, open at the back,
  * with a tripod for the gun in front. The gun and the gunner are separate instances.
  */
 export function createMgNestMesh(scene: Scene): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
-  const bags: RGB[] = [[0.62, 0.55, 0.4], [0.57, 0.5, 0.36], [0.66, 0.6, 0.44]];
+  // black-grey barricade blocks (like the barracks' walls)
+  const bags: RGB[] = [[0.181, 0.181, 0.193], [0.111, 0.111, 0.119], [0.261, 0.263, 0.279]];
   const pit = MeshBuilder.CreateCylinder("pit", { height: 0.06, diameter: NEST_DIM.radius * 2 - 0.3, tessellation: 16 }, scene);
   pit.position.y = 0.04;
   pit.material = mat(scene, [0.3, 0.24, 0.17]);
@@ -1595,16 +1488,16 @@ export function createMgNestMesh(scene: Scene): Mesh {
       // gap at the back (angle PI) for getting in and out
       const a = ((i + (course ? 0.5 : 0)) / n) * Math.PI * 2;
       if (Math.abs(Math.PI - a) < 0.5) continue;
-      const m = box(0.66, 0.3, 0.42, Math.sin(a) * r, 0.17 + course * 0.29, Math.cos(a) * r, bags[(i + course) % 3], 0, a);
-      m.rotation.z = (i % 2 ? 0.04 : -0.04);
+      box(0.66, 0.3, 0.42, Math.sin(a) * r, 0.17 + course * 0.29, Math.cos(a) * r, bags[(i + course) % 3], 0, a);
     }
   }
   // tripod under the gun
   for (const a of [0, 2.1, -2.1]) {
     box(0.06, 1.05, 0.06, Math.sin(a) * 0.28, 0.52, 0.35 + Math.cos(a) * 0.28, [0.16, 0.16, 0.17]).rotation.set(Math.cos(a) * 0.3, 0, -Math.sin(a) * 0.3);
   }
-  box(0.4, 0.3, 0.3, -0.75, 0.2, -0.25, [0.3, 0.36, 0.2]); // ammo crates
-  box(0.4, 0.3, 0.3, -0.75, 0.2, 0.15, [0.3, 0.36, 0.2]);
+  const crate = restyle([0.3, 0.36, 0.2], [0.261, 0.263, 0.281]);
+  box(0.4, 0.3, 0.3, -0.75, 0.2, -0.25, crate); // ammo crates
+  box(0.4, 0.3, 0.3, -0.75, 0.2, 0.15, crate);
   const m = merge("mgNest", parts);
   m.receiveShadows = true;
   m.isPickable = false;
@@ -1624,27 +1517,26 @@ export function createPennant(scene: Scene, team: Team): Mesh {
   return m;
 }
 
-/** Bollards (hidden template): three striped concrete posts in a row along x, ~3.3 wide. */
+/**
+ * Bollards (hidden template): three cylindrical posts in a row along x, ~3.3 wide. Classic look: black with a
+ * glowing yellow ring; realistic: concrete with a yellow and a black band.
+ */
 export function createBollardMesh(scene: Scene): Mesh {
   const parts: Mesh[] = [];
   const box = partBuilder(scene, parts);
-  const concrete: RGB = [0.66, 0.65, 0.61];
+  const post = restyle([0.66, 0.65, 0.61], [0.061, 0.061, 0.067]);
+  const cyl = (h: number, d: number, x: number, y: number, c: RGB, glow = false) => {
+    const m = MeshBuilder.CreateCylinder("post", { height: h, diameter: d, tessellation: 14 }, scene);
+    m.position.set(x, y, 0);
+    m.material = mat(scene, c, { glow });
+    parts.push(m);
+  };
   for (const x of [-1.15, 0, 1.15]) {
-    const post = MeshBuilder.CreateCylinder("post", { height: 1.1, diameterTop: 0.36, diameterBottom: 0.44, tessellation: 10 }, scene);
-    post.position.set(x, 0.55, 0);
-    post.material = mat(scene, concrete);
-    parts.push(post);
-    for (const [y, c] of [[0.7, [0.9, 0.72, 0.12]], [0.84, [0.12, 0.12, 0.11]]] as [number, RGB][]) {
-      const band = MeshBuilder.CreateCylinder("band", { height: 0.13, diameter: 0.41, tessellation: 10 }, scene);
-      band.position.set(x, y, 0);
-      band.material = mat(scene, c);
-      parts.push(band);
-    }
-    const cap = MeshBuilder.CreateSphere("cap", { diameter: 0.36, segments: 6, slice: 0.5 }, scene);
-    cap.position.set(x, 1.1, 0);
-    cap.material = mat(scene, concrete);
-    parts.push(cap);
-    box(0.62, 0.08, 0.62, x, 0.04, 0, [0.5, 0.49, 0.46]); // footing
+    cyl(1.1, 0.4, x, 0.55, post);
+    cyl(0.1, 0.42, x, 0.8, restyle([0.9, 0.72, 0.12], [1, 0.87, 0.05]), true); // lit ring
+    cyl(0.1, 0.42, x, 0.93, [0.12, 0.12, 0.11]);
+    cyl(0.04, 0.36, x, 1.11, restyle([0.66, 0.65, 0.61], [0.121, 0.121, 0.129])); // cap
+    box(0.62, 0.08, 0.62, x, 0.04, 0, restyle([0.5, 0.49, 0.46], [0.141, 0.141, 0.151])); // footing
   }
   const m = merge("bollards", parts);
   m.receiveShadows = true;
@@ -1655,11 +1547,25 @@ export function createBollardMesh(scene: Scene): Mesh {
 
 // ------------------------------------------------------------------ explosions
 
-export function createGrenadeTemplate(scene: Scene): Mesh {
-  const m = MeshBuilder.CreateSphere("grenade", { diameter: 0.34, segments: 4 }, scene);
+/** Tank shell / rocket in flight (scaled by the caller). */
+export function createShellTemplate(scene: Scene): Mesh {
+  const m = MeshBuilder.CreateSphere("shell", { diameter: 0.34, segments: 4 }, scene);
   m.scaling.y = 1.3;
   m.bakeCurrentTransformIntoVertices();
   m.material = mat(scene, [0.22, 0.28, 0.16]);
+  m.isPickable = false;
+  m.isVisible = false;
+  return m;
+}
+
+/** Thrown hand grenade: a black body (olive in the realistic look) with a lit yellow stripe round its middle. */
+export function createGrenadeTemplate(scene: Scene): Mesh {
+  const body = MeshBuilder.CreateSphere("grenade", { diameter: 0.34, segments: 6 }, scene);
+  body.scaling.y = 1.3;
+  body.material = mat(scene, restyle([0.22, 0.28, 0.16], [0.071, 0.071, 0.077]));
+  const stripe = MeshBuilder.CreateTorus("grenadeStripe", { diameter: 0.35, thickness: 0.06, tessellation: 16 }, scene);
+  stripe.material = mat(scene, GRENADE_GLOW, { glow: true });
+  const m = merge("grenade", [body, stripe]);
   m.isPickable = false;
   m.isVisible = false;
   return m;
